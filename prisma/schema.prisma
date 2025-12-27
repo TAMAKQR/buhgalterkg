@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+enum LedgerEntryType {
+  CASH_IN
+  CASH_OUT
+  MANAGER_PAYOUT
+  ADJUSTMENT
+}
+
+enum StayStatus {
+  SCHEDULED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  DIRTY
+  HOLD
+}
+
+model User {
+  id          String            @id @default(cuid())
+  telegramId  String            @unique
+  displayName String
+  username    String?
+  role        UserRole          @default(MANAGER)
+  avatarUrl   String?
+  assignments HotelAssignment[]
+  shifts      Shift[]           @relation("ShiftManager")
+  ledger      CashEntry[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Hotel {
+  id                 String            @id @default(cuid())
+  name               String
+  address            String
+  city               String?
+  managerSharePct    Int?              @map("manager_share_pct")
+  notes              String?
+  rooms              Room[]
+  assignments        HotelAssignment[]
+  shifts             Shift[]
+  ledger             CashEntry[]
+  stays              RoomStay[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+}
+
+model HotelAssignment {
+  id        String   @id @default(cuid())
+  hotelId   String
+  userId    String
+  role      UserRole
+  isActive  Boolean  @default(true)
+  pinCode   String?  @map("pin_code")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([hotelId, userId])
+  @@index([hotelId, pinCode])
+}
+
+model Room {
+  id            String      @id @default(cuid())
+  hotelId       String
+  label         String
+  floor         String?
+  isActive      Boolean     @default(true)
+  status        RoomStatus  @default(AVAILABLE)
+  currentStayId String?    @unique
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  hotel       Hotel      @relation(fields: [hotelId], references: [id])
+  currentStay RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
+  stays       RoomStay[] @relation("RoomStayHistory")
+
+  @@index([hotelId, label])
+}
+
+model RoomStay {
+  id                String     @id @default(cuid())
+  roomId            String
+  hotelId           String
+  shiftId           String?
+  guestName         String?
+  scheduledCheckIn  DateTime
+  scheduledCheckOut DateTime
+  actualCheckIn     DateTime?
+  actualCheckOut    DateTime?
+  status            StayStatus @default(SCHEDULED)
+  amountPaid        Int?
+  paymentMethod     PaymentMethod?
+  notes             String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  room        Room   @relation("RoomStayHistory", fields: [roomId], references: [id])
+  currentRoom Room?  @relation("RoomCurrentStay")
+  shift       Shift? @relation(fields: [shiftId], references: [id])
+  hotel       Hotel  @relation(fields: [hotelId], references: [id])
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  hotelId      String
+  managerId    String
+  number       Int         @default(0)
+  status       ShiftStatus @default(OPEN)
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+  openingCash  Int
+  closingCash  Int?
+  handoverCash Int?
+  openingNote  String?
+  closingNote  String?
+  handoverNote String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  hotel   Hotel @relation(fields: [hotelId], references: [id])
+  manager User  @relation("ShiftManager", fields: [managerId], references: [id])
+  stays   RoomStay[]
+  ledger  CashEntry[]
+
+  @@index([hotelId, status])
+  @@unique([hotelId, number])
+}
+
+model CashEntry {
+  id         String           @id @default(cuid())
+  shiftId    String?
+  hotelId    String
+  managerId  String?
+  entryType  LedgerEntryType
+  method     PaymentMethod
+  amount     Int
+  note       String?
+  meta       Json?
+  recordedAt DateTime         @default(now())
+
+  shift   Shift? @relation(fields: [shiftId], references: [id])
+  hotel   Hotel  @relation(fields: [hotelId], references: [id])
+  manager User?  @relation(fields: [managerId], references: [id])
+}
