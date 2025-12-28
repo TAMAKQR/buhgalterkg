@@ -7,6 +7,133 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id          String            @id @default(cuid())
+  telegramId  String            @unique
+  displayName String
+  username    String?
+  role        UserRole          @default(MANAGER)
+  avatarUrl   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  ledger      CashEntry[]
+  assignments HotelAssignment[]
+  shifts      Shift[]           @relation("ShiftManager")
+}
+
+model Hotel {
+  id              String            @id @default(cuid())
+  name            String
+  address         String
+  city            String?
+  managerSharePct Int?              @map("manager_share_pct")
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  ledger          CashEntry[]
+  assignments     HotelAssignment[]
+  rooms           Room[]
+  stays           RoomStay[]
+  shifts          Shift[]
+}
+
+model HotelAssignment {
+  id        String   @id @default(cuid())
+  hotelId   String
+  userId    String
+  role      UserRole
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pinCode   String?  @map("pin_code") @db.VarChar(6)
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([hotelId, userId])
+  @@index([hotelId, pinCode])
+}
+
+model Room {
+  id            String     @id @default(cuid())
+  hotelId       String
+  label         String
+  floor         String?
+  isActive      Boolean    @default(true)
+  status        RoomStatus @default(AVAILABLE)
+  currentStayId String?    @unique
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  currentStay   RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
+  hotel         Hotel      @relation(fields: [hotelId], references: [id])
+  stays         RoomStay[] @relation("RoomStayHistory")
+
+  @@index([hotelId, label])
+}
+
+model RoomStay {
+  id                String         @id @default(cuid())
+  roomId            String
+  hotelId           String
+  shiftId           String?
+  guestName         String?
+  scheduledCheckIn  DateTime
+  scheduledCheckOut DateTime
+  actualCheckIn     DateTime?
+  actualCheckOut    DateTime?
+  status            StayStatus     @default(SCHEDULED)
+  notes             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  amountPaid        Int?
+  paymentMethod     PaymentMethod?
+  currentRoom       Room?          @relation("RoomCurrentStay")
+  hotel             Hotel          @relation(fields: [hotelId], references: [id])
+  room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
+  shift             Shift?         @relation(fields: [shiftId], references: [id])
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  hotelId      String
+  managerId    String
+  status       ShiftStatus @default(OPEN)
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+  openingCash  Int
+  closingCash  Int?
+  handoverCash Int?
+  openingNote  String?
+  closingNote  String?
+  handoverNote String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  number       Int         @default(0)
+  ledger       CashEntry[]
+  stays        RoomStay[]
+  hotel        Hotel       @relation(fields: [hotelId], references: [id])
+  manager      User        @relation("ShiftManager", fields: [managerId], references: [id])
+
+  @@unique([hotelId, number])
+  @@index([hotelId, status])
+}
+
+model CashEntry {
+  id         String          @id @default(cuid())
+  shiftId    String?
+  hotelId    String
+  managerId  String?
+  entryType  LedgerEntryType
+  method     PaymentMethod
+  amount     Int
+  note       String?
+  meta       Json?
+  recordedAt DateTime        @default(now())
+  hotel      Hotel           @relation(fields: [hotelId], references: [id])
+  manager    User?           @relation(fields: [managerId], references: [id])
+  shift      Shift?          @relation(fields: [shiftId], references: [id])
+}
+
 enum UserRole {
   ADMIN
   MANAGER
@@ -41,136 +168,4 @@ enum RoomStatus {
   OCCUPIED
   DIRTY
   HOLD
-}
-
-model User {
-  id          String            @id @default(cuid())
-  telegramId  String            @unique
-  displayName String
-  username    String?
-  role        UserRole          @default(MANAGER)
-  avatarUrl   String?
-  assignments HotelAssignment[]
-  shifts      Shift[]           @relation("ShiftManager")
-  ledger      CashEntry[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-}
-
-model Hotel {
-  id                 String            @id @default(cuid())
-  name               String
-  address            String
-  city               String?
-  managerSharePct    Int?              @map("manager_share_pct")
-  notes              String?
-  rooms              Room[]
-  assignments        HotelAssignment[]
-  shifts             Shift[]
-  ledger             CashEntry[]
-  stays              RoomStay[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-}
-
-model HotelAssignment {
-  id        String   @id @default(cuid())
-  hotelId   String
-  userId    String
-  role      UserRole
-  isActive  Boolean  @default(true)
-  pinCode   String?  @map("pin_code")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  hotel Hotel @relation(fields: [hotelId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@unique([hotelId, userId])
-  @@index([hotelId, pinCode])
-}
-
-model Room {
-  id            String      @id @default(cuid())
-  hotelId       String
-  label         String
-  floor         String?
-  isActive      Boolean     @default(true)
-  status        RoomStatus  @default(AVAILABLE)
-  currentStayId String?    @unique
-  notes         String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  hotel       Hotel      @relation(fields: [hotelId], references: [id])
-  currentStay RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
-  stays       RoomStay[] @relation("RoomStayHistory")
-
-  @@index([hotelId, label])
-}
-
-model RoomStay {
-  id                String     @id @default(cuid())
-  roomId            String
-  hotelId           String
-  shiftId           String?
-  guestName         String?
-  scheduledCheckIn  DateTime
-  scheduledCheckOut DateTime
-  actualCheckIn     DateTime?
-  actualCheckOut    DateTime?
-  status            StayStatus @default(SCHEDULED)
-  amountPaid        Int?
-  paymentMethod     PaymentMethod?
-  notes             String?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-
-  room        Room   @relation("RoomStayHistory", fields: [roomId], references: [id])
-  currentRoom Room?  @relation("RoomCurrentStay")
-  shift       Shift? @relation(fields: [shiftId], references: [id])
-  hotel       Hotel  @relation(fields: [hotelId], references: [id])
-}
-
-model Shift {
-  id           String      @id @default(cuid())
-  hotelId      String
-  managerId    String
-  number       Int         @default(0)
-  status       ShiftStatus @default(OPEN)
-  openedAt     DateTime    @default(now())
-  closedAt     DateTime?
-  openingCash  Int
-  closingCash  Int?
-  handoverCash Int?
-  openingNote  String?
-  closingNote  String?
-  handoverNote String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  hotel   Hotel @relation(fields: [hotelId], references: [id])
-  manager User  @relation("ShiftManager", fields: [managerId], references: [id])
-  stays   RoomStay[]
-  ledger  CashEntry[]
-
-  @@index([hotelId, status])
-  @@unique([hotelId, number])
-}
-
-model CashEntry {
-  id         String           @id @default(cuid())
-  shiftId    String?
-  hotelId    String
-  managerId  String?
-  entryType  LedgerEntryType
-  method     PaymentMethod
-  amount     Int
-  note       String?
-  meta       Json?
-  recordedAt DateTime         @default(now())
-
-  shift   Shift? @relation(fields: [shiftId], references: [id])
-  hotel   Hotel  @relation(fields: [hotelId], references: [id])
-  manager User?  @relation(fields: [managerId], references: [id])
 }

@@ -13,7 +13,13 @@ interface ManualLoginResponse {
     user: SessionUser;
 }
 
-export function AdminLoginGate() {
+interface AdminLoginGateProps {
+    embed?: boolean;
+    onBack?: () => void;
+    contextError?: string;
+}
+
+export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLoginGateProps = {}) {
     const { manualLogin, manualMode, loading } = useTelegramContext();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -46,42 +52,52 @@ export function AdminLoginGate() {
         }
     };
 
-    return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">
-            <Card className="w-full max-w-md space-y-5 bg-white/5 p-6 text-white">
-                <div>
-                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Веб-доступ</p>
-                    <h1 className="text-2xl font-semibold">Вход для администраторов</h1>
-                    <p className="text-sm text-white/60">Введите учётные данные, если запускаете приложение вне Telegram.</p>
+    const card = (
+        <Card className="w-full max-w-md space-y-5 bg-white/5 p-6 text-white">
+            <div className="space-y-2">
+                {onBack && (
+                    <button type="button" className="text-xs text-white/60 hover:text-white" onClick={onBack}>
+                        ← Назад
+                    </button>
+                )}
+                <p className="text-xs uppercase tracking-[0.4em] text-white/40">Веб-доступ</p>
+                <h1 className="text-2xl font-semibold">Вход для администраторов</h1>
+                <p className="text-sm text-white/60">Введите учётные данные, если запускаете приложение вне Telegram.</p>
+                {contextError && <p className="text-xs text-amber-300/90">{contextError}</p>}
+            </div>
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                    <Input
+                        placeholder="Логин"
+                        value={username}
+                        onChange={(event) => setUsername(event.target.value)}
+                        disabled={pending || loading}
+                        autoComplete="username"
+                    />
+                    <Input
+                        type="password"
+                        placeholder="Пароль"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        disabled={pending || loading}
+                        autoComplete="current-password"
+                    />
+                    {error && <p className="text-xs text-rose-300">{error}</p>}
                 </div>
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                    <div className="space-y-2">
-                        <Input
-                            placeholder="Логин"
-                            value={username}
-                            onChange={(event) => setUsername(event.target.value)}
-                            disabled={pending || loading}
-                            autoComplete="username"
-                        />
-                        <Input
-                            type="password"
-                            placeholder="Пароль"
-                            value={password}
-                            onChange={(event) => setPassword(event.target.value)}
-                            disabled={pending || loading}
-                            autoComplete="current-password"
-                        />
-                        {error && <p className="text-xs text-rose-300">{error}</p>}
-                    </div>
-                    <Button type="submit" className="w-full" disabled={pending || !username || !password}>
-                        {pending ? 'Проверяем…' : 'Войти'}
-                    </Button>
-                    {manualMode && <p className="text-center text-xs text-emerald-300">Сессия активна</p>}
-                </form>
-                <p className="text-xs text-white/50">
-                    Для быстрой работы используйте Telegram WebApp. Логин по паролю нужен только в браузере.
-                </p>
-            </Card>
-        </div>
+                <Button type="submit" className="w-full" disabled={pending || !username || !password}>
+                    {pending ? 'Проверяем…' : 'Войти'}
+                </Button>
+                {manualMode && <p className="text-center text-xs text-emerald-300">Сессия активна</p>}
+            </form>
+            <p className="text-xs text-white/50">
+                Для быстрой работы используйте Telegram WebApp. Логин по паролю нужен только в браузере.
+            </p>
+        </Card>
     );
+
+    if (embed) {
+        return card;
+    }
+
+    return <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">{card}</div>;
 }

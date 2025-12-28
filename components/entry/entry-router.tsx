@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTelegramContext } from '@/components/providers/telegram-provider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AdminDashboard } from '@/components/modules/admin-dashboard';
 import { AdminLoginGate } from '@/components/modules/admin-login';
 import { ManagerScreen } from '@/components/modules/manager-screen';
+import { ManagerPinLogin } from '@/components/modules/manager-pin-login';
 
 export const EntryRouter = () => {
     const { user, loading, error } = useTelegramContext();
+    const [mode, setMode] = useState<'manager' | 'admin'>('manager');
 
     const role = user?.role;
 
@@ -28,17 +30,15 @@ export const EntryRouter = () => {
         );
     }
 
-    if (error) {
-        return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-2 p-6 text-center text-rose-300">
-                <p className="text-lg font-semibold">Не удалось подключиться к Telegram</p>
-                <p className="text-sm text-white/60">{error}</p>
-            </div>
-        );
-    }
-
     if (!view) {
-        return <AdminLoginGate />;
+        if (mode === 'admin') {
+            return (
+                <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">
+                    <AdminLoginGate embed onBack={() => setMode('manager')} contextError={error} />
+                </div>
+            );
+        }
+        return <ManagerPinLogin onAdminMode={() => setMode('admin')} contextError={error} />;
     }
 
     return view;

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { resolveDevSession, resolveSessionFromInitData } from '@/lib/auth';
 import type { SessionUser } from '@/lib/types';
-import { resolveManualAdminSession } from '@/lib/server/manual-auth';
+import { resolveManualSession } from '@/lib/server/manual-session';
 
 export type AuthPayload = {
     initData?: string;
@@ -37,9 +37,9 @@ export const sessionFromPayload = async (payload?: AuthPayload): Promise<Session
     }
 
     if (payload.manualToken) {
-        const session = resolveManualAdminSession(payload.manualToken);
+        const session = resolveManualSession(payload.manualToken);
         if (!session) {
-            throw new Error('Manual admin session expired');
+            throw new Error('Manual session expired');
         }
         return session;
     }

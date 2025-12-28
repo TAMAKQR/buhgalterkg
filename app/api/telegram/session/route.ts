@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveDevSession, resolveSessionFromInitData } from '@/lib/auth';
-import { resolveManualAdminSession } from '@/lib/server/manual-auth';
+import { resolveManualSession } from '@/lib/server/manual-session';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         }
 
         if (body.manualToken) {
-            const session = resolveManualAdminSession(body.manualToken);
+            const session = resolveManualSession(body.manualToken);
             if (!session) {
                 return new NextResponse('Недействительная сессия', { status: 401 });
             }
