@@ -35,9 +35,8 @@ model Hotel {
   rooms           Room[]
   stays           RoomStay[]
   shifts          Shift[]
-  amountPaid        Int?
-  cashPaid          Int            @default(0)
-  cardPaid          Int            @default(0)
+}
+
 model HotelAssignment {
   id        String   @id @default(cuid())
   hotelId   String
