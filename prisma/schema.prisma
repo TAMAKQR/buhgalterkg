@@ -35,8 +35,9 @@ model Hotel {
   rooms           Room[]
   stays           RoomStay[]
   shifts          Shift[]
-}
-
+  amountPaid        Int?
+  cashPaid          Int            @default(0)
+  cardPaid          Int            @default(0)
 model HotelAssignment {
   id        String   @id @default(cuid())
   hotelId   String
@@ -87,6 +88,8 @@ model RoomStay {
   updatedAt         DateTime       @updatedAt
   amountPaid        Int?
   paymentMethod     PaymentMethod?
+  cashPaid          Int            @default(0)
+  cardPaid          Int            @default(0)
   currentRoom       Room?          @relation("RoomCurrentStay")
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])

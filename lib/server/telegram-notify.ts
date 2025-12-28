@@ -5,11 +5,6 @@ import { formatBishkekDateTime } from "@/lib/timezone";
 
 const TELEGRAM_API_BASE = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
-const paymentLabels: Record<PaymentMethod, string> = {
-    CARD: "Банковская карта",
-    CASH: "Наличные",
-};
-
 const formatDate = (value?: string | null) => formatBishkekDateTime(value, undefined, "не указано");
 
 const formatAmount = (value: number) => `${(value / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} KGS`;
@@ -20,13 +15,33 @@ export type CheckInNotificationPayload = {
     checkIn: string;
     checkOut?: string | null;
     amount: number;
-    paymentMethod: PaymentMethod;
+    paymentMethod?: PaymentMethod | null;
+    paymentDetails?: {
+        cashAmount?: number;
+        cardAmount?: number;
+    };
 };
 
 export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayload) => {
     if (!env.ADMIN_TELEGRAM_CHAT_ID) {
         return;
     }
+
+    const paymentLines = (() => {
+        const cash = payload.paymentDetails?.cashAmount ?? (payload.paymentMethod === PaymentMethod.CASH ? payload.amount : 0);
+        const card = payload.paymentDetails?.cardAmount ?? (payload.paymentMethod === PaymentMethod.CARD ? payload.amount : 0);
+
+        if (cash && card) {
+            return `Оплата: наличные ${formatAmount(cash)} + безнал ${formatAmount(card)}`;
+        }
+        if (cash) {
+            return `Оплата: наличные (${formatAmount(cash)})`;
+        }
+        if (card) {
+            return `Оплата: карта (${formatAmount(card)})`;
+        }
+        return payload.paymentMethod ? `Оплата: ${payload.paymentMethod}` : 'Оплата: не указано';
+    })();
 
     const text = [
         "🛎 Новое заселение",
@@ -35,7 +50,7 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         `Заезд: ${formatDate(payload.checkIn)}`,
         `Выезд: ${formatDate(payload.checkOut)}`,
         `Сумма: ${formatAmount(payload.amount)}`,
-        `Оплата: ${paymentLabels[payload.paymentMethod] ?? payload.paymentMethod}`,
+        paymentLines,
     ].join("\n");
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {

@@ -54,6 +54,8 @@ interface ManagerStateResponse {
             status: string;
             amountPaid?: number | null;
             paymentMethod?: 'CASH' | 'CARD' | null;
+            cashPaid?: number | null;
+            cardPaid?: number | null;
         } | null;
     }>;
 }
@@ -83,8 +85,8 @@ interface CheckInModalState {
     label: string;
     checkIn: string;
     checkOut: string;
-    amount: string;
-    method: 'CASH' | 'CARD';
+    cashAmount: string;
+    cardAmount: string;
 }
 
 type PanelKey = 'rooms' | 'shift' | 'cash';
@@ -237,8 +239,8 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
             label: room.label,
             checkIn: formatDateInputValue(startDate),
             checkOut: formatDateInputValue(endDate),
-            amount: '',
-            method: 'CASH'
+            cashAmount: '',
+            cardAmount: ''
         });
         setCheckInError(null);
     };
@@ -261,18 +263,21 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
             return;
         }
 
-        const paymentAmount = Number(checkInModal.amount);
-        if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
-            setCheckInError('Введите сумму оплаты');
+        const cashValue = Number(checkInModal.cashAmount || 0);
+        const cardValue = Number(checkInModal.cardAmount || 0);
+
+        if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0) {
+            setCheckInError('Сумма не может быть отрицательной или пустой');
             return;
         }
 
-        if (!checkInModal.method) {
-            setCheckInError('Выберите способ оплаты');
+        if (cashValue === 0 && cardValue === 0) {
+            setCheckInError('Укажите оплату наличными и/или безналичными');
             return;
         }
 
-        const amountMinor = toMinor(paymentAmount);
+        const cashMinor = toMinor(cashValue);
+        const cardMinor = toMinor(cardValue);
 
         setIsSubmittingCheckIn(true);
         try {
@@ -282,8 +287,8 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                     intent: 'checkin',
                     scheduledCheckIn: scheduledCheckIn.toISOString(),
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
-                    amountPaid: amountMinor,
-                    paymentMethod: checkInModal.method
+                    cashAmount: cashMinor,
+                    cardAmount: cardMinor
                 }
             });
             setCheckInModal(null);
@@ -461,12 +466,17 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                             {data?.rooms?.map((room) => {
                                 const isOccupied = room.status === 'OCCUPIED';
                                 const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
-                                const paymentLabel =
-                                    room.stay?.paymentMethod === 'CARD'
-                                        ? 'Безнал'
-                                        : room.stay?.paymentMethod === 'CASH'
-                                            ? 'Наличные'
-                                            : null;
+                                const cashPortion = room.stay?.cashPaid ?? 0;
+                                const cardPortion = room.stay?.cardPaid ?? 0;
+                                const paymentLabel = (() => {
+                                    const segments = [] as string[];
+                                    if (cashPortion) segments.push(`нал ${formatKgs(cashPortion)}`);
+                                    if (cardPortion) segments.push(`безнал ${formatKgs(cardPortion)}`);
+                                    if (!segments.length && room.stay?.paymentMethod) {
+                                        return room.stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
+                                    }
+                                    return segments.join(' · ') || null;
+                                })();
 
                                 return (
                                     <article key={room.id} className="rounded-2xl border border-white/10 p-4">
@@ -484,12 +494,12 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                             <p>Заезд: {room.stay ? formatBishkekDateTime(room.stay.scheduledCheckIn) : '—'}</p>
                                             <p>Выезд: {room.stay ? formatBishkekDateTime(room.stay.scheduledCheckOut) : '—'}</p>
                                         </div>
-                                        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                                        <div className="mt-3 space-y-1 text-sm">
                                             <p className="font-semibold text-white">
                                                 {room.stay?.amountPaid != null ? formatKgs(room.stay.amountPaid) : '—'}
                                             </p>
                                             {paymentLabel && (
-                                                <span className="text-xs uppercase tracking-[0.3em] text-white/50">{paymentLabel}</span>
+                                                <p className="text-xs uppercase tracking-[0.25em] text-white/50">{paymentLabel}</p>
                                             )}
                                         </div>
                                         <div className="mt-4 flex gap-3">
@@ -655,41 +665,49 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                     className="bg-white/10 text-white"
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-semibold uppercase text-white/60" htmlFor="modal-amount">
-                                    Сумма, KGS
-                                </label>
-                                <Input
-                                    id="modal-amount"
-                                    type="number"
-                                    step="0.01"
-                                    inputMode="decimal"
-                                    value={checkInModal.amount}
-                                    onChange={(event) =>
-                                        setCheckInModal((prev) => (prev ? { ...prev, amount: event.target.value } : prev))
-                                    }
-                                    placeholder="0.00"
-                                    className="bg-white/10 text-white"
-                                />
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold uppercase text-white/60" htmlFor="modal-cash">
+                                        Наличные, KGS
+                                    </label>
+                                    <Input
+                                        id="modal-cash"
+                                        type="number"
+                                        step="0.01"
+                                        inputMode="decimal"
+                                        value={checkInModal.cashAmount}
+                                        onChange={(event) =>
+                                            setCheckInModal((prev) =>
+                                                prev ? { ...prev, cashAmount: event.target.value } : prev
+                                            )
+                                        }
+                                        placeholder="0.00"
+                                        className="bg-white/10 text-white"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold uppercase text-white/60" htmlFor="modal-card">
+                                        Безнал, KGS
+                                    </label>
+                                    <Input
+                                        id="modal-card"
+                                        type="number"
+                                        step="0.01"
+                                        inputMode="decimal"
+                                        value={checkInModal.cardAmount}
+                                        onChange={(event) =>
+                                            setCheckInModal((prev) =>
+                                                prev ? { ...prev, cardAmount: event.target.value } : prev
+                                            )
+                                        }
+                                        placeholder="0.00"
+                                        className="bg-white/10 text-white"
+                                    />
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-semibold uppercase text-white/60" htmlFor="modal-method">
-                                    Способ оплаты
-                                </label>
-                                <Select
-                                    id="modal-method"
-                                    value={checkInModal.method}
-                                    onChange={(event) =>
-                                        setCheckInModal((prev) =>
-                                            prev ? { ...prev, method: event.target.value as 'CASH' | 'CARD' } : prev
-                                        )
-                                    }
-                                    className="bg-white/10 text-white"
-                                >
-                                    <option value="CASH">Наличные</option>
-                                    <option value="CARD">Безналичные</option>
-                                </Select>
-                            </div>
+                            <p className="text-xs text-white/50">
+                                Можно заполнить оба поля, если гость платит частично наличными и картой.
+                            </p>
                             {checkInError && <p className="text-sm text-rose-300">{checkInError}</p>}
                             <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                                 <Button

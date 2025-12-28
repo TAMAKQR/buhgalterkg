@@ -15,7 +15,9 @@ const staySchema = z.object({
     scheduledCheckIn: z.string().datetime().optional(),
     scheduledCheckOut: z.string().datetime().optional(),
     amountPaid: z.number().int().positive().optional(),
-    paymentMethod: z.nativeEnum(PaymentMethod).optional()
+    paymentMethod: z.nativeEnum(PaymentMethod).optional(),
+    cashAmount: z.number().int().nonnegative().optional(),
+    cardAmount: z.number().int().nonnegative().optional()
 });
 
 export async function POST(request: NextRequest, { params }: { params: { roomId: string } }) {
@@ -45,9 +47,28 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
         }
 
         if (payload.intent === 'checkin') {
-            if (!payload.amountPaid || !payload.paymentMethod) {
-                return new NextResponse('Укажите сумму и способ оплаты', { status: 400 });
+            const cashAmount =
+                payload.cashAmount ??
+                (payload.paymentMethod === PaymentMethod.CASH ? payload.amountPaid ?? 0 : 0);
+            const cardAmount =
+                payload.cardAmount ??
+                (payload.paymentMethod === PaymentMethod.CARD ? payload.amountPaid ?? 0 : 0);
+
+            if (!cashAmount && !cardAmount) {
+                return new NextResponse('Укажите сумму оплаты (наличные и/или безналичные)', { status: 400 });
             }
+
+            if (cashAmount < 0 || cardAmount < 0) {
+                return new NextResponse('Сумма не может быть отрицательной', { status: 400 });
+            }
+
+            const totalAmount = cashAmount + cardAmount;
+            const detectedMethod =
+                cashAmount && cardAmount
+                    ? null
+                    : cashAmount
+                        ? PaymentMethod.CASH
+                        : PaymentMethod.CARD;
 
             const stay = await prisma.roomStay.create({
                 data: {
@@ -61,8 +82,10 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     status: StayStatus.CHECKED_IN,
                     actualCheckIn: new Date(),
                     guestName: payload.guestName,
-                    amountPaid: payload.amountPaid,
-                    paymentMethod: payload.paymentMethod
+                    amountPaid: totalAmount,
+                    paymentMethod: detectedMethod,
+                    cashPaid: cashAmount,
+                    cardPaid: cardAmount
                 }
             });
 
@@ -74,17 +97,24 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 }
             });
 
-            await prisma.cashEntry.create({
-                data: {
-                    hotelId: room.hotelId,
-                    shiftId: payload.shiftId,
-                    managerId: shift?.managerId ?? session.id,
-                    entryType: LedgerEntryType.CASH_IN,
-                    method: payload.paymentMethod,
-                    amount: payload.amountPaid,
-                    note: `Заселение №${room.label}`
-                }
-            });
+            const ledgerPayloads = [
+                { amount: cashAmount, method: PaymentMethod.CASH },
+                { amount: cardAmount, method: PaymentMethod.CARD }
+            ].filter((entry) => entry.amount > 0);
+
+            for (const ledgerEntry of ledgerPayloads) {
+                await prisma.cashEntry.create({
+                    data: {
+                        hotelId: room.hotelId,
+                        shiftId: payload.shiftId,
+                        managerId: shift?.managerId ?? session.id,
+                        entryType: LedgerEntryType.CASH_IN,
+                        method: ledgerEntry.method,
+                        amount: ledgerEntry.amount,
+                        note: `Заселение №${room.label}`
+                    }
+                });
+            }
 
             const scheduledCheckOutIso = stay.scheduledCheckOut ? stay.scheduledCheckOut.toISOString() : undefined;
 
@@ -94,8 +124,12 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     roomLabel: room.label,
                     checkIn: stay.scheduledCheckIn.toISOString(),
                     checkOut: scheduledCheckOutIso,
-                    amount: payload.amountPaid,
-                    paymentMethod: payload.paymentMethod
+                    amount: totalAmount,
+                    paymentMethod: detectedMethod,
+                    paymentDetails: {
+                        cashAmount,
+                        cardAmount
+                    }
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram notification', notificationError);

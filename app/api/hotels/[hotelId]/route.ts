@@ -115,7 +115,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                             actualCheckIn: stay.actualCheckIn,
                             actualCheckOut: stay.actualCheckOut,
                             amountPaid: stay.amountPaid,
-                            paymentMethod: stay.paymentMethod
+                            paymentMethod: stay.paymentMethod,
+                            cashPaid: stay.cashPaid,
+                            cardPaid: stay.cardPaid
                         }
                         : null
                 };

@@ -63,6 +63,8 @@ interface HotelDetailPayload {
             actualCheckOut?: string | null;
             amountPaid?: number | null;
             paymentMethod?: string | null;
+            cashPaid?: number | null;
+            cardPaid?: number | null;
         } | null;
     }>;
     activeShift?: ShiftHistoryEntry | null;
@@ -756,11 +758,17 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                             const guestLabel = stay?.guestName?.trim() || (room.status === 'OCCUPIED' ? 'Гость' : '—');
                             const checkInLabel = stay ? formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn) : '—';
                             const checkOutLabel = stay ? formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut) : '—';
-                            const paymentLabel = stay?.paymentMethod === 'CARD'
-                                ? 'Безнал'
-                                : stay?.paymentMethod === 'CASH'
-                                    ? 'Наличные'
-                                    : undefined;
+                            const cashPortion = stay?.cashPaid ?? 0;
+                            const cardPortion = stay?.cardPaid ?? 0;
+                            const paymentLabel = (() => {
+                                const segments: string[] = [];
+                                if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
+                                if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
+                                if (!segments.length && stay?.paymentMethod) {
+                                    return stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
+                                }
+                                return segments.join(' · ') || undefined;
+                            })();
                             const stayStatusLabel = stay
                                 ? stay.status === 'CHECKED_IN'
                                     ? 'Заселён'

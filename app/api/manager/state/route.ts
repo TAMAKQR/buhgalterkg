@@ -146,7 +146,9 @@ export async function GET(request: NextRequest) {
                         scheduledCheckOut: room.stays[0].scheduledCheckOut,
                         status: room.stays[0].status,
                         amountPaid: room.stays[0].amountPaid,
-                        paymentMethod: room.stays[0].paymentMethod
+                        paymentMethod: room.stays[0].paymentMethod,
+                        cashPaid: room.stays[0].cashPaid,
+                        cardPaid: room.stays[0].cardPaid
                     }
                     : null
             }))
