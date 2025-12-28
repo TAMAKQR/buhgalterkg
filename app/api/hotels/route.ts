@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
-import { ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,23 +19,55 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const hotels = await prisma.hotel.findMany({
-            include: {
-                rooms: true,
-                shifts: {
-                    where: { status: ShiftStatus.OPEN },
-                    orderBy: { openedAt: 'desc' },
-                    take: 1,
-                    include: {
-                        manager: true
+        const [hotels, ledgerGroups] = await Promise.all([
+            prisma.hotel.findMany({
+                include: {
+                    rooms: true,
+                    shifts: {
+                        where: { status: ShiftStatus.OPEN },
+                        orderBy: { openedAt: 'desc' },
+                        take: 1,
+                        include: {
+                            manager: true
+                        }
+                    },
+                    assignments: {
+                        where: { isActive: true },
+                        include: { user: true }
                     }
-                },
-                assignments: {
-                    where: { isActive: true },
-                    include: { user: true }
                 }
-            }
+            }),
+            prisma.cashEntry.groupBy({
+                by: ['hotelId', 'entryType', 'method'],
+                _sum: { amount: true }
+            })
+        ]);
+
+        const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
+        const defaultLedger = () => ({
+            [LedgerEntryType.CASH_IN]: createBreakdown(),
+            [LedgerEntryType.CASH_OUT]: createBreakdown(),
+            [LedgerEntryType.MANAGER_PAYOUT]: createBreakdown(),
+            [LedgerEntryType.ADJUSTMENT]: createBreakdown()
         });
+
+        const ledgerMap = new Map<string, Record<LedgerEntryType, { total: number; cash: number; card: number }>>();
+
+        for (const group of ledgerGroups) {
+            const summary = ledgerMap.get(group.hotelId) ?? (() => {
+                const fresh = defaultLedger();
+                ledgerMap.set(group.hotelId, fresh);
+                return fresh;
+            })();
+            const bucket = summary[group.entryType];
+            const amount = group._sum?.amount ?? 0;
+            bucket.total += amount;
+            if (group.method === PaymentMethod.CASH) {
+                bucket.cash += amount;
+            } else if (group.method === PaymentMethod.CARD) {
+                bucket.card += amount;
+            }
+        }
 
         const payload = hotels.map((hotel) => ({
             id: hotel.id,
@@ -60,7 +92,20 @@ export async function GET(request: NextRequest) {
                     openingCash: hotel.shifts[0].openingCash,
                     number: hotel.shifts[0].number
                 }
-                : null
+                : null,
+            ledger: (() => {
+                const summary = ledgerMap.get(hotel.id) ?? defaultLedger();
+                const toBreakdown = (type: LedgerEntryType) => ({
+                    cash: summary[type].cash,
+                    card: summary[type].card
+                });
+                return {
+                    cashIn: summary[LedgerEntryType.CASH_IN].total,
+                    cashInBreakdown: toBreakdown(LedgerEntryType.CASH_IN),
+                    cashOut: summary[LedgerEntryType.CASH_OUT].total,
+                    cashOutBreakdown: toBreakdown(LedgerEntryType.CASH_OUT)
+                };
+            })()
         }));
 
         return NextResponse.json(payload);

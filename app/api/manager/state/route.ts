@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
 
         let shiftCash = shift ? shift.openingCash : null;
         let shiftPayments: { cash: number; card: number; total: number } | null = null;
+        let shiftExpenses: number | null = null;
         let shiftLedger: Array<{
             id: string;
             entryType: LedgerEntryType;
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
             recordedAt: Date;
         }> = [];
         if (shift) {
-            const [ledgerGroups, paymentGroups, recentLedger] = await Promise.all([
+            const [ledgerGroups, paymentGroups, ledgerEntries] = await Promise.all([
                 prisma.cashEntry.groupBy({
                     by: ['entryType'],
                     where: { shiftId: shift.id },
@@ -67,7 +68,6 @@ export async function GET(request: NextRequest) {
                 prisma.cashEntry.findMany({
                     where: { shiftId: shift.id },
                     orderBy: { recordedAt: 'desc' },
-                    take: 10,
                     select: {
                         id: true,
                         entryType: true,
@@ -106,13 +106,16 @@ export async function GET(request: NextRequest) {
                 ledgerTotals[LedgerEntryType.MANAGER_PAYOUT] +
                 ledgerTotals[LedgerEntryType.ADJUSTMENT];
 
+            shiftExpenses =
+                ledgerTotals[LedgerEntryType.CASH_OUT] + ledgerTotals[LedgerEntryType.MANAGER_PAYOUT];
+
             shiftPayments = {
                 cash: paymentTotals[PaymentMethod.CASH],
                 card: paymentTotals[PaymentMethod.CARD],
                 total: paymentTotals[PaymentMethod.CASH] + paymentTotals[PaymentMethod.CARD]
             };
 
-            shiftLedger = recentLedger;
+            shiftLedger = ledgerEntries;
         }
 
         const serializedLedger = shiftLedger.map((entry) => ({
@@ -128,6 +131,7 @@ export async function GET(request: NextRequest) {
             },
             shift,
             shiftCash,
+            shiftExpenses,
             shiftPayments,
             shiftLedger: serializedLedger,
             rooms: hotel.rooms.map((room) => ({

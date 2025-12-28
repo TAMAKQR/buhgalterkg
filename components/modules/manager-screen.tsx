@@ -391,21 +391,47 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                 <header className="space-y-4">
                     <h1 className="text-3xl font-semibold text-white">{managerName}</h1>
                     {data?.shift ? (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <Badge label={`Смена №${data.shift.number}`} />
-                            <Badge label={`Открыта ${formatBishkekDateTime(data.shift.openedAt)}`} tone="success" />
-                            <Badge label={`Остаток ${formatKgs(shiftCashValue)}`} />
-                            <Badge label={`Расходы ${formatKgs(shiftExpensesValue)}`} tone="warning" />
+                        <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                            <div className="flex flex-wrap items-baseline justify-between gap-3 text-white/80">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Смена</p>
+                                    <p className="text-lg font-semibold text-white">№{data.shift.number}</p>
+                                </div>
+                                <div className="text-right text-sm">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Открыта</p>
+                                    <p>{formatBishkekDateTime(data.shift.openedAt)}</p>
+                                </div>
+                            </div>
+                            <p className="text-sm text-white/70">Остаток на начало: {formatKgs(data.shift.openingCash)}</p>
+                            {shiftPayments && (
+                                <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-3">
+                                    <div className="rounded-xl border border-white/10 p-3">
+                                        <p className="text-xs uppercase tracking-[0.35em] text-white/40">Наличные</p>
+                                        <p className="text-base font-semibold text-white">{formatKgs(shiftPayments.cash)}</p>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 p-3">
+                                        <p className="text-xs uppercase tracking-[0.35em] text-white/40">Безналичные</p>
+                                        <p className="text-base font-semibold text-white">{formatKgs(shiftPayments.card)}</p>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 p-3">
+                                        <p className="text-xs uppercase tracking-[0.35em] text-white/40">Общий доход</p>
+                                        <p className="text-base font-semibold text-white">{formatKgs(shiftPayments.total)}</p>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-2">
+                                <div className="rounded-xl border border-white/10 p-3">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Операции</p>
+                                    <p className="text-base font-semibold text-white">{formatKgs(shiftExpensesValue)}</p>
+                                </div>
+                                <div className="rounded-xl border border-white/10 p-3">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Факт в кассе</p>
+                                    <p className="text-base font-semibold text-white">{formatKgs(shiftCashValue)}</p>
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         <p className="mt-3 text-sm text-amber-200/80">Смена не открыта</p>
-                    )}
-                    {data?.shift && shiftPayments && (
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <Badge label={`Наличные ${formatKgs(shiftPayments.cash)}`} />
-                            <Badge label={`Безнал ${formatKgs(shiftPayments.card)}`} />
-                            <Badge label={`Поступления ${formatKgs(shiftPayments.total)}`} />
-                        </div>
                     )}
                 </header>
                 <div className="sticky top-0 z-10 -mx-4 mb-2 mt-4 bg-slate-900/90 p-4 pb-3 backdrop-blur">

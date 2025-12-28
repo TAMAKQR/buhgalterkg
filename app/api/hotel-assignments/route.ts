@@ -25,6 +25,10 @@ const updateAssignmentSchema = z
         message: 'Нет данных для обновления'
     });
 
+const deleteAssignmentSchema = z.object({
+    assignmentId: z.string().cuid()
+});
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -173,5 +177,37 @@ export async function PATCH(request: NextRequest) {
         }
         console.error(error);
         return new NextResponse('Failed to update manager assignment', { status: 500 });
+    }
+}
+
+export async function DELETE(request: NextRequest) {
+    try {
+        const body = await request.json().catch(() => ({}));
+        const { initData, devOverride, manualToken, ...rest } = body ?? {};
+        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        assertAdmin(session);
+
+        const payload = deleteAssignmentSchema.parse(rest);
+
+        const assignment = await prisma.hotelAssignment.findUnique({ where: { id: payload.assignmentId } });
+        if (!assignment) {
+            return new NextResponse('Assignment not found', { status: 404 });
+        }
+
+        await prisma.hotelAssignment.update({
+            where: { id: assignment.id },
+            data: {
+                isActive: false,
+                pinCode: null
+            }
+        });
+
+        return NextResponse.json({ success: true, assignmentId: assignment.id });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return new NextResponse(error.message, { status: 400 });
+        }
+        console.error(error);
+        return new NextResponse('Failed to remove manager', { status: 500 });
     }
 }

@@ -28,7 +28,13 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 where: { id: params.hotelId },
                 include: {
                     rooms: {
-                        orderBy: { label: 'asc' }
+                        orderBy: { label: 'asc' },
+                        include: {
+                            stays: {
+                                orderBy: { scheduledCheckIn: 'desc' },
+                                take: 1
+                            }
+                        }
                     },
                     shifts: {
                         where: { status: ShiftStatus.OPEN },
@@ -73,13 +79,29 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             notes: hotel.notes,
             roomCount: hotel.rooms.length,
             occupiedRooms: hotel.rooms.filter((room) => room.status !== 'AVAILABLE').length,
-            rooms: hotel.rooms.map((room) => ({
-                id: room.id,
-                label: room.label,
-                status: room.status,
-                isActive: room.isActive,
-                notes: room.notes
-            })),
+            rooms: hotel.rooms.map((room) => {
+                const stay = room.stays[0];
+                return {
+                    id: room.id,
+                    label: room.label,
+                    status: room.status,
+                    isActive: room.isActive,
+                    notes: room.notes,
+                    stay: stay
+                        ? {
+                            id: stay.id,
+                            guestName: stay.guestName,
+                            status: stay.status,
+                            scheduledCheckIn: stay.scheduledCheckIn,
+                            scheduledCheckOut: stay.scheduledCheckOut,
+                            actualCheckIn: stay.actualCheckIn,
+                            actualCheckOut: stay.actualCheckOut,
+                            amountPaid: stay.amountPaid,
+                            paymentMethod: stay.paymentMethod
+                        }
+                        : null
+                };
+            }),
             managers: hotel.assignments.map((assignment) => ({
                 assignmentId: assignment.id,
                 id: assignment.user.id,

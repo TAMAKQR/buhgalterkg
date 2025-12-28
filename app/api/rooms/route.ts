@@ -18,6 +18,10 @@ const createRoomsSchema = z.object({
         .min(1)
 });
 
+const deleteRoomSchema = z.object({
+    roomId: z.string().cuid()
+});
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -85,5 +89,38 @@ export async function POST(request: NextRequest) {
         }
         console.error(error);
         return new NextResponse('Failed to create rooms', { status: 500 });
+    }
+}
+
+export async function DELETE(request: NextRequest) {
+    try {
+        const body = await request.json().catch(() => ({}));
+        const { initData, devOverride, manualToken, ...rest } = body ?? {};
+        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        assertAdmin(session);
+
+        const payload = deleteRoomSchema.parse(rest);
+
+        const room = await prisma.room.findUnique({ where: { id: payload.roomId } });
+        if (!room) {
+            return new NextResponse('Room not found', { status: 404 });
+        }
+
+        if (room.currentStayId) {
+            return new NextResponse('Нельзя удалить номер с активным гостем', { status: 400 });
+        }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.roomStay.deleteMany({ where: { roomId: room.id } });
+            await tx.room.delete({ where: { id: room.id } });
+        });
+
+        return NextResponse.json({ success: true, roomId: room.id });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return new NextResponse(error.message, { status: 400 });
+        }
+        console.error(error);
+        return new NextResponse('Failed to delete room', { status: 500 });
     }
 }
