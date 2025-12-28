@@ -88,7 +88,7 @@ const formatCurrency = (value: number) => `${(value / 100).toLocaleString('ru-RU
 const formatStayDate = (value?: string | null) => formatBishkekDateTime(value);
 
 export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
-    const { user, manualMode, logout } = useTelegramContext();
+    const { user } = useTelegramContext();
     const router = useRouter();
     const { get, request } = useApi();
 
@@ -108,17 +108,6 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
     const roomForm = useForm<CreateRoomsForm>({
         defaultValues: { roomLabels: '' }
     });
-
-    const manualExitButton = manualMode ? (
-        <button
-            type="button"
-            onClick={logout}
-            className="fixed right-4 top-4 z-30 rounded-full border border-white/20 bg-slate-900/70 p-2 text-white/70 shadow-lg backdrop-blur transition hover:border-white hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-            aria-label="Выйти"
-        >
-            <span className="text-lg leading-none">×</span>
-        </button>
-    ) : null;
 
     const selectedAssignmentId = updateManagerForm.watch('assignmentId');
     const selectedManager = (data?.managers ?? []).find((manager) => manager.assignmentId === selectedAssignmentId);
@@ -200,43 +189,34 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
 
     if (user && user.role !== 'ADMIN') {
         return (
-            <>
-                {manualExitButton}
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-white/70">
-                    <p>Только администраторы могут управлять точками.</p>
-                    <Button onClick={() => router.push('/')}>Вернуться</Button>
-                </div>
-            </>
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-white/70">
+                <p>Только администраторы могут управлять точками.</p>
+                <Button onClick={() => router.push('/')}>Вернуться</Button>
+            </div>
         );
     }
 
     if (isLoading || !data) {
         return (
-            <>
-                {manualExitButton}
-                <div className="flex min-h-screen flex-col gap-4 p-6">
-                    <div className="flex items-center justify-between">
-                        <Skeleton className="h-10 w-48" />
-                        <Skeleton className="h-10 w-24" />
-                    </div>
-                    <Skeleton className="h-24" />
-                    <Skeleton className="h-40" />
-                    <Skeleton className="h-72" />
+            <div className="flex min-h-screen flex-col gap-4 p-6">
+                <div className="flex items-center justify-between">
+                    <Skeleton className="h-10 w-48" />
+                    <Skeleton className="h-10 w-24" />
                 </div>
-            </>
+                <Skeleton className="h-24" />
+                <Skeleton className="h-40" />
+                <Skeleton className="h-72" />
+            </div>
         );
     }
 
     if (error) {
         return (
-            <>
-                {manualExitButton}
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
-                    <p>Не удалось загрузить данные точки</p>
-                    <p className="text-sm text-white/60">{String(error)}</p>
-                    <Button onClick={() => router.refresh()}>Повторить</Button>
-                </div>
-            </>
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
+                <p>Не удалось загрузить данные точки</p>
+                <p className="text-sm text-white/60">{String(error)}</p>
+                <Button onClick={() => router.refresh()}>Повторить</Button>
+            </div>
         );
     }
 
@@ -316,335 +296,332 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
     });
 
     return (
-        <>
-            {manualExitButton}
-            <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="text-xs uppercase tracking-[0.4em] text-white/60">Точка</p>
-                        <h1 className="text-4xl font-semibold text-white">{data.name}</h1>
-                        <p className="text-white/60">{data.address}</p>
-                    </div>
-                    <Link href="/">
-                        <Button variant="ghost">Назад</Button>
-                    </Link>
+        <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs uppercase tracking-[0.4em] text-white/60">Точка</p>
+                    <h1 className="text-4xl font-semibold text-white">{data.name}</h1>
+                    <p className="text-white/60">{data.address}</p>
                 </div>
+                <Link href="/">
+                    <Button variant="ghost">Назад</Button>
+                </Link>
+            </div>
 
-                <section className="grid gap-4 md:grid-cols-3">
-                    <Card>
-                        <CardHeader title="Номеров" subtitle="Под учётом" />
-                        <p className="text-4xl font-semibold text-white">{data.roomCount}</p>
-                    </Card>
-                    <Card>
-                        <CardHeader title="Занято" subtitle="Сейчас" />
-                        <p className="text-4xl font-semibold text-white">{`${data.occupiedRooms}/${data.roomCount}`}</p>
-                    </Card>
-                    <Card>
-                        <CardHeader title="Менеджеры" subtitle="Назначено" />
-                        <p className="text-4xl font-semibold text-white">{data.managers.length}</p>
-                    </Card>
-                </section>
-
+            <section className="grid gap-4 md:grid-cols-3">
                 <Card>
-                    <CardHeader title="Смена" subtitle="Статус" />
-                    {data.activeShift ? (
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
-                            <Badge label={`Смена №${data.activeShift.number}`} />
-                            <Badge label={`Менеджер ${data.activeShift.manager}`} tone="success" />
-                            <p>Открыта {formatBishkekDateTime(data.activeShift.openedAt)}</p>
-                            <p>Касса {data.activeShift.openingCash / 100} KGS</p>
-                        </div>
-                    ) : (
-                        <p className="text-sm text-white/60">Активной смены нет</p>
-                    )}
-                    <div className="mt-4 rounded-2xl border border-white/10 p-3">
-                        <p className="text-xs text-white/60">Удаляются все закрытые смены и связанные кассовые операции.</p>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            className="mt-2 w-full border border-white/10 text-sm text-white/80 hover:bg-white/10"
-                            onClick={handleClearShiftHistory}
-                            disabled={isClearingHistory}
-                        >
-                            {isClearingHistory ? 'Очищаем…' : 'Очистить историю смен'}
-                        </Button>
-                    </div>
+                    <CardHeader title="Номеров" subtitle="Под учётом" />
+                    <p className="text-4xl font-semibold text-white">{data.roomCount}</p>
                 </Card>
-
                 <Card>
-                    <CardHeader title="Финансы" subtitle="Только этот отель" />
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <CardHeader title="Занято" subtitle="Сейчас" />
+                    <p className="text-4xl font-semibold text-white">{`${data.occupiedRooms}/${data.roomCount}`}</p>
+                </Card>
+                <Card>
+                    <CardHeader title="Менеджеры" subtitle="Назначено" />
+                    <p className="text-4xl font-semibold text-white">{data.managers.length}</p>
+                </Card>
+            </section>
+
+            <Card>
+                <CardHeader title="Смена" subtitle="Статус" />
+                {data.activeShift ? (
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
+                        <Badge label={`Смена №${data.activeShift.number}`} />
+                        <Badge label={`Менеджер ${data.activeShift.manager}`} tone="success" />
+                        <p>Открыта {formatBishkekDateTime(data.activeShift.openedAt)}</p>
+                        <p>Касса {data.activeShift.openingCash / 100} KGS</p>
+                    </div>
+                ) : (
+                    <p className="text-sm text-white/60">Активной смены нет</p>
+                )}
+                <div className="mt-4 rounded-2xl border border-white/10 p-3">
+                    <p className="text-xs text-white/60">Удаляются все закрытые смены и связанные кассовые операции.</p>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className="mt-2 w-full border border-white/10 text-sm text-white/80 hover:bg-white/10"
+                        onClick={handleClearShiftHistory}
+                        disabled={isClearingHistory}
+                    >
+                        {isClearingHistory ? 'Очищаем…' : 'Очистить историю смен'}
+                    </Button>
+                </div>
+            </Card>
+
+            <Card>
+                <CardHeader title="Финансы" subtitle="Только этот отель" />
+                <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 p-4">
+                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">Чистый поток</p>
+                        <p className="text-3xl font-semibold text-white">{formatCurrency(data.financials.netCash)}</p>
+                        <p className="text-xs text-white/60">С учётом корректировок</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <div className="rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Чистый поток</p>
-                            <p className="text-3xl font-semibold text-white">{formatCurrency(data.financials.netCash)}</p>
-                            <p className="text-xs text-white/60">С учётом корректировок</p>
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Поступления</p>
+                            <p className="text-xl font-semibold text-emerald-300">{formatCurrency(data.financials.cashIn)}</p>
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-2xl border border-white/10 p-4">
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Поступления</p>
-                                <p className="text-xl font-semibold text-emerald-300">{formatCurrency(data.financials.cashIn)}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 p-4">
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Списания</p>
-                                <p className="text-xl font-semibold text-rose-300">{formatCurrency(data.financials.cashOut)}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 p-4">
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Платежи менеджерам</p>
-                                <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.payouts)}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 p-4">
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Корректировки</p>
-                                <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.adjustments)}</p>
-                            </div>
+                        <div className="rounded-2xl border border-white/10 p-4">
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Списания</p>
+                            <p className="text-xl font-semibold text-rose-300">{formatCurrency(data.financials.cashOut)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 p-4">
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Платежи менеджерам</p>
+                            <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.payouts)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 p-4">
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Корректировки</p>
+                            <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.adjustments)}</p>
                         </div>
                     </div>
-                </Card>
+                </div>
+            </Card>
 
-                <section className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader title="Менеджеры" subtitle="Управление назначениями" />
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                {data.managers.length ? (
-                                    data.managers.map((manager) => (
-                                        <div key={manager.assignmentId} className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <div>
-                                                <p className="text-sm font-medium text-white">{manager.displayName}</p>
-                                                <p className="text-xs text-white/50">
-                                                    ID: {manager.telegramId}
-                                                    {manager.username ? ` • @${manager.username}` : ''}
-                                                    {manager.pinCode ? ` • PIN ${manager.pinCode}` : ''}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <Badge label="Менеджер" />
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="border border-white/10 text-xs text-white/80 hover:bg-white/10"
-                                                    onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
-                                                >
-                                                    Редактировать
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
-                                                    onClick={() => handleRemoveManager(manager.assignmentId)}
-                                                    disabled={removingManagerId === manager.assignmentId}
-                                                >
-                                                    {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
-                                                </Button>
-                                            </div>
+            <section className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                    <CardHeader title="Менеджеры" subtitle="Управление назначениями" />
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            {data.managers.length ? (
+                                data.managers.map((manager) => (
+                                    <div key={manager.assignmentId} className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <p className="text-sm font-medium text-white">{manager.displayName}</p>
+                                            <p className="text-xs text-white/50">
+                                                ID: {manager.telegramId}
+                                                {manager.username ? ` • @${manager.username}` : ''}
+                                                {manager.pinCode ? ` • PIN ${manager.pinCode}` : ''}
+                                            </p>
                                         </div>
-                                    ))
-                                ) : (
-                                    <p className="text-sm text-white/60">Назначений пока нет</p>
-                                )}
-                            </div>
-                            <form className="space-y-3" onSubmit={handleAddManager}>
-                                <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: true })} />
-                                {managerForm.formState.errors.displayName && (
-                                    <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
-                                )}
-                                <Input placeholder="Telegram ID" {...managerForm.register('telegramId', { required: true })} />
-                                {managerForm.formState.errors.telegramId && (
-                                    <p className="text-xs text-rose-300">{managerForm.formState.errors.telegramId.message}</p>
+                                        <div className="flex items-center gap-2">
+                                            <Badge label="Менеджер" />
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-white/10 text-xs text-white/80 hover:bg-white/10"
+                                                onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
+                                            >
+                                                Редактировать
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
+                                                onClick={() => handleRemoveManager(manager.assignmentId)}
+                                                disabled={removingManagerId === manager.assignmentId}
+                                            >
+                                                {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-white/60">Назначений пока нет</p>
+                            )}
+                        </div>
+                        <form className="space-y-3" onSubmit={handleAddManager}>
+                            <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: true })} />
+                            {managerForm.formState.errors.displayName && (
+                                <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
+                            )}
+                            <Input placeholder="Telegram ID" {...managerForm.register('telegramId', { required: true })} />
+                            {managerForm.formState.errors.telegramId && (
+                                <p className="text-xs text-rose-300">{managerForm.formState.errors.telegramId.message}</p>
+                            )}
+                            <Input
+                                placeholder="PIN (6 цифр)"
+                                maxLength={6}
+                                inputMode="numeric"
+                                {...managerForm.register('pinCode', {
+                                    required: 'Укажите PIN',
+                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
+                                })}
+                            />
+                            {managerForm.formState.errors.pinCode && (
+                                <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
+                            )}
+                            <Input placeholder="@username (необязательно)" {...managerForm.register('username')} />
+                            <Button type="submit" className="w-full">
+                                Добавить менеджера
+                            </Button>
+                        </form>
+                        {data.managers.length > 0 && (
+                            <form className="space-y-3" onSubmit={handleUpdateManager}>
+                                <select
+                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                    defaultValue=""
+                                    {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
+                                >
+                                    <option value="" className="bg-slate-900 text-white">
+                                        Выберите менеджера для обновления
+                                    </option>
+                                    {data.managers.map((manager) => (
+                                        <option key={`edit-${manager.assignmentId}`} value={manager.assignmentId} className="bg-slate-900 text-white">
+                                            {manager.displayName}
+                                        </option>
+                                    ))}
+                                </select>
+                                {updateManagerForm.formState.errors.assignmentId && (
+                                    <p className="text-xs text-rose-300">
+                                        {updateManagerForm.formState.errors.assignmentId.message}
+                                    </p>
                                 )}
                                 <Input
-                                    placeholder="PIN (6 цифр)"
+                                    placeholder={selectedManager ? `Новое имя (сейчас ${selectedManager.displayName})` : 'Новое имя менеджера'}
+                                    {...updateManagerForm.register('displayName')}
+                                />
+                                <Input
+                                    placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
+                                    {...updateManagerForm.register('username')}
+                                />
+                                <Input
+                                    placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
                                     maxLength={6}
                                     inputMode="numeric"
-                                    {...managerForm.register('pinCode', {
-                                        required: 'Укажите PIN',
-                                        minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                        maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                        pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
+                                    {...updateManagerForm.register('pinCode', {
+                                        validate: (value) => {
+                                            if (!value.trim()) {
+                                                return true;
+                                            }
+                                            return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
+                                        }
                                     })}
                                 />
-                                {managerForm.formState.errors.pinCode && (
-                                    <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
-                                )}
-                                <Input placeholder="@username (необязательно)" {...managerForm.register('username')} />
-                                <Button type="submit" className="w-full">
-                                    Добавить менеджера
-                                </Button>
-                            </form>
-                            {data.managers.length > 0 && (
-                                <form className="space-y-3" onSubmit={handleUpdateManager}>
-                                    <select
-                                        className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
-                                        defaultValue=""
-                                        {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
-                                    >
-                                        <option value="" className="bg-slate-900 text-white">
-                                            Выберите менеджера для обновления
-                                        </option>
-                                        {data.managers.map((manager) => (
-                                            <option key={`edit-${manager.assignmentId}`} value={manager.assignmentId} className="bg-slate-900 text-white">
-                                                {manager.displayName}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {updateManagerForm.formState.errors.assignmentId && (
-                                        <p className="text-xs text-rose-300">
-                                            {updateManagerForm.formState.errors.assignmentId.message}
-                                        </p>
-                                    )}
-                                    <Input
-                                        placeholder={selectedManager ? `Новое имя (сейчас ${selectedManager.displayName})` : 'Новое имя менеджера'}
-                                        {...updateManagerForm.register('displayName')}
-                                    />
-                                    <Input
-                                        placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
-                                        {...updateManagerForm.register('username')}
-                                    />
-                                    <Input
-                                        placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
-                                        maxLength={6}
-                                        inputMode="numeric"
-                                        {...updateManagerForm.register('pinCode', {
-                                            validate: (value) => {
-                                                if (!value.trim()) {
-                                                    return true;
-                                                }
-                                                return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
-                                            }
-                                        })}
-                                    />
-                                    {updateManagerForm.formState.errors.pinCode && (
-                                        <p className="text-xs text-rose-300">
-                                            {updateManagerForm.formState.errors.pinCode.message}
-                                        </p>
-                                    )}
-                                    <Button type="submit" className="w-full" variant="secondary">
-                                        Обновить менеджера
-                                    </Button>
-                                    <p className="text-xs text-white/50">
-                                        Заполните только те поля, которые хотите изменить. Остальные можно оставить пустыми.
+                                {updateManagerForm.formState.errors.pinCode && (
+                                    <p className="text-xs text-rose-300">
+                                        {updateManagerForm.formState.errors.pinCode.message}
                                     </p>
-                                </form>
-                            )}
-                        </div>
-                    </Card>
-
-                    <Card>
-                        <CardHeader title="Номера" subtitle="Массовое добавление" />
-                        <form className="space-y-3" onSubmit={handleAddRooms}>
-                            <TextArea
-                                rows={6}
-                                placeholder="Номера через запятую или с новой строки: 101, 102"
-                                {...roomForm.register('roomLabels', { required: true })}
-                            />
-                            {roomForm.formState.errors.roomLabels && (
-                                <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
-                            )}
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
-                                <Input placeholder="Комментарий" {...roomForm.register('notes')} />
-                            </div>
-                            <Button type="submit" className="w-full">
-                                Добавить номера
-                            </Button>
-                            <p className="text-xs text-white/50">
-                                Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
-                            </p>
-                        </form>
-                    </Card>
-                </section>
-
-                <Card>
-                    <CardHeader title="Список номеров" subtitle="По алфавиту" />
-                    <div className="grid gap-3 md:grid-cols-2">
-                        {data.rooms.length ? (
-                            data.rooms.map((room) => {
-                                const stay = room.stay ?? null;
-                                const guestLabel = stay?.guestName?.trim() || (room.status === 'OCCUPIED' ? 'Гость' : '—');
-                                const checkInLabel = stay ? formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn) : '—';
-                                const checkOutLabel = stay ? formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut) : '—';
-                                const paymentLabel = stay?.paymentMethod === 'CARD'
-                                    ? 'Безнал'
-                                    : stay?.paymentMethod === 'CASH'
-                                        ? 'Наличные'
-                                        : undefined;
-                                const stayStatusLabel = stay
-                                    ? stay.status === 'CHECKED_IN'
-                                        ? 'Заселён'
-                                        : stay.status === 'CHECKED_OUT'
-                                            ? 'Выселен'
-                                            : stay.status === 'SCHEDULED'
-                                                ? 'Запланирован'
-                                                : 'Отменён'
-                                    : null;
-
-                                return (
-                                    <div key={room.id} className="rounded-2xl border border-white/10 p-4">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
-                                                <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
-                                            </div>
-                                            <div className="flex flex-col items-end gap-2 text-right">
-                                                <Badge
-                                                    label={
-                                                        room.status === 'OCCUPIED'
-                                                            ? 'Занят'
-                                                            : room.status === 'DIRTY'
-                                                                ? 'Уборка'
-                                                                : room.status === 'HOLD'
-                                                                    ? 'Бронь'
-                                                                    : 'Свободен'
-                                                    }
-                                                    tone={
-                                                        room.status === 'OCCUPIED'
-                                                            ? 'warning'
-                                                            : room.status === 'DIRTY'
-                                                                ? 'danger'
-                                                                : room.status === 'HOLD'
-                                                                    ? 'default'
-                                                                    : 'success'
-                                                    }
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="text-[11px] text-rose-200 hover:bg-rose-500/10"
-                                                    onClick={() => handleDeleteRoom(room.id)}
-                                                    disabled={removingRoomId === room.id}
-                                                >
-                                                    {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
-                                        {stay ? (
-                                            <div className="mt-3 space-y-1 text-sm text-white/70">
-                                                <p>Гость: {guestLabel}</p>
-                                                <p>Заезд: {checkInLabel}</p>
-                                                <p>Выезд: {checkOutLabel}</p>
-                                                {stayStatusLabel && <p>Статус: {stayStatusLabel}</p>}
-                                                {stay.amountPaid != null && (
-                                                    <p>
-                                                        Оплата: {formatCurrency(stay.amountPaid)}
-                                                        {paymentLabel ? ` • ${paymentLabel}` : ''}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
-                                        )}
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <p className="text-sm text-white/60">Номеров пока нет</p>
+                                )}
+                                <Button type="submit" className="w-full" variant="secondary">
+                                    Обновить менеджера
+                                </Button>
+                                <p className="text-xs text-white/50">
+                                    Заполните только те поля, которые хотите изменить. Остальные можно оставить пустыми.
+                                </p>
+                            </form>
                         )}
                     </div>
                 </Card>
-            </div>
-        </>
+
+                <Card>
+                    <CardHeader title="Номера" subtitle="Массовое добавление" />
+                    <form className="space-y-3" onSubmit={handleAddRooms}>
+                        <TextArea
+                            rows={6}
+                            placeholder="Номера через запятую или с новой строки: 101, 102"
+                            {...roomForm.register('roomLabels', { required: true })}
+                        />
+                        {roomForm.formState.errors.roomLabels && (
+                            <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
+                        )}
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
+                            <Input placeholder="Комментарий" {...roomForm.register('notes')} />
+                        </div>
+                        <Button type="submit" className="w-full">
+                            Добавить номера
+                        </Button>
+                        <p className="text-xs text-white/50">
+                            Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
+                        </p>
+                    </form>
+                </Card>
+            </section>
+
+            <Card>
+                <CardHeader title="Список номеров" subtitle="По алфавиту" />
+                <div className="grid gap-3 md:grid-cols-2">
+                    {data.rooms.length ? (
+                        data.rooms.map((room) => {
+                            const stay = room.stay ?? null;
+                            const guestLabel = stay?.guestName?.trim() || (room.status === 'OCCUPIED' ? 'Гость' : '—');
+                            const checkInLabel = stay ? formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn) : '—';
+                            const checkOutLabel = stay ? formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut) : '—';
+                            const paymentLabel = stay?.paymentMethod === 'CARD'
+                                ? 'Безнал'
+                                : stay?.paymentMethod === 'CASH'
+                                    ? 'Наличные'
+                                    : undefined;
+                            const stayStatusLabel = stay
+                                ? stay.status === 'CHECKED_IN'
+                                    ? 'Заселён'
+                                    : stay.status === 'CHECKED_OUT'
+                                        ? 'Выселен'
+                                        : stay.status === 'SCHEDULED'
+                                            ? 'Запланирован'
+                                            : 'Отменён'
+                                : null;
+
+                            return (
+                                <div key={room.id} className="rounded-2xl border border-white/10 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
+                                            <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-2 text-right">
+                                            <Badge
+                                                label={
+                                                    room.status === 'OCCUPIED'
+                                                        ? 'Занят'
+                                                        : room.status === 'DIRTY'
+                                                            ? 'Уборка'
+                                                            : room.status === 'HOLD'
+                                                                ? 'Бронь'
+                                                                : 'Свободен'
+                                                }
+                                                tone={
+                                                    room.status === 'OCCUPIED'
+                                                        ? 'warning'
+                                                        : room.status === 'DIRTY'
+                                                            ? 'danger'
+                                                            : room.status === 'HOLD'
+                                                                ? 'default'
+                                                                : 'success'
+                                                }
+                                            />
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="text-[11px] text-rose-200 hover:bg-rose-500/10"
+                                                onClick={() => handleDeleteRoom(room.id)}
+                                                disabled={removingRoomId === room.id}
+                                            >
+                                                {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
+                                    {stay ? (
+                                        <div className="mt-3 space-y-1 text-sm text-white/70">
+                                            <p>Гость: {guestLabel}</p>
+                                            <p>Заезд: {checkInLabel}</p>
+                                            <p>Выезд: {checkOutLabel}</p>
+                                            {stayStatusLabel && <p>Статус: {stayStatusLabel}</p>}
+                                            {stay.amountPaid != null && (
+                                                <p>
+                                                    Оплата: {formatCurrency(stay.amountPaid)}
+                                                    {paymentLabel ? ` • ${paymentLabel}` : ''}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
+                                    )}
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <p className="text-sm text-white/60">Номеров пока нет</p>
+                    )}
+                </div>
+            </Card>
+        </div>
     );
 };
