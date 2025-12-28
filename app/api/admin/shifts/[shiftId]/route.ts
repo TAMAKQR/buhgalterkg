@@ -29,7 +29,9 @@ const normalizeNullableString = (value?: string | null) => {
     return value ?? null;
 };
 
-const normalizeDate = (value?: string | null, allowNull = false) => {
+function normalizeDate(value?: string | null): Date | undefined;
+function normalizeDate(value: string | null | undefined, allowNull: true): Date | null | undefined;
+function normalizeDate(value?: string | null, allowNull = false) {
     if (value === undefined) {
         return undefined;
     }
@@ -37,7 +39,7 @@ const normalizeDate = (value?: string | null, allowNull = false) => {
         return allowNull ? null : undefined;
     }
     return new Date(value);
-};
+}
 
 export async function PATCH(request: NextRequest, { params }: { params: { shiftId: string } }) {
     try {
