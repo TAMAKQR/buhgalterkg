@@ -85,17 +85,17 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const requestBody = useMemo(() => {
+        if (manualSession?.token) {
+            return { manualToken: manualSession.token };
+        }
         if (initData) {
             return { initData };
         }
         if (devOverride) {
             return { devOverride };
         }
-        if (manualSession?.token) {
-            return { manualToken: manualSession.token };
-        }
         return undefined;
-    }, [initData, devOverride, manualSession]);
+    }, [manualSession, initData, devOverride]);
 
     const { data, error, isLoading, mutate } = useSWR(() => requestBody && ['telegram-session', requestBody], ([, body]) => fetchSession(body));
 
@@ -111,6 +111,7 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
 
     const manualLogin = useCallback(
         (token: string, session?: SessionUser) => {
+            setInitData(undefined);
             setManualSession({ token, user: session });
             if (typeof window !== 'undefined') {
                 window.sessionStorage.setItem('manualAdminToken', token);
