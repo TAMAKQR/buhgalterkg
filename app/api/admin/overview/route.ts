@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus } from "@prisma/client";
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
+import { parseBishkekDateOnly } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -25,24 +26,8 @@ export async function GET(request: NextRequest) {
         const hotelIds = parseIds("hotelId");
         const managerIds = parseIds("managerId");
 
-        const parseDateValue = (value: string | null, endOfDay = false) => {
-            if (!value) {
-                return undefined;
-            }
-            const date = new Date(value);
-            if (Number.isNaN(date.getTime())) {
-                return undefined;
-            }
-            if (endOfDay) {
-                date.setUTCHours(23, 59, 59, 999);
-            } else {
-                date.setUTCHours(0, 0, 0, 0);
-            }
-            return date;
-        };
-
-        const startDate = parseDateValue(searchParams.get("startDate")) ?? undefined;
-        const endDate = parseDateValue(searchParams.get("endDate"), true) ?? undefined;
+        const startDate = parseBishkekDateOnly(searchParams.get("startDate"));
+        const endDate = parseBishkekDateOnly(searchParams.get("endDate"), true);
 
         const hotelFilter: Prisma.HotelWhereInput = hotelIds.length ? { id: { in: hotelIds } } : {};
         const roomHotelFilter: Prisma.RoomWhereInput = hotelIds.length ? { hotelId: { in: hotelIds } } : {};
@@ -82,29 +67,53 @@ export async function GET(request: NextRequest) {
             prisma.shift.count({ where: { status: ShiftStatus.OPEN, ...shiftWhere } }),
             prisma.shift.findFirst({ where: shiftWhere, orderBy: { openedAt: "desc" }, select: { openedAt: true } }),
             prisma.cashEntry.groupBy({
-                by: ["entryType"],
+                by: ["entryType", "method"],
                 orderBy: { entryType: "asc" },
                 _sum: { amount: true },
                 where: ledgerWhere,
             }),
         ]);
 
-        const ledgerTotals: Record<LedgerEntryType, number> = {
-            [LedgerEntryType.CASH_IN]: 0,
-            [LedgerEntryType.CASH_OUT]: 0,
-            [LedgerEntryType.MANAGER_PAYOUT]: 0,
-            [LedgerEntryType.ADJUSTMENT]: 0,
+        const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
+        const ledgerTotals: Record<LedgerEntryType, { total: number; cash: number; card: number }> = {
+            [LedgerEntryType.CASH_IN]: createBreakdown(),
+            [LedgerEntryType.CASH_OUT]: createBreakdown(),
+            [LedgerEntryType.MANAGER_PAYOUT]: createBreakdown(),
+            [LedgerEntryType.ADJUSTMENT]: createBreakdown(),
         };
 
         for (const group of ledgerGroups) {
-            ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
+            const amount = group._sum?.amount ?? 0;
+            const bucket = ledgerTotals[group.entryType];
+            bucket.total += amount;
+            if (group.method === PaymentMethod.CASH) {
+                bucket.cash += amount;
+            } else if (group.method === PaymentMethod.CARD) {
+                bucket.card += amount;
+            }
         }
 
         const totals = {
-            cashIn: ledgerTotals[LedgerEntryType.CASH_IN],
-            cashOut: ledgerTotals[LedgerEntryType.CASH_OUT],
-            payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT],
-            adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT],
+            cashIn: ledgerTotals[LedgerEntryType.CASH_IN].total,
+            cashInBreakdown: {
+                cash: ledgerTotals[LedgerEntryType.CASH_IN].cash,
+                card: ledgerTotals[LedgerEntryType.CASH_IN].card,
+            },
+            cashOut: ledgerTotals[LedgerEntryType.CASH_OUT].total,
+            cashOutBreakdown: {
+                cash: ledgerTotals[LedgerEntryType.CASH_OUT].cash,
+                card: ledgerTotals[LedgerEntryType.CASH_OUT].card,
+            },
+            payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].total,
+            payoutsBreakdown: {
+                cash: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].cash,
+                card: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].card,
+            },
+            adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT].total,
+            adjustmentsBreakdown: {
+                cash: ledgerTotals[LedgerEntryType.ADJUSTMENT].cash,
+                card: ledgerTotals[LedgerEntryType.ADJUSTMENT].card,
+            },
         };
 
         const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0;

@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useForm } from 'react-hook-form';
-import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input, TextArea } from '@/components/ui/input';
@@ -13,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/useApi';
 import { useTelegramContext } from '@/components/providers/telegram-provider';
+import { formatBishkekDateTime } from '@/lib/timezone';
 
 interface HotelDetailPayload {
     id: string;
@@ -36,6 +36,17 @@ interface HotelDetailPayload {
         status: string;
         isActive: boolean;
         notes?: string | null;
+        stay?: {
+            id: string;
+            guestName?: string | null;
+            status: string;
+            scheduledCheckIn: string;
+            scheduledCheckOut: string;
+            actualCheckIn?: string | null;
+            actualCheckOut?: string | null;
+            amountPaid?: number | null;
+            paymentMethod?: string | null;
+        } | null;
     }>;
     activeShift?: {
         manager: string;
@@ -74,12 +85,18 @@ interface CreateRoomsForm {
 
 const formatCurrency = (value: number) => `${(value / 100).toLocaleString('ru-RU')} KGS`;
 
+const formatStayDate = (value?: string | null) => formatBishkekDateTime(value);
+
 export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
     const { user } = useTelegramContext();
     const router = useRouter();
     const { get, request } = useApi();
 
     const { data, isLoading, error, mutate } = useSWR<HotelDetailPayload>(hotelId ? ['hotel-detail', hotelId] : null, () => get(`/api/hotels/${hotelId}`));
+
+    const [isClearingHistory, setIsClearingHistory] = useState(false);
+    const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
+    const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
 
     const managerForm = useForm<AddManagerForm>({
         defaultValues: { displayName: '', telegramId: '', username: '', pinCode: '' }
@@ -95,6 +112,81 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
 
     const selectedAssignmentId = updateManagerForm.watch('assignmentId');
     const selectedManager = (data?.managers ?? []).find((manager) => manager.assignmentId === selectedAssignmentId);
+
+    const handleClearShiftHistory = async () => {
+        if (typeof window !== 'undefined') {
+            const confirmed = window.confirm('Удалить все закрытые смены и связанные кассовые операции на этой точке?');
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        setIsClearingHistory(true);
+        try {
+            await request('/api/admin/shifts/clear', {
+                body: { hotelId }
+            });
+            mutate();
+            if (typeof window !== 'undefined') {
+                window.alert('История смен удалена');
+            }
+        } catch (clearError) {
+            console.error(clearError);
+            if (typeof window !== 'undefined') {
+                window.alert('Не удалось очистить историю');
+            }
+        } finally {
+            setIsClearingHistory(false);
+        }
+    };
+
+    const handleRemoveManager = async (assignmentId: string) => {
+        if (typeof window !== 'undefined') {
+            const confirmed = window.confirm('Удалить менеджера из этой точки? Доступ будет заблокирован.');
+            if (!confirmed) {
+                return;
+            }
+        }
+        setRemovingManagerId(assignmentId);
+        try {
+            await request('/api/hotel-assignments', {
+                method: 'DELETE',
+                body: { assignmentId }
+            });
+            mutate();
+        } catch (managerError) {
+            console.error(managerError);
+            if (typeof window !== 'undefined') {
+                window.alert('Не удалось удалить менеджера');
+            }
+        } finally {
+            setRemovingManagerId((current) => (current === assignmentId ? null : current));
+        }
+    };
+
+    const handleDeleteRoom = async (roomId: string) => {
+        if (typeof window !== 'undefined') {
+            const confirmed = window.confirm('Удалить номер и его историю заселений? Действие необратимо.');
+            if (!confirmed) {
+                return;
+            }
+        }
+        setRemovingRoomId(roomId);
+        try {
+            await request('/api/rooms', {
+                method: 'DELETE',
+                body: { roomId }
+            });
+            mutate();
+        } catch (roomError) {
+            console.error(roomError);
+            if (typeof window !== 'undefined') {
+                window.alert('Не удалось удалить номер');
+            }
+        } finally {
+            setRemovingRoomId((current) => (current === roomId ? null : current));
+        }
+    };
 
     if (user && user.role !== 'ADMIN') {
         return (
@@ -238,12 +330,24 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                     <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
                         <Badge label={`Смена №${data.activeShift.number}`} />
                         <Badge label={`Менеджер ${data.activeShift.manager}`} tone="success" />
-                        <p>Открыта {format(new Date(data.activeShift.openedAt), 'd MMM HH:mm', { locale: ru })}</p>
+                        <p>Открыта {formatBishkekDateTime(data.activeShift.openedAt)}</p>
                         <p>Касса {data.activeShift.openingCash / 100} KGS</p>
                     </div>
                 ) : (
                     <p className="text-sm text-white/60">Активной смены нет</p>
                 )}
+                <div className="mt-4 rounded-2xl border border-white/10 p-3">
+                    <p className="text-xs text-white/60">Удаляются все закрытые смены и связанные кассовые операции.</p>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className="mt-2 w-full border border-white/10 text-sm text-white/80 hover:bg-white/10"
+                        onClick={handleClearShiftHistory}
+                        disabled={isClearingHistory}
+                    >
+                        {isClearingHistory ? 'Очищаем…' : 'Очистить историю смен'}
+                    </Button>
+                </div>
             </Card>
 
             <Card>
@@ -282,7 +386,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                         <div className="space-y-2">
                             {data.managers.length ? (
                                 data.managers.map((manager) => (
-                                    <div key={manager.assignmentId} className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-2">
+                                    <div key={manager.assignmentId} className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
                                         <div>
                                             <p className="text-sm font-medium text-white">{manager.displayName}</p>
                                             <p className="text-xs text-white/50">
@@ -301,6 +405,16 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                                 onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
                                             >
                                                 Редактировать
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
+                                                onClick={() => handleRemoveManager(manager.assignmentId)}
+                                                disabled={removingManagerId === manager.assignmentId}
+                                            >
+                                                {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
                                             </Button>
                                         </div>
                                     </div>
@@ -424,37 +538,86 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                 <CardHeader title="Список номеров" subtitle="По алфавиту" />
                 <div className="grid gap-3 md:grid-cols-2">
                     {data.rooms.length ? (
-                        data.rooms.map((room) => (
-                            <div key={room.id} className="rounded-2xl border border-white/10 p-4">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
-                                        <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
+                        data.rooms.map((room) => {
+                            const stay = room.stay ?? null;
+                            const guestLabel = stay?.guestName?.trim() || (room.status === 'OCCUPIED' ? 'Гость' : '—');
+                            const checkInLabel = stay ? formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn) : '—';
+                            const checkOutLabel = stay ? formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut) : '—';
+                            const paymentLabel = stay?.paymentMethod === 'CARD'
+                                ? 'Безнал'
+                                : stay?.paymentMethod === 'CASH'
+                                    ? 'Наличные'
+                                    : undefined;
+                            const stayStatusLabel = stay
+                                ? stay.status === 'CHECKED_IN'
+                                    ? 'Заселён'
+                                    : stay.status === 'CHECKED_OUT'
+                                        ? 'Выселен'
+                                        : stay.status === 'SCHEDULED'
+                                            ? 'Запланирован'
+                                            : 'Отменён'
+                                : null;
+
+                            return (
+                                <div key={room.id} className="rounded-2xl border border-white/10 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
+                                            <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-2 text-right">
+                                            <Badge
+                                                label={
+                                                    room.status === 'OCCUPIED'
+                                                        ? 'Занят'
+                                                        : room.status === 'DIRTY'
+                                                            ? 'Уборка'
+                                                            : room.status === 'HOLD'
+                                                                ? 'Бронь'
+                                                                : 'Свободен'
+                                                }
+                                                tone={
+                                                    room.status === 'OCCUPIED'
+                                                        ? 'warning'
+                                                        : room.status === 'DIRTY'
+                                                            ? 'danger'
+                                                            : room.status === 'HOLD'
+                                                                ? 'default'
+                                                                : 'success'
+                                                }
+                                            />
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="text-[11px] text-rose-200 hover:bg-rose-500/10"
+                                                onClick={() => handleDeleteRoom(room.id)}
+                                                disabled={removingRoomId === room.id}
+                                            >
+                                                {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
+                                            </Button>
+                                        </div>
                                     </div>
-                                    <Badge
-                                        label={
-                                            room.status === 'OCCUPIED'
-                                                ? 'Занят'
-                                                : room.status === 'DIRTY'
-                                                    ? 'Уборка'
-                                                    : room.status === 'HOLD'
-                                                        ? 'Бронь'
-                                                        : 'Свободен'
-                                        }
-                                        tone={
-                                            room.status === 'OCCUPIED'
-                                                ? 'warning'
-                                                : room.status === 'DIRTY'
-                                                    ? 'danger'
-                                                    : room.status === 'HOLD'
-                                                        ? 'default'
-                                                        : 'success'
-                                        }
-                                    />
+                                    {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
+                                    {stay ? (
+                                        <div className="mt-3 space-y-1 text-sm text-white/70">
+                                            <p>Гость: {guestLabel}</p>
+                                            <p>Заезд: {checkInLabel}</p>
+                                            <p>Выезд: {checkOutLabel}</p>
+                                            {stayStatusLabel && <p>Статус: {stayStatusLabel}</p>}
+                                            {stay.amountPaid != null && (
+                                                <p>
+                                                    Оплата: {formatCurrency(stay.amountPaid)}
+                                                    {paymentLabel ? ` • ${paymentLabel}` : ''}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
+                                    )}
                                 </div>
-                                {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
-                            </div>
-                        ))
+                            );
+                        })
                     ) : (
                         <p className="text-sm text-white/60">Номеров пока нет</p>
                     )}

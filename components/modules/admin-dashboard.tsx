@@ -7,11 +7,17 @@ import useSWR from "swr";
 import { useTelegramContext } from "@/components/providers/telegram-provider";
 import type { SessionUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { formatBishkekDateTime } from "@/lib/timezone";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+
+type PaymentSplit = {
+    cash: number;
+    card: number;
+};
 
 type AdminHotelSummary = {
     id: string;
@@ -35,14 +41,24 @@ type AdminHotelSummary = {
         openingCash?: number | null;
         number?: number | null;
     };
+    ledger: {
+        cashIn: number;
+        cashInBreakdown: PaymentSplit;
+        cashOut: number;
+        cashOutBreakdown: PaymentSplit;
+    };
 };
 
 type AdminOverview = {
     totals: {
         cashIn: number;
+        cashInBreakdown: PaymentSplit;
         cashOut: number;
+        cashOutBreakdown: PaymentSplit;
         payouts: number;
+        payoutsBreakdown: PaymentSplit;
         adjustments: number;
+        adjustmentsBreakdown: PaymentSplit;
         netCash: number;
     };
     occupancy: {
@@ -86,23 +102,7 @@ const formatCurrency = (value: number) => `${(value / 100).toLocaleString("ru-RU
 
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
-const formatDateTime = (value?: string | null) => {
-    if (!value) {
-        return "";
-    }
-
-    try {
-        return new Date(value).toLocaleString("ru-RU", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    } catch (error) {
-        console.warn("Failed to format date", error);
-        return value;
-    }
-};
+const formatDateTime = (value?: string | null) => formatBishkekDateTime(value, undefined, "");
 
 function HotelsSkeleton() {
     return (
@@ -552,16 +552,36 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                                     <p className="mt-1 text-xl font-semibold text-emerald-300">
                                         {formatCurrency(overview.totals.cashIn)}
                                     </p>
-                                    <p className="text-xs text-white/60">Списания {formatCurrency(overview.totals.cashOut)}</p>
+                                    <div className="mt-3 space-y-1 text-xs text-white/60">
+                                        <p>Наличные · {formatCurrency(overview.totals.cashInBreakdown.cash)}</p>
+                                        <p>Безналичные · {formatCurrency(overview.totals.cashInBreakdown.card)}</p>
+                                    </div>
                                 </Card>
                                 <Card className="bg-white/5 p-4 text-white">
-                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Выплаты</p>
-                                    <p className="mt-1 text-xl font-semibold text-white">
-                                        {formatCurrency(overview.totals.payouts)}
+                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Списания</p>
+                                    <p className="mt-1 text-xl font-semibold text-rose-300">
+                                        {formatCurrency(overview.totals.cashOut)}
                                     </p>
-                                    <p className="text-xs text-white/60">
-                                        Корректировки {formatCurrency(overview.totals.adjustments)}
-                                    </p>
+                                    <div className="mt-3 space-y-1 text-xs text-white/60">
+                                        <p>Наличные · {formatCurrency(overview.totals.cashOutBreakdown.cash)}</p>
+                                        <p>Безналичные · {formatCurrency(overview.totals.cashOutBreakdown.card)}</p>
+                                    </div>
+                                    <div className="mt-3 rounded-xl border border-white/10 p-2 text-[11px] text-white/60">
+                                        <p>
+                                            Выплаты · {formatCurrency(overview.totals.payouts)}
+                                            <span className="text-white/40">
+                                                {' '}
+                                                (нал {formatCurrency(overview.totals.payoutsBreakdown.cash)} · безн {formatCurrency(overview.totals.payoutsBreakdown.card)})
+                                            </span>
+                                        </p>
+                                        <p>
+                                            Корректировки · {formatCurrency(overview.totals.adjustments)}
+                                            <span className="text-white/40">
+                                                {' '}
+                                                (нал {formatCurrency(overview.totals.adjustmentsBreakdown.cash)} · безн {formatCurrency(overview.totals.adjustmentsBreakdown.card)})
+                                            </span>
+                                        </p>
+                                    </div>
                                 </Card>
                                 <Card className="bg-white/5 p-4 text-white">
                                     <p className="text-xs uppercase tracking-[0.3em] text-white/40">Заполнение</p>
@@ -600,75 +620,98 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                                 <p className="text-sm text-white/60">Пока нет отелей</p>
                             )}
                             {!isLoading &&
-                                hotels.map((hotel) => (
-                                    <div
-                                        key={hotel.id}
-                                        className="rounded-xl border border-white/10 bg-white/[0.03] p-3 shadow-sm"
-                                    >
-                                        <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
-                                            <div>
-                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Объект</p>
-                                                <h3 className="text-xl font-semibold text-white">{hotel.name}</h3>
-                                                <p className="text-xs text-white/60">{hotel.address || "Адрес не указан"}</p>
+                                hotels.map((hotel) => {
+                                    const inflow = hotel.ledger?.cashIn ?? 0;
+                                    const inflowCash = hotel.ledger?.cashInBreakdown.cash ?? 0;
+                                    const inflowCard = hotel.ledger?.cashInBreakdown.card ?? 0;
+                                    const outflow = hotel.ledger?.cashOut ?? 0;
+                                    const outflowCash = hotel.ledger?.cashOutBreakdown.cash ?? 0;
+                                    const outflowCard = hotel.ledger?.cashOutBreakdown.card ?? 0;
+
+                                    return (
+                                        <div
+                                            key={hotel.id}
+                                            className="rounded-xl border border-white/10 bg-white/[0.03] p-3 shadow-sm"
+                                        >
+                                            <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Объект</p>
+                                                    <h3 className="text-xl font-semibold text-white">{hotel.name}</h3>
+                                                    <p className="text-xs text-white/60">{hotel.address || "Адрес не указан"}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Номера</p>
+                                                    <p className="text-2xl font-semibold text-white">{hotel.roomCount}</p>
+                                                    <p className="text-xs text-white/60">
+                                                        Занято {hotel.occupiedRooms}/{hotel.roomCount}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Номера</p>
-                                                <p className="text-2xl font-semibold text-white">{hotel.roomCount}</p>
-                                                <p className="text-xs text-white/60">
-                                                    Занято {hotel.occupiedRooms}/{hotel.roomCount}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="mt-2 text-xs text-white/60">
-                                            {hotel.activeShift ? (
-                                                <span>
-                                                    Смена №{hotel.activeShift.number ?? "?"} · {hotel.activeShift.manager || "Без имени"} · с {" "}
-                                                    {formatDateTime(hotel.activeShift.openedAt)}
-                                                </span>
-                                            ) : (
-                                                <span>Смена закрыта</span>
-                                            )}
-                                        </div>
-                                        <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                {hotel.managers.length > 0 ? (
-                                                    hotel.managers.slice(0, 3).map((manager) => (
-                                                        <span
-                                                            key={manager.id}
-                                                            className={cn(
-                                                                "flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold",
-                                                            )}
-                                                        >
-                                                            {manager.displayName?.slice(0, 2).toUpperCase() || "??"}
-                                                        </span>
-                                                    ))
+                                            <div className="mt-2 text-xs text-white/60">
+                                                {hotel.activeShift ? (
+                                                    <span>
+                                                        Смена №{hotel.activeShift.number ?? "?"} · {hotel.activeShift.manager || "Без имени"} · с {" "}
+                                                        {formatDateTime(hotel.activeShift.openedAt)}
+                                                    </span>
                                                 ) : (
-                                                    <span className="text-xs text-white/60">Нет менеджеров</span>
-                                                )}
-                                                {hotel.managers.length > 3 && (
-                                                    <span className="text-xs text-white/60">+{hotel.managers.length - 3}</span>
+                                                    <span>Смена закрыта</span>
                                                 )}
                                             </div>
-                                            {hotel.managers.length > 0 && (
-                                                <div className="w-full text-left text-xs text-white/80 md:text-right">
-                                                    {hotel.managers.slice(0, 3).map((manager) => (
-                                                        <p key={`${manager.id}-pin`} className="font-mono">
-                                                            {manager.displayName ?? manager.telegramId}: {manager.pinCode ?? "PIN не задан"}
-                                                        </p>
-                                                    ))}
+                                            <div className="mt-3 grid gap-3 rounded-xl border border-white/10 p-3 text-xs text-white/70 sm:grid-cols-2">
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Поступления</p>
+                                                    <p className="text-sm font-semibold text-emerald-300">{formatCurrency(inflow)}</p>
+                                                    <p>Наличные · {formatCurrency(inflowCash)}</p>
+                                                    <p>Безналичные · {formatCurrency(inflowCard)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Списания</p>
+                                                    <p className="text-sm font-semibold text-rose-300">{formatCurrency(outflow)}</p>
+                                                    <p>Наличные · {formatCurrency(outflowCash)}</p>
+                                                    <p>Безналичные · {formatCurrency(outflowCard)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    {hotel.managers.length > 0 ? (
+                                                        hotel.managers.slice(0, 3).map((manager) => (
+                                                            <span
+                                                                key={manager.id}
+                                                                className={cn(
+                                                                    "flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold",
+                                                                )}
+                                                            >
+                                                                {manager.displayName?.slice(0, 2).toUpperCase() || "??"}
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="text-xs text-white/60">Нет менеджеров</span>
+                                                    )}
                                                     {hotel.managers.length > 3 && (
-                                                        <p className="text-white/60">Смотрите все PIN в карточке отеля</p>
+                                                        <span className="text-xs text-white/60">+{hotel.managers.length - 3}</span>
                                                     )}
                                                 </div>
-                                            )}
-                                            <Link href={`/admin/hotels/${hotel.id}`} className="w-full md:w-auto">
-                                                <Button size="sm" variant="secondary" className="w-full">
-                                                    Открыть управление
-                                                </Button>
-                                            </Link>
+                                                {hotel.managers.length > 0 && (
+                                                    <div className="w-full text-left text-xs text-white/80 md:text-right">
+                                                        {hotel.managers.slice(0, 3).map((manager) => (
+                                                            <p key={`${manager.id}-pin`} className="font-mono">
+                                                                {manager.displayName ?? manager.telegramId}: {manager.pinCode ?? "PIN не задан"}
+                                                            </p>
+                                                        ))}
+                                                        {hotel.managers.length > 3 && (
+                                                            <p className="text-white/60">Смотрите все PIN в карточке отеля</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <Link href={`/admin/hotels/${hotel.id}`} className="w-full md:w-auto">
+                                                    <Button size="sm" variant="secondary" className="w-full">
+                                                        Открыть управление
+                                                    </Button>
+                                                </Link>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                         </div>
                     </Card>
                 </section>

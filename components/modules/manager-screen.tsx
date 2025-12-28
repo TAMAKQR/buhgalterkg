@@ -1,10 +1,8 @@
 'use client';
 
 import useSWR from 'swr';
-import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ru } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +10,8 @@ import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { SessionUser } from '@/lib/types';
 import { useApi } from '@/hooks/useApi';
+import { useTelegramContext } from '@/components/providers/telegram-provider';
+import { formatBishkekDateTime, formatBishkekInputValue, parseBishkekInputValue } from '@/lib/timezone';
 
 interface ManagerStateResponse {
     hotel: {
@@ -28,6 +28,7 @@ interface ManagerStateResponse {
         number: number;
     } | null;
     shiftCash?: number | null;
+    shiftExpenses?: number | null;
     shiftPayments?: {
         cash: number;
         card: number;
@@ -88,10 +89,7 @@ interface CheckInModalState {
 
 type PanelKey = 'rooms' | 'shift' | 'cash';
 
-const formatDateInputValue = (date: Date) => {
-    const pad = (value: number) => value.toString().padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
+const formatDateInputValue = (date: Date) => formatBishkekInputValue(date);
 
 const formatKgs = (amount?: number | null) => {
     const safe = typeof amount === 'number' ? amount : 0;
@@ -104,6 +102,7 @@ const formatKgs = (amount?: number | null) => {
 
 export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     const { get, request } = useApi();
+    const { logout } = useTelegramContext();
 
     const { data, mutate, isLoading, error } = useSWR<ManagerStateResponse>(
         user.hotels[0]?.id ? ['manager-state', user.hotels[0].id] : null,
@@ -117,10 +116,21 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
     const [checkInError, setCheckInError] = useState<string | null>(null);
     const [activePanel, setActivePanel] = useState<PanelKey>('rooms');
+    const ExitButton = () => (
+        <button
+            type="button"
+            onClick={logout}
+            className="fixed right-4 top-4 z-30 rounded-full border border-white/20 bg-slate-900/70 p-2 text-white/70 shadow-lg backdrop-blur transition hover:border-white hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+            aria-label="Выйти к экрану PIN"
+        >
+            <span className="text-lg leading-none">×</span>
+        </button>
+    );
 
     const primaryHotel = data?.hotel ?? user.hotels[0];
     const hasOpenShift = Boolean(data?.shift);
     const shiftCashValue = data?.shiftCash ?? data?.shift?.openingCash ?? 0;
+    const shiftExpensesValue = data?.shiftExpenses ?? 0;
     const shiftPayments = data?.shiftPayments;
     const shiftLedger = data?.shiftLedger ?? [];
     const panelTabs: Array<{ id: PanelKey; label: string; hint?: string }> = [
@@ -238,10 +248,10 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
             return;
         }
 
-        const scheduledCheckIn = new Date(checkInModal.checkIn);
-        const scheduledCheckOut = new Date(checkInModal.checkOut);
+        const scheduledCheckIn = parseBishkekInputValue(checkInModal.checkIn);
+        const scheduledCheckOut = parseBishkekInputValue(checkInModal.checkOut);
 
-        if (Number.isNaN(scheduledCheckIn.getTime()) || Number.isNaN(scheduledCheckOut.getTime())) {
+        if (!scheduledCheckIn || !scheduledCheckOut) {
             setCheckInError('Укажите корректные даты заселения и выезда');
             return;
         }
@@ -295,85 +305,97 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
 
     if (!primaryHotel) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
-                <p className="text-white/80">Администратор ещё не назначил вас на точку.</p>
-            </div>
+            <>
+                <ExitButton />
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="text-white/80">Администратор ещё не назначил вас на точку.</p>
+                </div>
+            </>
         );
     }
 
     if (!data && isLoading) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
-                <p className="text-white/70">Загружаем данные точки…</p>
-            </div>
+            <>
+                <ExitButton />
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="text-white/70">Загружаем данные точки…</p>
+                </div>
+            </>
         );
     }
 
     if (!data && error) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
-                <p>Не удалось загрузить состояние менеджера</p>
-                <p className="text-sm text-white/60">{String(error)}</p>
-            </div>
+            <>
+                <ExitButton />
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
+                    <p>Не удалось загрузить состояние менеджера</p>
+                    <p className="text-sm text-white/60">{String(error)}</p>
+                </div>
+            </>
         );
     }
 
     if (data && !data.shift) {
         return (
-            <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
-                <header className="space-y-4">
-                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Смена</p>
-                    <h1 className="text-3xl font-semibold text-white">{managerName}</h1>
-                    <p className="mt-3 text-sm text-amber-200/80">Чтобы начать работу, введите код менеджера и сумму в кассе.</p>
-                </header>
-                <Card>
-                    <CardHeader title="Принять смену" subtitle="Код менеджера" />
-                    <form className="space-y-3" onSubmit={handleOpenShift}>
-                        <Input
-                            type="password"
-                            placeholder="PIN (6 цифр)"
-                            maxLength={6}
-                            inputMode="numeric"
-                            {...openShiftForm.register('pinCode', {
-                                required: 'Введите PIN менеджера',
-                                minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
-                            })}
-                        />
-                        {openShiftForm.formState.errors.pinCode && (
-                            <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
-                        )}
-                        <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Наличные в кассе"
-                            {...openShiftForm.register('openingCash', { valueAsNumber: true })}
-                        />
-                        <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
-                        <Button type="submit" className="w-full">
-                            Начать смену
-                        </Button>
-                        <p className="text-xs text-white/50">
-                            Код назначает администратор. Пока смена не закрыта, другой менеджер не сможет начать работу.
-                        </p>
-                    </form>
-                </Card>
-            </div>
+            <>
+                <ExitButton />
+                <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
+                    <header className="space-y-4">
+                        <h1 className="text-3xl font-semibold text-white">{managerName}</h1>
+                        <p className="mt-3 text-sm text-amber-200/80">Чтобы начать работу, введите код менеджера и сумму в кассе.</p>
+                    </header>
+                    <Card>
+                        <CardHeader title="Принять смену" subtitle="Код менеджера" />
+                        <form className="space-y-3" onSubmit={handleOpenShift}>
+                            <Input
+                                type="password"
+                                placeholder="PIN (6 цифр)"
+                                maxLength={6}
+                                inputMode="numeric"
+                                {...openShiftForm.register('pinCode', {
+                                    required: 'Введите PIN менеджера',
+                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
+                                })}
+                            />
+                            {openShiftForm.formState.errors.pinCode && (
+                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
+                            )}
+                            <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="Наличные в кассе"
+                                {...openShiftForm.register('openingCash', { valueAsNumber: true })}
+                            />
+                            <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
+                            <Button type="submit" className="w-full">
+                                Начать смену
+                            </Button>
+                            <p className="text-xs text-white/50">
+                                Код назначает администратор. Пока смена не закрыта, другой менеджер не сможет начать работу.
+                            </p>
+                        </form>
+                    </Card>
+                </div>
+            </>
         );
     }
 
     return (
         <>
+            <ExitButton />
             <div className="flex min-h-screen flex-col gap-4 p-4 pb-24">
                 <header className="space-y-4">
-                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Смена</p>
                     <h1 className="text-3xl font-semibold text-white">{managerName}</h1>
                     {data?.shift ? (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                             <Badge label={`Смена №${data.shift.number}`} />
-                            <Badge label={`Открыта ${format(new Date(data.shift.openedAt), 'd MMM HH:mm', { locale: ru })}`} tone="success" />
-                            <Badge label={`Касса ${formatKgs(shiftCashValue)}`} />
+                            <Badge label={`Открыта ${formatBishkekDateTime(data.shift.openedAt)}`} tone="success" />
+                            <Badge label={`Остаток ${formatKgs(shiftCashValue)}`} />
+                            <Badge label={`Расходы ${formatKgs(shiftExpensesValue)}`} tone="warning" />
                         </div>
                     ) : (
                         <p className="mt-3 text-sm text-amber-200/80">Смена не открыта</p>
@@ -433,8 +455,8 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                             />
                                         </div>
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-white/60">
-                                            <p>Заезд: {room.stay ? format(new Date(room.stay.scheduledCheckIn), 'd MMM HH:mm', { locale: ru }) : '—'}</p>
-                                            <p>Выезд: {room.stay ? format(new Date(room.stay.scheduledCheckOut), 'd MMM HH:mm', { locale: ru }) : '—'}</p>
+                                            <p>Заезд: {room.stay ? formatBishkekDateTime(room.stay.scheduledCheckIn) : '—'}</p>
+                                            <p>Выезд: {room.stay ? formatBishkekDateTime(room.stay.scheduledCheckOut) : '—'}</p>
                                         </div>
                                         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                                             <p className="font-semibold text-white">
@@ -535,7 +557,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                 <div className="space-y-2">
                                     {shiftLedger.length ? (
                                         shiftLedger.map((entry) => {
-                                            const timestamp = format(new Date(entry.recordedAt), 'd MMM HH:mm', { locale: ru });
+                                            const timestamp = formatBishkekDateTime(entry.recordedAt);
                                             const signedAmount = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType)
                                                 ? entry.amount
                                                 : -entry.amount;

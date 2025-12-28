@@ -1,6 +1,7 @@
 import { PaymentMethod } from "@prisma/client";
 
 import { env } from "@/lib/env";
+import { formatBishkekDateTime } from "@/lib/timezone";
 
 const TELEGRAM_API_BASE = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
@@ -9,22 +10,7 @@ const paymentLabels: Record<PaymentMethod, string> = {
     CASH: "Наличные",
 };
 
-const formatDate = (value?: string | null) => {
-    if (!value) {
-        return "не указано";
-    }
-    try {
-        return new Intl.DateTimeFormat("ru-RU", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-        }).format(new Date(value));
-    } catch (error) {
-        console.error("Failed to format date", error);
-        return value;
-    }
-};
+const formatDate = (value?: string | null) => formatBishkekDateTime(value, undefined, "не указано");
 
 const formatAmount = (value: number) => `${(value / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} KGS`;
 
