@@ -29,12 +29,12 @@ const normalizeNullableString = (value?: string | null) => {
     return value ?? null;
 };
 
-const normalizeDate = (value?: string | null) => {
+const normalizeDate = (value?: string | null, allowNull = false) => {
     if (value === undefined) {
         return undefined;
     }
     if (!value) {
-        return null;
+        return allowNull ? null : undefined;
     }
     return new Date(value);
 };
@@ -85,7 +85,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
             data.openedAt = openedAt;
         }
 
-        let closedAt = normalizeDate(payload.closedAt);
+        let closedAt = normalizeDate(payload.closedAt, true);
         if (payload.status) {
             if (payload.status === ShiftStatus.OPEN && shift.status !== ShiftStatus.OPEN) {
                 const otherActiveShift = await prisma.shift.findFirst({
