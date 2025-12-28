@@ -14,6 +14,23 @@ import { useApi } from '@/hooks/useApi';
 import { useTelegramContext } from '@/components/providers/telegram-provider';
 import { formatBishkekDateTime } from '@/lib/timezone';
 
+type ShiftStatusValue = 'OPEN' | 'CLOSED';
+
+interface ShiftHistoryEntry {
+    id: string;
+    number: number;
+    manager: string;
+    openedAt: string;
+    closedAt?: string | null;
+    openingCash: number;
+    closingCash?: number | null;
+    handoverCash?: number | null;
+    openingNote?: string | null;
+    closingNote?: string | null;
+    handoverNote?: string | null;
+    status: ShiftStatusValue;
+}
+
 interface HotelDetailPayload {
     id: string;
     name: string;
@@ -48,12 +65,8 @@ interface HotelDetailPayload {
             paymentMethod?: string | null;
         } | null;
     }>;
-    activeShift?: {
-        manager: string;
-        openedAt: string;
-        openingCash: number;
-        number: number;
-    } | null;
+    activeShift?: ShiftHistoryEntry | null;
+    shiftHistory: ShiftHistoryEntry[];
     financials: {
         cashIn: number;
         cashOut: number;
@@ -76,6 +89,16 @@ interface UpdateManagerForm {
     pinCode: string;
 }
 
+interface EditShiftForm {
+    openingCash: number;
+    closingCash?: number | null;
+    handoverCash?: number | null;
+    openingNote?: string;
+    closingNote?: string;
+    handoverNote?: string;
+    status: ShiftStatusValue;
+}
+
 interface CreateRoomsForm {
     roomLabels: string;
     floor?: string;
@@ -85,6 +108,8 @@ interface CreateRoomsForm {
 const formatCurrency = (value: number) => `${(value / 100).toLocaleString('ru-RU')} KGS`;
 
 const formatStayDate = (value?: string | null) => formatBishkekDateTime(value);
+
+const formatShiftAmount = (value?: number | null) => (typeof value === 'number' ? formatCurrency(value) : '—');
 
 export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
     const { user } = useTelegramContext();
@@ -104,12 +129,92 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         defaultValues: { assignmentId: '', displayName: '', username: '', pinCode: '' }
     });
 
+    const shiftEditForm = useForm<EditShiftForm>({
+        defaultValues: {
+            openingCash: 0,
+            closingCash: undefined,
+            handoverCash: undefined,
+            openingNote: '',
+            closingNote: '',
+            handoverNote: '',
+            status: 'CLOSED'
+        }
+    });
+
     const roomForm = useForm<CreateRoomsForm>({
         defaultValues: { roomLabels: '' }
     });
 
     const selectedAssignmentId = updateManagerForm.watch('assignmentId');
     const selectedManager = (data?.managers ?? []).find((manager) => manager.assignmentId === selectedAssignmentId);
+    const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
+
+    const toMinor = (value: number) => Math.round(value * 100);
+    const toOptionalMinor = (value?: number | null) => {
+        if (value === undefined || value === null || Number.isNaN(value)) {
+            return null;
+        }
+        return Math.round(value * 100);
+    };
+    const normalizeNote = (value?: string) => {
+        if (value == null) {
+            return null;
+        }
+        const trimmed = value.trim();
+        return trimmed.length ? trimmed : null;
+    };
+
+    const handleSelectShiftForEdit = (shift: ShiftHistoryEntry) => {
+        setEditingShift(shift);
+        shiftEditForm.reset({
+            openingCash: shift.openingCash / 100,
+            closingCash: typeof shift.closingCash === 'number' ? shift.closingCash / 100 : undefined,
+            handoverCash: typeof shift.handoverCash === 'number' ? shift.handoverCash / 100 : undefined,
+            openingNote: shift.openingNote ?? '',
+            closingNote: shift.closingNote ?? '',
+            handoverNote: shift.handoverNote ?? '',
+            status: shift.status
+        });
+    };
+
+    const handleResetShiftEditor = () => {
+        setEditingShift(null);
+        shiftEditForm.reset({
+            openingCash: 0,
+            closingCash: undefined,
+            handoverCash: undefined,
+            openingNote: '',
+            closingNote: '',
+            handoverNote: '',
+            status: 'CLOSED'
+        });
+    };
+
+    const handleUpdateShift = shiftEditForm.handleSubmit(async (values) => {
+        if (!editingShift) {
+            return;
+        }
+
+        if (!Number.isFinite(values.openingCash)) {
+            shiftEditForm.setError('openingCash', { type: 'manual', message: 'Укажите сумму на начало смены' });
+            return;
+        }
+
+        await request(`/api/admin/shifts/${editingShift.id}`, {
+            method: 'PATCH',
+            body: {
+                openingCash: toMinor(values.openingCash),
+                closingCash: toOptionalMinor(values.closingCash ?? undefined),
+                handoverCash: toOptionalMinor(values.handoverCash ?? undefined),
+                openingNote: normalizeNote(values.openingNote),
+                closingNote: normalizeNote(values.closingNote),
+                handoverNote: normalizeNote(values.handoverNote),
+                status: values.status
+            }
+        });
+        handleResetShiftEditor();
+        mutate();
+    });
 
     const handleClearShiftHistory = async () => {
         if (typeof window !== 'undefined') {
@@ -345,6 +450,119 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                         {isClearingHistory ? 'Очищаем…' : 'Очистить историю смен'}
                     </Button>
                 </div>
+            </Card>
+
+            <Card>
+                <CardHeader title="История смен" subtitle="Последние 20 записей" />
+                {data.shiftHistory.length ? (
+                    <div className="space-y-3">
+                        {data.shiftHistory.map((shift) => (
+                            <div key={shift.id} className="rounded-2xl border border-white/10 p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-semibold text-white">Смена №{shift.number}</p>
+                                        <p className="text-xs text-white/60">{shift.manager}</p>
+                                    </div>
+                                    <Badge label={shift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'} tone={shift.status === 'CLOSED' ? 'success' : 'warning'} />
+                                </div>
+                                <div className="mt-4 grid gap-3 text-sm text-white/80 md:grid-cols-3">
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">На начало</p>
+                                        <p className="font-semibold text-white">{formatShiftAmount(shift.openingCash)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">Передано</p>
+                                        <p className="font-semibold text-white">{formatShiftAmount(shift.handoverCash)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">Касса факт</p>
+                                        <p className="font-semibold text-white">{formatShiftAmount(shift.closingCash)}</p>
+                                    </div>
+                                </div>
+                                <p className="mt-3 text-xs text-white/60">
+                                    Открыта {formatBishkekDateTime(shift.openedAt)}
+                                    {shift.closedAt ? ` • Закрыта ${formatBishkekDateTime(shift.closedAt)}` : ''}
+                                </p>
+                                {(shift.openingNote || shift.closingNote || shift.handoverNote) && (
+                                    <div className="mt-3 space-y-1 text-xs text-white/70">
+                                        {shift.openingNote && <p>Комментарий (старт): {shift.openingNote}</p>}
+                                        {shift.closingNote && <p>Комментарий (конец): {shift.closingNote}</p>}
+                                        {shift.handoverNote && <p>Комментарий (передача): {shift.handoverNote}</p>}
+                                    </div>
+                                )}
+                                <div className="mt-3 flex justify-end">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        className="border border-white/15 text-white/80 hover:bg-white/10"
+                                        onClick={() => handleSelectShiftForEdit(shift)}
+                                    >
+                                        Редактировать
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-white/60">Смены ещё не закрывались.</p>
+                )}
+
+                {editingShift && (
+                    <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4">
+                        <p className="text-sm font-semibold text-white">Редактирование смены №{editingShift.number}</p>
+                        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleUpdateShift}>
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold uppercase text-white/60">На начало (KGS)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0"
+                                    {...shiftEditForm.register('openingCash', {
+                                        valueAsNumber: true,
+                                        required: 'Укажите сумму на начало'
+                                    })}
+                                />
+                                {shiftEditForm.formState.errors.openingCash && (
+                                    <p className="text-xs text-rose-300">{shiftEditForm.formState.errors.openingCash.message}</p>
+                                )}
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold uppercase text-white/60">Передано (KGS)</label>
+                                <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('handoverCash', { valueAsNumber: true })} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold uppercase text-white/60">Касса факт (KGS)</label>
+                                <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('closingCash', { valueAsNumber: true })} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold uppercase text-white/60">Статус смены</label>
+                                <select
+                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                    {...shiftEditForm.register('status')}
+                                >
+                                    <option value="CLOSED" className="bg-slate-900 text-white">
+                                        Закрыта
+                                    </option>
+                                    <option value="OPEN" className="bg-slate-900 text-white">
+                                        Открыта
+                                    </option>
+                                </select>
+                            </div>
+                            <TextArea rows={2} placeholder="Комментарий к открытию" {...shiftEditForm.register('openingNote')} />
+                            <TextArea rows={2} placeholder="Комментарий к передаче" {...shiftEditForm.register('handoverNote')} />
+                            <TextArea rows={2} placeholder="Комментарий к закрытию" {...shiftEditForm.register('closingNote')} className="md:col-span-2" />
+                            <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row">
+                                <Button type="submit" className="flex-1">
+                                    Сохранить изменения
+                                </Button>
+                                <Button type="button" variant="ghost" className="flex-1 border border-white/20" onClick={handleResetShiftEditor}>
+                                    Отменить
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                )}
             </Card>
 
             <Card>

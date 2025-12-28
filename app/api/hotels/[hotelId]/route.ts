@@ -37,9 +37,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         }
                     },
                     shifts: {
-                        where: { status: ShiftStatus.OPEN },
                         orderBy: { openedAt: 'desc' },
-                        take: 1,
+                        take: 20,
                         include: { manager: true }
                     },
                     assignments: {
@@ -70,6 +69,25 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         for (const group of ledgerGroups) {
             ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
         }
+
+        const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
+
+        const shiftHistory = hotel.shifts
+            .filter((shift) => shift.status === ShiftStatus.CLOSED)
+            .map((shift) => ({
+                id: shift.id,
+                number: shift.number,
+                manager: shift.manager.displayName,
+                openedAt: shift.openedAt,
+                closedAt: shift.closedAt,
+                openingCash: shift.openingCash,
+                closingCash: shift.closingCash,
+                handoverCash: shift.handoverCash,
+                openingNote: shift.openingNote,
+                closingNote: shift.closingNote,
+                handoverNote: shift.handoverNote,
+                status: shift.status
+            }));
 
         const payload = {
             id: hotel.id,
@@ -110,14 +128,22 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 username: assignment.user.username,
                 pinCode: assignment.pinCode
             })),
-            activeShift: hotel.shifts[0]
+            activeShift: activeShiftRecord
                 ? {
-                    manager: hotel.shifts[0].manager.displayName,
-                    openedAt: hotel.shifts[0].openedAt,
-                    openingCash: hotel.shifts[0].openingCash,
-                    number: hotel.shifts[0].number
+                    id: activeShiftRecord.id,
+                    manager: activeShiftRecord.manager.displayName,
+                    openedAt: activeShiftRecord.openedAt,
+                    openingCash: activeShiftRecord.openingCash,
+                    closingCash: activeShiftRecord.closingCash,
+                    handoverCash: activeShiftRecord.handoverCash,
+                    openingNote: activeShiftRecord.openingNote,
+                    closingNote: activeShiftRecord.closingNote,
+                    handoverNote: activeShiftRecord.handoverNote,
+                    number: activeShiftRecord.number,
+                    status: activeShiftRecord.status
                 }
                 : null,
+            shiftHistory,
             financials: {
                 cashIn: ledgerTotals[LedgerEntryType.CASH_IN],
                 cashOut: ledgerTotals[LedgerEntryType.CASH_OUT],
