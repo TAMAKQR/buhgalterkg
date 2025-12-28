@@ -26,7 +26,7 @@ interface HotelDetailPayload {
         assignmentId: string;
         id: string;
         displayName: string;
-        telegramId: string;
+        telegramId?: string | null;
         username?: string | null;
         pinCode?: string | null;
     }>;
@@ -65,7 +65,6 @@ interface HotelDetailPayload {
 
 interface AddManagerForm {
     displayName: string;
-    telegramId: string;
     username?: string;
     pinCode: string;
 }
@@ -98,7 +97,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
 
     const managerForm = useForm<AddManagerForm>({
-        defaultValues: { displayName: '', telegramId: '', username: '', pinCode: '' }
+        defaultValues: { displayName: '', username: '', pinCode: '' }
     });
 
     const updateManagerForm = useForm<UpdateManagerForm>({
@@ -224,13 +223,12 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         await request('/api/hotel-assignments', {
             body: {
                 hotelId,
-                displayName: values.displayName,
-                telegramId: values.telegramId,
+                displayName: values.displayName.trim(),
                 username: values.username?.trim() || undefined,
                 pinCode: values.pinCode
             }
         });
-        managerForm.reset({ displayName: '', telegramId: '', username: '', pinCode: '' });
+        managerForm.reset({ displayName: '', username: '', pinCode: '' });
         mutate();
     });
 
@@ -389,9 +387,8 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                         <div>
                                             <p className="text-sm font-medium text-white">{manager.displayName}</p>
                                             <p className="text-xs text-white/50">
-                                                ID: {manager.telegramId}
-                                                {manager.username ? ` • @${manager.username}` : ''}
-                                                {manager.pinCode ? ` • PIN ${manager.pinCode}` : ''}
+                                                {manager.username ? `@${manager.username} • ` : ''}
+                                                PIN {manager.pinCode ?? 'не задан'}
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -423,13 +420,9 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                             )}
                         </div>
                         <form className="space-y-3" onSubmit={handleAddManager}>
-                            <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: true })} />
+                            <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: 'Укажите имя менеджера' })} />
                             {managerForm.formState.errors.displayName && (
                                 <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
-                            )}
-                            <Input placeholder="Telegram ID" {...managerForm.register('telegramId', { required: true })} />
-                            {managerForm.formState.errors.telegramId && (
-                                <p className="text-xs text-rose-300">{managerForm.formState.errors.telegramId.message}</p>
                             )}
                             <Input
                                 placeholder="PIN (6 цифр)"
@@ -445,10 +438,13 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                             {managerForm.formState.errors.pinCode && (
                                 <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
                             )}
-                            <Input placeholder="@username (необязательно)" {...managerForm.register('username')} />
+                            <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
                             <Button type="submit" className="w-full">
                                 Добавить менеджера
                             </Button>
+                            <p className="text-center text-xs text-white/50">
+                                Telegram не требуется: имя и PIN формируют профиль менеджера.
+                            </p>
                         </form>
                         {data.managers.length > 0 && (
                             <form className="space-y-3" onSubmit={handleUpdateManager}>

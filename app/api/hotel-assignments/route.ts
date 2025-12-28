@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
@@ -6,12 +7,15 @@ import { assertAdmin } from '@/lib/permissions';
 import { Prisma, UserRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+const MANUAL_TELEGRAM_PREFIX = 'manual-';
+const PIN_CONFLICT_MESSAGE = 'Этот PIN уже используется другим менеджером';
+const PIN_SPLIT_MESSAGE = 'PIN назначен нескольким людям. Обновите существующие назначения';
 const assignmentSchema = z.object({
     hotelId: z.string().cuid(),
-    telegramId: z.string().min(3).max(32),
     displayName: z.string().min(2).max(64),
     username: z.string().min(3).max(32).optional(),
-    pinCode: z.string().regex(/^\d{6}$/)
+    pinCode: z.string().regex(/^[\d]{6}$/),
+    telegramId: z.string().min(3).max(32).optional()
 });
 
 const updateAssignmentSchema = z
@@ -37,26 +41,81 @@ export async function POST(request: NextRequest) {
         assertAdmin(session);
 
         const payload = assignmentSchema.parse(rest);
+        const managerName = payload.displayName.trim();
+        const normalizedUsername = payload.username?.trim();
+        const normalizedTelegramId = payload.telegramId?.trim();
 
         const hotel = await prisma.hotel.findUnique({ where: { id: payload.hotelId } });
         if (!hotel) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const user = await prisma.user.upsert({
-            where: { telegramId: payload.telegramId },
-            update: {
-                displayName: payload.displayName,
-                username: payload.username,
+        let user;
+        if (normalizedTelegramId) {
+            const upsertUpdate: Prisma.UserUpdateInput = {
+                displayName: managerName,
                 role: UserRole.MANAGER
-            },
-            create: {
-                telegramId: payload.telegramId,
-                displayName: payload.displayName,
-                username: payload.username,
-                role: UserRole.MANAGER
+            };
+            if (normalizedUsername !== undefined) {
+                upsertUpdate.username = normalizedUsername;
             }
+
+            user = await prisma.user.upsert({
+                where: { telegramId: normalizedTelegramId },
+                update: upsertUpdate,
+                create: {
+                    telegramId: normalizedTelegramId,
+                    displayName: managerName,
+                    username: normalizedUsername ?? null,
+                    role: UserRole.MANAGER
+                }
+            });
+        } else {
+            const pinAssignments = await prisma.hotelAssignment.findMany({
+                where: { pinCode: payload.pinCode, isActive: true },
+                include: { user: true }
+            });
+            const uniqueUsers = new Set(pinAssignments.map((assignment) => assignment.userId));
+            if (uniqueUsers.size > 1) {
+                return new NextResponse(PIN_SPLIT_MESSAGE, { status: 409 });
+            }
+
+            const activeOwner = pinAssignments[0]?.user;
+            if (activeOwner) {
+                const userUpdates: Prisma.UserUpdateInput = { displayName: managerName };
+                if (normalizedUsername !== undefined) {
+                    userUpdates.username = normalizedUsername;
+                }
+                user = await prisma.user.update({
+                    where: { id: activeOwner.id },
+                    data: userUpdates
+                });
+            } else {
+                user = await prisma.user.create({
+                    data: {
+                        telegramId: `${MANUAL_TELEGRAM_PREFIX}${randomUUID()}`,
+                        displayName: managerName,
+                        username: normalizedUsername ?? null,
+                        role: UserRole.MANAGER
+                    }
+                });
+            }
+        }
+
+        const pinConflict = await prisma.hotelAssignment.findFirst({
+            where: {
+                pinCode: payload.pinCode,
+                isActive: true,
+                NOT: {
+                    userId: user.id
+                }
+            },
+            select: { id: true }
         });
+
+        if (pinConflict) {
+            return new NextResponse(PIN_CONFLICT_MESSAGE, { status: 409 });
+        }
 
         const assignment = await prisma.hotelAssignment.upsert({
             where: {
@@ -116,16 +175,12 @@ export async function PATCH(request: NextRequest) {
         }
 
         const userUpdates: { displayName?: string; username?: string | null } = {};
-        const assignmentUpdates: { pinCode?: string } = {};
 
         if (payload.displayName) {
-            userUpdates.displayName = payload.displayName;
+            userUpdates.displayName = payload.displayName.trim();
         }
         if (payload.username) {
-            userUpdates.username = payload.username;
-        }
-        if (payload.pinCode) {
-            assignmentUpdates.pinCode = payload.pinCode;
+            userUpdates.username = payload.username.trim();
         }
 
         const operations: Prisma.PrismaPromise<unknown>[] = [];
@@ -139,11 +194,24 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
-        if (Object.keys(assignmentUpdates).length) {
+        if (payload.pinCode) {
+            const pinConflict = await prisma.hotelAssignment.findFirst({
+                where: {
+                    pinCode: payload.pinCode,
+                    isActive: true,
+                    NOT: { userId: assignment.userId }
+                },
+                select: { id: true }
+            });
+
+            if (pinConflict) {
+                return new NextResponse(PIN_CONFLICT_MESSAGE, { status: 409 });
+            }
+
             operations.push(
-                prisma.hotelAssignment.update({
-                    where: { id: assignment.id },
-                    data: assignmentUpdates
+                prisma.hotelAssignment.updateMany({
+                    where: { userId: assignment.userId },
+                    data: { pinCode: payload.pinCode }
                 })
             );
         }

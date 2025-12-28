@@ -30,7 +30,7 @@ type AdminHotelSummary = {
     managers: Array<{
         id: string;
         displayName: string | null;
-        telegramId: string;
+        telegramId?: string | null;
         username?: string | null;
         role: string;
         pinCode?: string | null;
@@ -379,9 +379,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         const unique = new Map<string, string>();
         for (const hotel of sourceHotels) {
             for (const manager of hotel.managers) {
-                const label = manager.displayName?.trim() || manager.username?.trim() || manager.telegramId;
+                const label =
+                    manager.displayName?.trim() ||
+                    manager.username?.trim() ||
+                    (manager.pinCode ? `PIN ${manager.pinCode}` : 'Менеджер');
                 if (!unique.has(manager.id)) {
-                    unique.set(manager.id, label || manager.telegramId);
+                    unique.set(manager.id, label);
                 }
             }
         }
@@ -695,7 +698,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                                                     <div className="w-full text-left text-xs text-white/80 md:text-right">
                                                         {hotel.managers.slice(0, 3).map((manager) => (
                                                             <p key={`${manager.id}-pin`} className="font-mono">
-                                                                {manager.displayName ?? manager.telegramId}: {manager.pinCode ?? "PIN не задан"}
+                                                                {manager.displayName ?? manager.username ?? 'Менеджер'}: {manager.pinCode ?? 'PIN не задан'}
                                                             </p>
                                                         ))}
                                                         {hotel.managers.length > 3 && (
