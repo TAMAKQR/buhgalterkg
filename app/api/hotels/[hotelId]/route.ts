@@ -118,7 +118,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                             amountPaid: stay.amountPaid,
                             paymentMethod: stay.paymentMethod,
                             cashPaid: stay.cashPaid,
-                            cardPaid: stay.cardPaid
+                            cardPaid: stay.cardPaid,
+                            notes: stay.notes
                         }
                         : null
                 };

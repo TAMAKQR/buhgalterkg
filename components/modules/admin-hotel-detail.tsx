@@ -16,6 +16,8 @@ import { formatBishkekDateTime } from '@/lib/timezone';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
+type StayStatusValue = 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
+type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD';
 
 interface ShiftHistoryEntry {
     id: string;
@@ -58,7 +60,7 @@ interface HotelDetailPayload {
         stay?: {
             id: string;
             guestName?: string | null;
-            status: string;
+            status: StayStatusValue;
             scheduledCheckIn: string;
             scheduledCheckOut: string;
             actualCheckIn?: string | null;
@@ -67,6 +69,7 @@ interface HotelDetailPayload {
             paymentMethod?: string | null;
             cashPaid?: number | null;
             cardPaid?: number | null;
+            notes?: string | null;
         } | null;
     }>;
     activeShift?: ShiftHistoryEntry | null;
@@ -134,6 +137,87 @@ const roomStatusOptions: Array<{ value: RoomStatusValue; label: string }> = [
     { value: 'HOLD', label: 'Бронь' }
 ];
 
+interface StayEditForm {
+    stayId: string;
+    roomId: string;
+    roomLabel: string;
+    guestName: string;
+    scheduledCheckIn: string;
+    scheduledCheckOut: string;
+    actualCheckIn: string;
+    actualCheckOut: string;
+    status: StayStatusValue;
+    cashPaid: number;
+    cardPaid: number;
+    totalPaid: number;
+    paymentMethod: PaymentMethodValue;
+    notes: string;
+}
+
+const createStayEditDefaults = (): StayEditForm => ({
+    stayId: '',
+    roomId: '',
+    roomLabel: '',
+    guestName: '',
+    scheduledCheckIn: '',
+    scheduledCheckOut: '',
+    actualCheckIn: '',
+    actualCheckOut: '',
+    status: 'SCHEDULED',
+    cashPaid: 0,
+    cardPaid: 0,
+    totalPaid: 0,
+    paymentMethod: 'AUTO',
+    notes: ''
+});
+
+const stayStatusOptions: Array<{ value: StayStatusValue; label: string }> = [
+    { value: 'SCHEDULED', label: 'Запланирован' },
+    { value: 'CHECKED_IN', label: 'Заселён' },
+    { value: 'CHECKED_OUT', label: 'Выселен' },
+    { value: 'CANCELLED', label: 'Отменён' }
+];
+
+const stayPaymentOptions: Array<{ value: PaymentMethodValue; label: string }> = [
+    { value: 'AUTO', label: 'Определить автоматически' },
+    { value: 'CASH', label: 'Наличные' },
+    { value: 'CARD', label: 'Безнал' }
+];
+
+const toDateTimeInputValue = (value?: string | null) => {
+    if (!value) {
+        return '';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+};
+
+const fromDateTimeInputValue = (value?: string | null) => {
+    if (!value) {
+        return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+        return null;
+    }
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed.toISOString();
+};
+
+const toOptionalMinorValue = (value?: number | null) => {
+    if (value === undefined || value === null || Number.isNaN(value)) {
+        return undefined;
+    }
+    return Math.round(value * 100);
+};
+
 const formatCurrency = (value: number) => `${(value / 100).toLocaleString('ru-RU')} KGS`;
 
 const formatStayDate = (value?: string | null) => formatBishkekDateTime(value);
@@ -178,12 +262,32 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         defaultValues: createRoomEditDefaults()
     });
 
+    const stayEditForm = useForm<StayEditForm>({
+        defaultValues: createStayEditDefaults()
+    });
+
     const selectedAssignmentId = updateManagerForm.watch('assignmentId');
     const selectedManager = (data?.managers ?? []).find((manager) => manager.assignmentId === selectedAssignmentId);
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
     const selectedRoomIdForEdit = roomEditForm.watch('roomId');
     const hasRoomSelection = Boolean(selectedRoomIdForEdit);
     const roomIdField = roomEditForm.register('roomId', { required: 'Выберите номер' });
+    const selectedStayId = stayEditForm.watch('stayId');
+    const hasStaySelection = Boolean(selectedStayId);
+    const roomPaymentPreview = (() => {
+        const cash = stayEditForm.watch('cashPaid');
+        const card = stayEditForm.watch('cardPaid');
+        const totalField = stayEditForm.watch('totalPaid');
+        const normalizedCash = Number.isFinite(cash) ? cash : 0;
+        const normalizedCard = Number.isFinite(card) ? card : 0;
+        const normalizedTotal = Number.isFinite(totalField) ? totalField : 0;
+        return {
+            cash: normalizedCash,
+            card: normalizedCard,
+            totalBreakdown: normalizedCash + normalizedCard,
+            totalField: normalizedTotal
+        };
+    })();
 
     const toMinor = (value: number) => Math.round(value * 100);
     const toOptionalMinor = (value?: number | null) => {
@@ -390,6 +494,79 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
             console.error(roomUpdateError);
             if (typeof window !== 'undefined') {
                 window.alert('Не удалось обновить номер');
+            }
+        }
+    });
+
+    const resetStayEditor = () => {
+        stayEditForm.reset(createStayEditDefaults());
+    };
+
+    const hydrateStayEditor = (room: HotelDetailPayload['rooms'][number], stay: NonNullable<HotelDetailPayload['rooms'][number]['stay']>) => {
+        stayEditForm.reset({
+            stayId: stay.id,
+            roomId: room.id,
+            roomLabel: room.label,
+            guestName: stay.guestName ?? '',
+            scheduledCheckIn: toDateTimeInputValue(stay.scheduledCheckIn),
+            scheduledCheckOut: toDateTimeInputValue(stay.scheduledCheckOut),
+            actualCheckIn: toDateTimeInputValue(stay.actualCheckIn),
+            actualCheckOut: toDateTimeInputValue(stay.actualCheckOut),
+            status: stay.status as StayStatusValue,
+            cashPaid: (stay.cashPaid ?? 0) / 100,
+            cardPaid: (stay.cardPaid ?? 0) / 100,
+            totalPaid: (stay.amountPaid ?? (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0)) / 100,
+            paymentMethod: stay.paymentMethod ? (stay.paymentMethod as PaymentMethodValue) : 'AUTO',
+            notes: stay.notes ?? ''
+        });
+    };
+
+    const handleSelectStayForEdit = (room: HotelDetailPayload['rooms'][number], stay: NonNullable<HotelDetailPayload['rooms'][number]['stay']>) => {
+        hydrateStayEditor(room, stay);
+        stayEditForm.setFocus('guestName');
+    };
+
+    const handleUpdateStay = stayEditForm.handleSubmit(async (values) => {
+        if (!values.stayId) {
+            return;
+        }
+
+        const cashMinor = toOptionalMinorValue(values.cashPaid);
+        const cardMinor = toOptionalMinorValue(values.cardPaid);
+        const totalMinor = toOptionalMinorValue(values.totalPaid);
+
+        try {
+            await request(`/api/admin/stays/${values.stayId}`, {
+                method: 'PATCH',
+                body: {
+                    guestName: normalizeOptionalText(values.guestName),
+                    notes: normalizeOptionalText(values.notes),
+                    scheduledCheckIn: fromDateTimeInputValue(values.scheduledCheckIn),
+                    scheduledCheckOut: fromDateTimeInputValue(values.scheduledCheckOut),
+                    actualCheckIn: fromDateTimeInputValue(values.actualCheckIn),
+                    actualCheckOut: fromDateTimeInputValue(values.actualCheckOut),
+                    status: values.status,
+                    cashPaid: cashMinor,
+                    cardPaid: cardMinor,
+                    amountPaid: totalMinor,
+                    paymentMethod: values.paymentMethod === 'AUTO' ? null : values.paymentMethod
+                }
+            });
+
+            const refreshed = await mutate();
+            const snapshot = refreshed ?? data ?? null;
+            if (snapshot) {
+                const updatedRoom = snapshot.rooms.find((room) => room.id === values.roomId);
+                if (updatedRoom && updatedRoom.stay) {
+                    hydrateStayEditor(updatedRoom, updatedRoom.stay);
+                } else {
+                    resetStayEditor();
+                }
+            }
+        } catch (stayUpdateError) {
+            console.error(stayUpdateError);
+            if (typeof window !== 'undefined') {
+                window.alert('Не удалось обновить заселение');
             }
         }
     });
@@ -1018,9 +1195,23 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                                     {paymentLabel ? ` • ${paymentLabel}` : ''}
                                                 </p>
                                             )}
+                                            {stay.notes && <p>Комментарий: {stay.notes}</p>}
                                         </div>
                                     ) : (
                                         <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
+                                    )}
+                                    {stay && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-amber-200/30 text-[11px] text-amber-100 hover:bg-amber-500/10"
+                                                onClick={() => handleSelectStayForEdit(room, stay)}
+                                            >
+                                                Корректировать заселение
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -1029,6 +1220,107 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                         <p className="text-sm text-white/60">Номеров пока нет</p>
                     )}
                 </div>
+            </Card>
+
+            <Card>
+                <CardHeader title="Редактирование заселения" subtitle="Админ может править время, статус и оплату" />
+                {hasStaySelection ? (
+                    <form className="space-y-4" onSubmit={handleUpdateStay}>
+                        <div className="rounded-2xl border border-white/10 p-4 text-sm text-white/80">
+                            <p className="font-semibold text-white">Номер {stayEditForm.watch('roomLabel')}</p>
+                            <p className="text-xs text-white/60">ID заселения: {stayEditForm.watch('stayId')}</p>
+                        </div>
+                        <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый заезд</label>
+                                <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckIn')} />
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый выезд</label>
+                                <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckOut')} />
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический заезд</label>
+                                <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckIn')} />
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический выезд</label>
+                                <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckOut')} />
+                            </div>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Статус</label>
+                                <select
+                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                    {...stayEditForm.register('status')}
+                                >
+                                    {stayStatusOptions.map((option) => (
+                                        <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Способ оплаты</label>
+                                <select
+                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                    {...stayEditForm.register('paymentMethod')}
+                                >
+                                    {stayPaymentOptions.map((option) => (
+                                        <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-3">
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Наличные (KGS)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    {...stayEditForm.register('cashPaid', { valueAsNumber: true })}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Безнал (KGS)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Общая оплата (KGS)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    {...stayEditForm.register('totalPaid', { valueAsNumber: true })}
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-white/60">
+                            По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KGS
+                            {' • '}Поле «Общая оплата»: {roomPaymentPreview.totalField.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KGS
+                        </p>
+                        <TextArea rows={3} placeholder="Комментарий для администратора" {...stayEditForm.register('notes')} />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <Button type="submit">Сохранить заселение</Button>
+                            <Button type="button" variant="ghost" className="border border-white/20" onClick={resetStayEditor}>
+                                Закрыть редактор
+                            </Button>
+                        </div>
+                    </form>
+                ) : (
+                    <p className="text-sm text-white/60">Выберите заселение через список номеров, чтобы начать корректировку.</p>
+                )}
             </Card>
         </div>
     );
