@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         const session = await getSessionUser(_request);
         assertAdmin(session);
 
-        const [hotel, ledgerGroups] = await prisma.$transaction([
+        const [hotel, ledgerGroups, ledgerEntries] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: params.hotelId },
                 include: {
@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         include: {
                             stays: {
                                 orderBy: { scheduledCheckIn: 'desc' },
-                                take: 1
+                                take: 20
                             }
                         }
                     },
@@ -52,6 +52,15 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 orderBy: { entryType: 'asc' },
                 where: { hotelId: params.hotelId },
                 _sum: { amount: true }
+            }),
+            prisma.cashEntry.findMany({
+                where: { hotelId: params.hotelId },
+                orderBy: { recordedAt: 'desc' },
+                take: 50,
+                include: {
+                    manager: true,
+                    shift: { select: { number: true } }
+                }
             })
         ]);
 
@@ -98,7 +107,22 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             roomCount: hotel.rooms.length,
             occupiedRooms: hotel.rooms.filter((room) => room.status !== 'AVAILABLE').length,
             rooms: hotel.rooms.map((room) => {
-                const stay = room.stays[0];
+                const stayHistory = room.stays.map((stay) => ({
+                    id: stay.id,
+                    guestName: stay.guestName,
+                    status: stay.status,
+                    scheduledCheckIn: stay.scheduledCheckIn,
+                    scheduledCheckOut: stay.scheduledCheckOut,
+                    actualCheckIn: stay.actualCheckIn,
+                    actualCheckOut: stay.actualCheckOut,
+                    amountPaid: stay.amountPaid,
+                    paymentMethod: stay.paymentMethod,
+                    cashPaid: stay.cashPaid,
+                    cardPaid: stay.cardPaid,
+                    notes: stay.notes
+                }));
+                const latestStay = stayHistory[0] ?? null;
+
                 return {
                     id: room.id,
                     label: room.label,
@@ -106,22 +130,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     status: room.status,
                     isActive: room.isActive,
                     notes: room.notes,
-                    stay: stay
-                        ? {
-                            id: stay.id,
-                            guestName: stay.guestName,
-                            status: stay.status,
-                            scheduledCheckIn: stay.scheduledCheckIn,
-                            scheduledCheckOut: stay.scheduledCheckOut,
-                            actualCheckIn: stay.actualCheckIn,
-                            actualCheckOut: stay.actualCheckOut,
-                            amountPaid: stay.amountPaid,
-                            paymentMethod: stay.paymentMethod,
-                            cashPaid: stay.cashPaid,
-                            cardPaid: stay.cardPaid,
-                            notes: stay.notes
-                        }
-                        : null
+                    stay: latestStay,
+                    stays: stayHistory
                 };
             }),
             managers: hotel.assignments.map((assignment) => ({
@@ -148,6 +158,16 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 }
                 : null,
             shiftHistory,
+            transactions: ledgerEntries.map((entry) => ({
+                id: entry.id,
+                entryType: entry.entryType,
+                method: entry.method,
+                amount: entry.amount,
+                note: entry.note,
+                recordedAt: entry.recordedAt,
+                managerName: entry.manager?.displayName ?? null,
+                shiftNumber: entry.shift?.number ?? null
+            })),
             financials: {
                 cashIn: ledgerTotals[LedgerEntryType.CASH_IN],
                 cashOut: ledgerTotals[LedgerEntryType.CASH_OUT],

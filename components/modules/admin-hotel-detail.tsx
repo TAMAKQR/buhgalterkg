@@ -18,6 +18,34 @@ type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
 type StayStatusValue = 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
 type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD';
+type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
+type LedgerPaymentMethodValue = 'CASH' | 'CARD';
+
+interface RoomStayDetail {
+    id: string;
+    guestName?: string | null;
+    status: StayStatusValue;
+    scheduledCheckIn: string;
+    scheduledCheckOut: string;
+    actualCheckIn?: string | null;
+    actualCheckOut?: string | null;
+    amountPaid?: number | null;
+    paymentMethod?: string | null;
+    cashPaid?: number | null;
+    cardPaid?: number | null;
+    notes?: string | null;
+}
+
+interface LedgerEntryDetail {
+    id: string;
+    entryType: LedgerEntryTypeValue;
+    method: LedgerPaymentMethodValue;
+    amount: number;
+    note?: string | null;
+    recordedAt: string;
+    managerName?: string | null;
+    shiftNumber?: number | null;
+}
 
 interface ShiftHistoryEntry {
     id: string;
@@ -57,23 +85,12 @@ interface HotelDetailPayload {
         status: RoomStatusValue;
         isActive: boolean;
         notes?: string | null;
-        stay?: {
-            id: string;
-            guestName?: string | null;
-            status: StayStatusValue;
-            scheduledCheckIn: string;
-            scheduledCheckOut: string;
-            actualCheckIn?: string | null;
-            actualCheckOut?: string | null;
-            amountPaid?: number | null;
-            paymentMethod?: string | null;
-            cashPaid?: number | null;
-            cardPaid?: number | null;
-            notes?: string | null;
-        } | null;
+        stay?: RoomStayDetail | null;
+        stays: RoomStayDetail[];
     }>;
     activeShift?: ShiftHistoryEntry | null;
     shiftHistory: ShiftHistoryEntry[];
+    transactions: LedgerEntryDetail[];
     financials: {
         cashIn: number;
         cashOut: number;
@@ -178,11 +195,58 @@ const stayStatusOptions: Array<{ value: StayStatusValue; label: string }> = [
     { value: 'CANCELLED', label: 'Отменён' }
 ];
 
+const stayStatusLabels: Record<StayStatusValue, string> = {
+    SCHEDULED: 'Запланирован',
+    CHECKED_IN: 'Заселён',
+    CHECKED_OUT: 'Выселен',
+    CANCELLED: 'Отменён'
+};
+
+const stayStatusTone: Record<StayStatusValue, 'default' | 'success' | 'warning' | 'danger'> = {
+    SCHEDULED: 'default',
+    CHECKED_IN: 'warning',
+    CHECKED_OUT: 'success',
+    CANCELLED: 'danger'
+};
+
 const stayPaymentOptions: Array<{ value: PaymentMethodValue; label: string }> = [
     { value: 'AUTO', label: 'Определить автоматически' },
     { value: 'CASH', label: 'Наличные' },
     { value: 'CARD', label: 'Безнал' }
 ];
+
+const ledgerEntryTypeLabels: Record<LedgerEntryTypeValue, string> = {
+    CASH_IN: 'Поступление',
+    CASH_OUT: 'Расход',
+    MANAGER_PAYOUT: 'Выплата менеджеру',
+    ADJUSTMENT: 'Корректировка'
+};
+
+const ledgerEntryTone: Record<LedgerEntryTypeValue, 'default' | 'success' | 'warning' | 'danger'> = {
+    CASH_IN: 'success',
+    CASH_OUT: 'danger',
+    MANAGER_PAYOUT: 'warning',
+    ADJUSTMENT: 'default'
+};
+
+const ledgerAmountClass: Record<LedgerEntryTypeValue, string> = {
+    CASH_IN: 'text-emerald-300',
+    CASH_OUT: 'text-rose-300',
+    MANAGER_PAYOUT: 'text-amber-200',
+    ADJUSTMENT: 'text-white'
+};
+
+const ledgerSignSymbol: Record<LedgerEntryTypeValue, string> = {
+    CASH_IN: '+',
+    CASH_OUT: '-',
+    MANAGER_PAYOUT: '-',
+    ADJUSTMENT: '±'
+};
+
+const ledgerMethodLabels: Record<LedgerPaymentMethodValue, string> = {
+    CASH: 'Наличные',
+    CARD: 'Безнал'
+};
 
 const toDateTimeInputValue = (value?: string | null) => {
     if (!value) {
@@ -502,7 +566,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         stayEditForm.reset(createStayEditDefaults());
     };
 
-    const hydrateStayEditor = (room: HotelDetailPayload['rooms'][number], stay: NonNullable<HotelDetailPayload['rooms'][number]['stay']>) => {
+    const hydrateStayEditor = (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
         stayEditForm.reset({
             stayId: stay.id,
             roomId: room.id,
@@ -521,7 +585,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         });
     };
 
-    const handleSelectStayForEdit = (room: HotelDetailPayload['rooms'][number], stay: NonNullable<HotelDetailPayload['rooms'][number]['stay']>) => {
+    const handleSelectStayForEdit = (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
         hydrateStayEditor(room, stay);
         stayEditForm.setFocus('guestName');
     };
@@ -557,8 +621,9 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
             const snapshot = refreshed ?? data ?? null;
             if (snapshot) {
                 const updatedRoom = snapshot.rooms.find((room) => room.id === values.roomId);
-                if (updatedRoom && updatedRoom.stay) {
-                    hydrateStayEditor(updatedRoom, updatedRoom.stay);
+                const updatedStay = updatedRoom?.stays.find((stay) => stay.id === values.stayId);
+                if (updatedRoom && updatedStay) {
+                    hydrateStayEditor(updatedRoom, updatedStay);
                 } else {
                     resetStayEditor();
                 }
@@ -874,6 +939,44 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                 </div>
             </Card>
 
+            <Card>
+                <CardHeader title="Операции по кассе" subtitle="Последние 50 записей" />
+                {data.transactions.length ? (
+                    <div className="space-y-3">
+                        {data.transactions.map((entry) => {
+                            const note = entry.note?.trim() || null;
+                            return (
+                                <div key={entry.id} className="rounded-2xl border border-white/10 p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">{formatBishkekDateTime(entry.recordedAt)}</p>
+                                            <p className="text-sm text-white/70">
+                                                {entry.managerName ?? 'Система'}
+                                                {entry.shiftNumber ? ` • Смена №${entry.shiftNumber}` : ''}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className={`text-lg font-semibold ${ledgerAmountClass[entry.entryType]}`}>
+                                                {ledgerSignSymbol[entry.entryType]}
+                                                {formatCurrency(entry.amount)}
+                                            </p>
+                                            <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
+                                        <Badge label={ledgerMethodLabels[entry.method]} />
+                                    </div>
+                                    <p className="mt-3 text-sm text-white/70">{note ?? 'Комментарий отсутствует'}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="text-sm text-white/60">Ещё нет записей по кассе.</p>
+                )}
+            </Card>
+
             <section className="grid gap-6 lg:grid-cols-2">
                 <Card>
                     <CardHeader title="Менеджеры" subtitle="Управление назначениями" />
@@ -1105,30 +1208,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                 <div className="grid gap-3 md:grid-cols-2">
                     {data.rooms.length ? (
                         data.rooms.map((room) => {
-                            const stay = room.stay ?? null;
-                            const guestLabel = stay?.guestName?.trim() || (room.status === 'OCCUPIED' ? 'Гость' : '—');
-                            const checkInLabel = stay ? formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn) : '—';
-                            const checkOutLabel = stay ? formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut) : '—';
-                            const cashPortion = stay?.cashPaid ?? 0;
-                            const cardPortion = stay?.cardPaid ?? 0;
-                            const paymentLabel = (() => {
-                                const segments: string[] = [];
-                                if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
-                                if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
-                                if (!segments.length && stay?.paymentMethod) {
-                                    return stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
-                                }
-                                return segments.join(' · ') || undefined;
-                            })();
-                            const stayStatusLabel = stay
-                                ? stay.status === 'CHECKED_IN'
-                                    ? 'Заселён'
-                                    : stay.status === 'CHECKED_OUT'
-                                        ? 'Выселен'
-                                        : stay.status === 'SCHEDULED'
-                                            ? 'Запланирован'
-                                            : 'Отменён'
-                                : null;
+                            const stayHistory = room.stays ?? [];
 
                             return (
                                 <div key={room.id} className="rounded-2xl border border-white/10 p-4">
@@ -1183,35 +1263,64 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                         </div>
                                     </div>
                                     {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
-                                    {stay ? (
-                                        <div className="mt-3 space-y-1 text-sm text-white/70">
-                                            <p>Гость: {guestLabel}</p>
-                                            <p>Заезд: {checkInLabel}</p>
-                                            <p>Выезд: {checkOutLabel}</p>
-                                            {stayStatusLabel && <p>Статус: {stayStatusLabel}</p>}
-                                            {stay.amountPaid != null && (
-                                                <p>
-                                                    Оплата: {formatCurrency(stay.amountPaid)}
-                                                    {paymentLabel ? ` • ${paymentLabel}` : ''}
-                                                </p>
-                                            )}
-                                            {stay.notes && <p>Комментарий: {stay.notes}</p>}
+                                    {stayHistory.length ? (
+                                        <div className="mt-3 space-y-3">
+                                            {stayHistory.map((stayEntry, index) => {
+                                                const guestLabel = stayEntry.guestName?.trim() || (stayEntry.status === 'CHECKED_IN' ? 'Гость' : '—');
+                                                const checkInLabel = formatStayDate(stayEntry.actualCheckIn ?? stayEntry.scheduledCheckIn);
+                                                const checkOutLabel = formatStayDate(stayEntry.actualCheckOut ?? stayEntry.scheduledCheckOut);
+                                                const cashPortion = stayEntry.cashPaid ?? 0;
+                                                const cardPortion = stayEntry.cardPaid ?? 0;
+                                                const paymentLabel = (() => {
+                                                    const segments: string[] = [];
+                                                    if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
+                                                    if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
+                                                    if (!segments.length && stayEntry.paymentMethod) {
+                                                        return stayEntry.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
+                                                    }
+                                                    return segments.join(' · ') || undefined;
+                                                })();
+
+                                                return (
+                                                    <div key={stayEntry.id} className="rounded-2xl border border-white/10 p-3">
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                            <div>
+                                                                <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                                                                    {index === 0 ? 'Актуальная запись' : `История ${index + 1}`}
+                                                                </p>
+                                                                <p className="text-sm font-semibold text-white">{guestLabel}</p>
+                                                            </div>
+                                                            <Badge label={stayStatusLabels[stayEntry.status]} tone={stayStatusTone[stayEntry.status]} />
+                                                        </div>
+                                                        <div className="mt-2 space-y-1 text-xs text-white/70">
+                                                            <p>Заезд: {checkInLabel}</p>
+                                                            <p>Выезд: {checkOutLabel}</p>
+                                                            <p>Статус: {stayStatusLabels[stayEntry.status]}</p>
+                                                            {stayEntry.amountPaid != null && (
+                                                                <p>
+                                                                    Оплата: {formatCurrency(stayEntry.amountPaid)}
+                                                                    {paymentLabel ? ` • ${paymentLabel}` : ''}
+                                                                </p>
+                                                            )}
+                                                            {stayEntry.notes && <p>Комментарий: {stayEntry.notes}</p>}
+                                                        </div>
+                                                        <div className="mt-3 flex flex-wrap gap-2">
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="border border-amber-200/30 text-[11px] text-amber-100 hover:bg-amber-500/10"
+                                                                onClick={() => handleSelectStayForEdit(room, stayEntry)}
+                                                            >
+                                                                Корректировать заселение
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     ) : (
                                         <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
-                                    )}
-                                    {stay && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                className="border border-amber-200/30 text-[11px] text-amber-100 hover:bg-amber-500/10"
-                                                onClick={() => handleSelectStayForEdit(room, stay)}
-                                            >
-                                                Корректировать заселение
-                                            </Button>
-                                        </div>
                                     )}
                                 </div>
                             );
