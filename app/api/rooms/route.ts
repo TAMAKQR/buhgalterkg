@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma, RoomStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
@@ -21,6 +22,25 @@ const createRoomsSchema = z.object({
 const deleteRoomSchema = z.object({
     roomId: z.string().cuid()
 });
+
+const updateRoomSchema = z
+    .object({
+        roomId: z.string().cuid(),
+        label: z.string().min(1).max(32).optional(),
+        floor: z.string().max(32).nullable().optional(),
+        notes: z.string().max(200).nullable().optional(),
+        status: z.nativeEnum(RoomStatus).optional(),
+        isActive: z.boolean().optional()
+    })
+    .refine((values) => {
+        return (
+            typeof values.label !== 'undefined' ||
+            typeof values.floor !== 'undefined' ||
+            typeof values.notes !== 'undefined' ||
+            typeof values.status !== 'undefined' ||
+            typeof values.isActive === 'boolean'
+        );
+    }, 'Не переданы поля для обновления');
 
 export async function POST(request: NextRequest) {
     try {
@@ -122,5 +142,80 @@ export async function DELETE(request: NextRequest) {
         }
         console.error(error);
         return new NextResponse('Failed to delete room', { status: 500 });
+    }
+}
+
+export async function PATCH(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const { initData, devOverride, manualToken, ...rest } = body;
+        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        assertAdmin(session);
+
+        const payload = updateRoomSchema.parse(rest);
+
+        const room = await prisma.room.findUnique({ where: { id: payload.roomId } });
+        if (!room) {
+            return new NextResponse('Room not found', { status: 404 });
+        }
+
+        const updateData: Prisma.RoomUpdateInput = {};
+
+        if (typeof payload.label !== 'undefined') {
+            const trimmedLabel = payload.label.trim();
+            if (!trimmedLabel) {
+                return new NextResponse('Укажите номер', { status: 400 });
+            }
+
+            const duplicate = await prisma.room.findFirst({
+                where: {
+                    hotelId: room.hotelId,
+                    label: trimmedLabel,
+                    NOT: { id: room.id }
+                },
+                select: { id: true }
+            });
+
+            if (duplicate) {
+                return new NextResponse('Номер с таким названием уже существует', { status: 409 });
+            }
+
+            updateData.label = trimmedLabel;
+        }
+
+        if (typeof payload.floor !== 'undefined') {
+            const normalizedFloor = payload.floor?.trim();
+            updateData.floor = normalizedFloor?.length ? normalizedFloor : null;
+        }
+
+        if (typeof payload.notes !== 'undefined') {
+            const normalizedNotes = payload.notes?.trim();
+            updateData.notes = normalizedNotes?.length ? normalizedNotes : null;
+        }
+
+        if (payload.status) {
+            updateData.status = payload.status;
+        }
+
+        if (typeof payload.isActive === 'boolean') {
+            updateData.isActive = payload.isActive;
+        }
+
+        if (!Object.keys(updateData).length) {
+            return new NextResponse('Не переданы поля для обновления', { status: 400 });
+        }
+
+        const updatedRoom = await prisma.room.update({
+            where: { id: payload.roomId },
+            data: updateData
+        });
+
+        return NextResponse.json({ success: true, room: updatedRoom });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return new NextResponse(error.message, { status: 400 });
+        }
+        console.error(error);
+        return new NextResponse('Failed to update room', { status: 500 });
     }
 }

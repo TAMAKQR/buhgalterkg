@@ -102,6 +102,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 return {
                     id: room.id,
                     label: room.label,
+                    floor: room.floor,
                     status: room.status,
                     isActive: room.isActive,
                     notes: room.notes,

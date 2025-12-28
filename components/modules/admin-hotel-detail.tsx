@@ -15,6 +15,7 @@ import { useTelegramContext } from '@/components/providers/telegram-provider';
 import { formatBishkekDateTime } from '@/lib/timezone';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
+type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
 
 interface ShiftHistoryEntry {
     id: string;
@@ -50,7 +51,8 @@ interface HotelDetailPayload {
     rooms: Array<{
         id: string;
         label: string;
-        status: string;
+        floor?: string | null;
+        status: RoomStatusValue;
         isActive: boolean;
         notes?: string | null;
         stay?: {
@@ -107,6 +109,31 @@ interface CreateRoomsForm {
     notes?: string;
 }
 
+interface UpdateRoomForm {
+    roomId: string;
+    label: string;
+    floor?: string | null;
+    notes?: string | null;
+    status: RoomStatusValue;
+    isActive: boolean;
+}
+
+const createRoomEditDefaults = (): UpdateRoomForm => ({
+    roomId: '',
+    label: '',
+    floor: '',
+    notes: '',
+    status: 'AVAILABLE',
+    isActive: true
+});
+
+const roomStatusOptions: Array<{ value: RoomStatusValue; label: string }> = [
+    { value: 'AVAILABLE', label: 'Свободен' },
+    { value: 'OCCUPIED', label: 'Занят' },
+    { value: 'DIRTY', label: 'Уборка' },
+    { value: 'HOLD', label: 'Бронь' }
+];
+
 const formatCurrency = (value: number) => `${(value / 100).toLocaleString('ru-RU')} KGS`;
 
 const formatStayDate = (value?: string | null) => formatBishkekDateTime(value);
@@ -147,9 +174,16 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         defaultValues: { roomLabels: '' }
     });
 
+    const roomEditForm = useForm<UpdateRoomForm>({
+        defaultValues: createRoomEditDefaults()
+    });
+
     const selectedAssignmentId = updateManagerForm.watch('assignmentId');
     const selectedManager = (data?.managers ?? []).find((manager) => manager.assignmentId === selectedAssignmentId);
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
+    const selectedRoomIdForEdit = roomEditForm.watch('roomId');
+    const hasRoomSelection = Boolean(selectedRoomIdForEdit);
+    const roomIdField = roomEditForm.register('roomId', { required: 'Выберите номер' });
 
     const toMinor = (value: number) => Math.round(value * 100);
     const toOptionalMinor = (value?: number | null) => {
@@ -158,7 +192,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
         }
         return Math.round(value * 100);
     };
-    const normalizeNote = (value?: string) => {
+    const normalizeOptionalText = (value?: string | null) => {
         if (value == null) {
             return null;
         }
@@ -208,9 +242,9 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                 openingCash: toMinor(values.openingCash),
                 closingCash: toOptionalMinor(values.closingCash ?? undefined),
                 handoverCash: toOptionalMinor(values.handoverCash ?? undefined),
-                openingNote: normalizeNote(values.openingNote),
-                closingNote: normalizeNote(values.closingNote),
-                handoverNote: normalizeNote(values.handoverNote),
+                openingNote: normalizeOptionalText(values.openingNote),
+                closingNote: normalizeOptionalText(values.closingNote),
+                handoverNote: normalizeOptionalText(values.handoverNote),
                 status: values.status
             }
         });
@@ -292,6 +326,73 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
             setRemovingRoomId((current) => (current === roomId ? null : current));
         }
     };
+
+    const applyRoomToEditor = (room?: HotelDetailPayload['rooms'][number] | null) => {
+        if (!room) {
+            roomEditForm.reset(createRoomEditDefaults());
+            return;
+        }
+
+        roomEditForm.reset({
+            roomId: room.id,
+            label: room.label,
+            floor: room.floor ?? '',
+            notes: room.notes ?? '',
+            status: room.status,
+            isActive: room.isActive
+        });
+    };
+
+    const resetRoomEditor = () => applyRoomToEditor(null);
+
+    const populateRoomEditor = (roomId: string, source?: HotelDetailPayload | null) => {
+        const snapshot = source ?? data ?? null;
+        if (!snapshot) {
+            resetRoomEditor();
+            return;
+        }
+
+        const targetRoom = snapshot.rooms.find((room) => room.id === roomId);
+        applyRoomToEditor(targetRoom ?? null);
+    };
+
+    const handleSelectRoomForEdit = (roomId: string) => {
+        if (!roomId) {
+            resetRoomEditor();
+            return;
+        }
+
+        populateRoomEditor(roomId);
+        roomEditForm.setFocus('label');
+    };
+
+    const handleUpdateRoom = roomEditForm.handleSubmit(async (values) => {
+        if (!values.roomId) {
+            roomEditForm.setError('roomId', { type: 'manual', message: 'Выберите номер' });
+            return;
+        }
+
+        try {
+            await request('/api/rooms', {
+                method: 'PATCH',
+                body: {
+                    roomId: values.roomId,
+                    label: values.label.trim(),
+                    floor: normalizeOptionalText(values.floor),
+                    notes: normalizeOptionalText(values.notes),
+                    status: values.status,
+                    isActive: values.isActive
+                }
+            });
+            const refreshed = await mutate();
+            populateRoomEditor(values.roomId, refreshed ?? data ?? null);
+        } catch (roomUpdateError) {
+            console.error(roomUpdateError);
+            if (typeof window !== 'undefined') {
+                window.alert('Не удалось обновить номер');
+            }
+        }
+    });
 
     if (user && user.role !== 'ADMIN') {
         return (
@@ -724,29 +825,102 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                     </div>
                 </Card>
 
-                <Card>
-                    <CardHeader title="Номера" subtitle="Массовое добавление" />
-                    <form className="space-y-3" onSubmit={handleAddRooms}>
-                        <TextArea
-                            rows={6}
-                            placeholder="Номера через запятую или с новой строки: 101, 102"
-                            {...roomForm.register('roomLabels', { required: true })}
-                        />
-                        {roomForm.formState.errors.roomLabels && (
-                            <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
-                        )}
-                        <div className="grid gap-3 md:grid-cols-2">
-                            <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
-                            <Input placeholder="Комментарий" {...roomForm.register('notes')} />
-                        </div>
-                        <Button type="submit" className="w-full">
-                            Добавить номера
-                        </Button>
-                        <p className="text-xs text-white/50">
-                            Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
-                        </p>
-                    </form>
-                </Card>
+                <div className="space-y-6">
+                    <Card>
+                        <CardHeader title="Номера" subtitle="Массовое добавление" />
+                        <form className="space-y-3" onSubmit={handleAddRooms}>
+                            <TextArea
+                                rows={6}
+                                placeholder="Номера через запятую или с новой строки: 101, 102"
+                                {...roomForm.register('roomLabels', { required: true })}
+                            />
+                            {roomForm.formState.errors.roomLabels && (
+                                <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
+                            )}
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
+                                <Input placeholder="Комментарий" {...roomForm.register('notes')} />
+                            </div>
+                            <Button type="submit" className="w-full">
+                                Добавить номера
+                            </Button>
+                            <p className="text-xs text-white/50">
+                                Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
+                            </p>
+                        </form>
+                    </Card>
+
+                    <Card>
+                        <CardHeader title="Редактирование номера" subtitle="Меняйте статус, описание и доступность" />
+                        <form className="space-y-3" onSubmit={handleUpdateRoom}>
+                            <select
+                                className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                {...roomIdField}
+                                onChange={(event) => {
+                                    roomIdField.onChange(event);
+                                    handleSelectRoomForEdit(event.target.value);
+                                }}
+                            >
+                                <option value="" className="bg-slate-900 text-white">
+                                    Выберите номер для редактирования
+                                </option>
+                                {data.rooms.map((room) => (
+                                    <option key={`edit-room-${room.id}`} value={room.id} className="bg-slate-900 text-white">
+                                        {room.label}
+                                    </option>
+                                ))}
+                            </select>
+                            {roomEditForm.formState.errors.roomId && (
+                                <p className="text-xs text-rose-300">{roomEditForm.formState.errors.roomId.message}</p>
+                            )}
+                            <Input
+                                placeholder="Номер (например, 101)"
+                                disabled={!hasRoomSelection}
+                                {...roomEditForm.register('label', { required: 'Укажите номер' })}
+                            />
+                            {roomEditForm.formState.errors.label && (
+                                <p className="text-xs text-rose-300">{roomEditForm.formState.errors.label.message}</p>
+                            )}
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <Input placeholder="Этаж / корпус" disabled={!hasRoomSelection} {...roomEditForm.register('floor')} />
+                                <select
+                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                    disabled={!hasRoomSelection}
+                                    {...roomEditForm.register('status')}
+                                >
+                                    {roomStatusOptions.map((option) => (
+                                        <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <TextArea
+                                rows={3}
+                                placeholder="Комментарий к номеру"
+                                disabled={!hasRoomSelection}
+                                {...roomEditForm.register('notes')}
+                            />
+                            <label className="flex items-center gap-2 text-sm text-white/80">
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border border-white/40 bg-transparent accent-amber-400"
+                                    disabled={!hasRoomSelection}
+                                    {...roomEditForm.register('isActive')}
+                                />
+                                Учитывать номер в отчётах и дашборде
+                            </label>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <Button type="submit" disabled={!hasRoomSelection}>
+                                    Сохранить изменения
+                                </Button>
+                                <Button type="button" variant="ghost" className="border border-white/20" onClick={resetRoomEditor}>
+                                    Сбросить форму
+                                </Button>
+                            </div>
+                        </form>
+                    </Card>
+                </div>
             </section>
 
             <Card>
@@ -785,6 +959,7 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                         <div>
                                             <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
                                             <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
+                                            {room.floor && <p className="text-xs text-white/60">Этаж / корпус: {room.floor}</p>}
                                         </div>
                                         <div className="flex flex-col items-end gap-2 text-right">
                                             <Badge
@@ -807,16 +982,27 @@ export const AdminHotelDetail = ({ hotelId }: { hotelId: string }) => {
                                                                 : 'success'
                                                 }
                                             />
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                className="text-[11px] text-rose-200 hover:bg-rose-500/10"
-                                                onClick={() => handleDeleteRoom(room.id)}
-                                                disabled={removingRoomId === room.id}
-                                            >
-                                                {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
-                                            </Button>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="text-[11px] text-white/80 hover:bg-white/10"
+                                                    onClick={() => handleSelectRoomForEdit(room.id)}
+                                                >
+                                                    Настроить
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="text-[11px] text-rose-200 hover:bg-rose-500/10"
+                                                    onClick={() => handleDeleteRoom(room.id)}
+                                                    disabled={removingRoomId === room.id}
+                                                >
+                                                    {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                     {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
