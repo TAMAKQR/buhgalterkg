@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { ensureNoActiveShift } from '@/lib/shifts';
+import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,8 +75,7 @@ export async function POST(request: NextRequest) {
         if ((error as { code?: string } | null)?.code === 'P2002') {
             return new NextResponse('Не удалось открыть смену, попробуйте ещё раз', { status: 409 });
         }
-        console.error(error);
-        return new NextResponse('Failed to open shift', { status: 500 });
+        return handleApiError(error, 'Failed to open shift');
     }
 }
 
@@ -96,7 +96,6 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(shifts);
     } catch (error) {
-        console.error(error);
-        return new NextResponse('Failed to load shifts', { status: 500 });
+        return handleApiError(error, 'Failed to load shifts');
     }
 }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { LedgerEntryType, PaymentMethod } from '@prisma/client';
+import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,6 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to record expense', { status: 500 });
+        return handleApiError(error, 'Failed to record expense');
     }
 }

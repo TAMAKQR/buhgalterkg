@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
+import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -183,8 +184,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
 
         return NextResponse.json(payload);
     } catch (error) {
-        console.error(error);
-        return new NextResponse('Failed to load hotel details', { status: 500 });
+        return handleApiError(error, 'Failed to load hotel details');
     }
 }
 
@@ -210,8 +210,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         if ((error as { code?: string } | null)?.code === 'P2025') {
             return new NextResponse('Hotel not found', { status: 404 });
         }
-        console.error(error);
-        return new NextResponse('Failed to update hotel', { status: 500 });
+        return handleApiError(error, 'Failed to update hotel');
     }
 }
 
@@ -238,7 +237,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { hotel
         if ((error as { code?: string } | null)?.code === 'P2025') {
             return new NextResponse('Hotel not found', { status: 404 });
         }
-        console.error(error);
-        return new NextResponse('Failed to delete hotel', { status: 500 });
+        return handleApiError(error, 'Failed to delete hotel');
     }
 }

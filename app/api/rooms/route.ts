@@ -4,6 +4,7 @@ import { Prisma, RoomStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
+import { handleApiError } from '@/lib/server/errors';
 export const dynamic = 'force-dynamic';
 
 const createRoomsSchema = z.object({
@@ -107,8 +108,7 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to create rooms', { status: 500 });
+        return handleApiError(error, 'Failed to create rooms');
     }
 }
 
@@ -140,8 +140,7 @@ export async function DELETE(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to delete room', { status: 500 });
+        return handleApiError(error, 'Failed to delete room');
     }
 }
 
@@ -215,7 +214,6 @@ export async function PATCH(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to update room', { status: 500 });
+        return handleApiError(error, 'Failed to update room');
     }
 }

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
+import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +59,6 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Не удалось очистить историю смен', { status: 500 });
+        return handleApiError(error, 'Не удалось очистить историю смен');
     }
 }

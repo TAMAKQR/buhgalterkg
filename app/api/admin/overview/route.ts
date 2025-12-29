@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
 import { parseBishkekDateOnly } from "@/lib/timezone";
+import { handleApiError } from "@/lib/server/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -135,7 +136,6 @@ export async function GET(request: NextRequest) {
             },
         });
     } catch (error) {
-        console.error(error);
-        return new NextResponse("Failed to load overview", { status: 500 });
+        return handleApiError(error, "Failed to load overview");
     }
 }

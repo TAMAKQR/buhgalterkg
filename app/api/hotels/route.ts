@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
+import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -110,8 +111,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(payload);
     } catch (error) {
-        console.error(error);
-        return new NextResponse('Failed to load hotels', { status: 500 });
+        return handleApiError(error, 'Failed to load hotels');
     }
 }
 
@@ -131,7 +131,6 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to create hotel', { status: 500 });
+        return handleApiError(error, 'Failed to create hotel');
     }
 }

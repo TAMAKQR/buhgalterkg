@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
+import { handleApiError } from '@/lib/server/errors';
 import { Prisma, UserRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -151,8 +152,7 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to assign manager', { status: 500 });
+        return handleApiError(error, 'Failed to assign manager');
     }
 }
 
@@ -243,8 +243,7 @@ export async function PATCH(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to update manager assignment', { status: 500 });
+        return handleApiError(error, 'Failed to update manager assignment');
     }
 }
 
@@ -275,7 +274,6 @@ export async function DELETE(request: NextRequest) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to remove manager', { status: 500 });
+        return handleApiError(error, 'Failed to remove manager');
     }
 }

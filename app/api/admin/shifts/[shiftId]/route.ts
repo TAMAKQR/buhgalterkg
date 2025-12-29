@@ -5,6 +5,7 @@ import { Prisma, ShiftStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
+import { handleApiError } from '@/lib/server/errors';
 
 const updateShiftSchema = z
     .object({
@@ -132,7 +133,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        console.error(error);
-        return new NextResponse('Failed to update shift', { status: 500 });
+        return handleApiError(error, 'Failed to update shift');
     }
 }

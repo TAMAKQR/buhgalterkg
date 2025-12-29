@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { resolveDevSession, resolveSessionFromInitData } from '@/lib/auth';
 import type { SessionUser } from '@/lib/types';
 import { resolveManualSession } from '@/lib/server/manual-session';
+import { SessionError } from '@/lib/server/errors';
 
 export type AuthPayload = {
     initData?: string;
@@ -33,13 +34,13 @@ export const readAuthPayloadFromHeader = (req: NextRequest): AuthPayload | undef
 
 export const sessionFromPayload = async (payload?: AuthPayload): Promise<SessionUser> => {
     if (!payload) {
-        throw new Error('Telegram init data is required');
+        throw new SessionError('Telegram init data is required');
     }
 
     if (payload.manualToken) {
         const session = resolveManualSession(payload.manualToken);
         if (!session) {
-            throw new Error('Manual session expired');
+            throw new SessionError('Manual session expired');
         }
         return session;
     }
@@ -50,7 +51,7 @@ export const sessionFromPayload = async (payload?: AuthPayload): Promise<Session
 
     if (payload.devOverride) {
         if (process.env.NODE_ENV === 'production') {
-            throw new Error('Dev override is disabled in production');
+            throw new SessionError('Dev override is disabled in production', 403);
         }
         return resolveDevSession({
             telegramId: payload.devOverride.telegramId,
@@ -59,7 +60,7 @@ export const sessionFromPayload = async (payload?: AuthPayload): Promise<Session
         });
     }
 
-    throw new Error('Telegram init data is required');
+    throw new SessionError('Telegram init data is required');
 };
 
 export const getSessionUser = async (req: NextRequest, bodyPayload?: AuthPayload) => {
