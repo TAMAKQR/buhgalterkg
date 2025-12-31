@@ -16,7 +16,9 @@ const assignmentSchema = z.object({
     displayName: z.string().min(2).max(64),
     username: z.string().min(3).max(32).optional(),
     pinCode: z.string().regex(/^[\d]{6}$/),
-    telegramId: z.string().min(3).max(32).optional()
+    telegramId: z.string().min(3).max(32).optional(),
+    shiftPayAmount: z.number().int().nonnegative().optional(),
+    revenueSharePct: z.number().int().min(0).max(100).optional()
 });
 
 const updateAssignmentSchema = z
@@ -24,11 +26,21 @@ const updateAssignmentSchema = z
         assignmentId: z.string().cuid(),
         displayName: z.string().min(2).max(64).optional(),
         username: z.string().min(3).max(32).optional(),
-        pinCode: z.string().regex(/^\d{6}$/).optional()
+        pinCode: z.string().regex(/^[\d]{6}$/).optional(),
+        shiftPayAmount: z.number().int().nonnegative().optional(),
+        revenueSharePct: z.number().int().min(0).max(100).optional()
     })
-    .refine((values) => values.displayName || values.username || values.pinCode, {
-        message: 'Нет данных для обновления'
-    });
+    .refine(
+        (values) =>
+            values.displayName !== undefined ||
+            values.username !== undefined ||
+            values.pinCode !== undefined ||
+            values.shiftPayAmount !== undefined ||
+            values.revenueSharePct !== undefined,
+        {
+            message: 'Нет данных для обновления'
+        }
+    );
 
 const deleteAssignmentSchema = z.object({
     assignmentId: z.string().cuid()
@@ -128,13 +140,17 @@ export async function POST(request: NextRequest) {
             update: {
                 isActive: true,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode
+                pinCode: payload.pinCode,
+                shiftPayAmount: payload.shiftPayAmount ?? null,
+                revenueSharePct: payload.revenueSharePct ?? null
             },
             create: {
                 hotelId: payload.hotelId,
                 userId: user.id,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode
+                pinCode: payload.pinCode,
+                shiftPayAmount: payload.shiftPayAmount ?? null,
+                revenueSharePct: payload.revenueSharePct ?? null
             }
         });
 
@@ -145,7 +161,9 @@ export async function POST(request: NextRequest) {
                 displayName: user.displayName,
                 telegramId: user.telegramId,
                 username: user.username,
-                pinCode: payload.pinCode
+                pinCode: payload.pinCode,
+                shiftPayAmount: assignment.shiftPayAmount,
+                revenueSharePct: assignment.revenueSharePct
             }
         });
     } catch (error) {
@@ -184,6 +202,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         const operations: Prisma.PrismaPromise<unknown>[] = [];
+        const assignmentUpdates: Prisma.HotelAssignmentUpdateInput = {};
 
         if (Object.keys(userUpdates).length) {
             operations.push(
@@ -216,6 +235,23 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
+        if (payload.shiftPayAmount !== undefined) {
+            assignmentUpdates.shiftPayAmount = payload.shiftPayAmount;
+        }
+
+        if (payload.revenueSharePct !== undefined) {
+            assignmentUpdates.revenueSharePct = payload.revenueSharePct;
+        }
+
+        if (Object.keys(assignmentUpdates).length) {
+            operations.push(
+                prisma.hotelAssignment.update({
+                    where: { id: assignment.id },
+                    data: assignmentUpdates
+                })
+            );
+        }
+
         if (operations.length) {
             await prisma.$transaction(operations);
         }
@@ -236,7 +272,9 @@ export async function PATCH(request: NextRequest) {
                 displayName: updated.user.displayName,
                 telegramId: updated.user.telegramId,
                 username: updated.user.username,
-                pinCode: updated.pinCode
+                pinCode: updated.pinCode,
+                shiftPayAmount: updated.shiftPayAmount,
+                revenueSharePct: updated.revenueSharePct
             }
         });
     } catch (error) {

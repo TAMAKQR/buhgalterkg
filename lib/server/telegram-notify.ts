@@ -67,3 +67,40 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         throw new Error(`Failed to send Telegram notification: ${detail}`);
     }
 };
+
+export type CleaningNotificationPayload = {
+    chatId?: string | null;
+    hotelName: string;
+    roomLabel: string;
+    managerName?: string | null;
+};
+
+export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) => {
+    if (!payload.chatId) {
+        return;
+    }
+
+    const text = [
+        "🧹 Требуется уборка",
+        `Отель: ${payload.hotelName}`,
+        `Номер: ${payload.roomLabel}`,
+        payload.managerName ? `Менеджер: ${payload.managerName}` : null,
+        "Просьба подтвердить уборку после завершения."
+    ]
+        .filter(Boolean)
+        .join("\n");
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: payload.chatId,
+            text
+        })
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to notify cleaning crew: ${detail}`);
+    }
+};

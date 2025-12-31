@@ -1,0 +1,1 @@
+-- No-op: handled by 20251231073603_ migration to keep column in camelCase.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LedgerEntryType, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, RoomStatus, ShiftStatus } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -8,12 +8,20 @@ import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
 
+const cleaningChatIdSchema = z
+    .string()
+    .trim()
+    .regex(/^-?\d+$/, { message: 'ID чата должен содержать только цифры и, при необходимости, знак -' })
+    .min(5)
+    .max(32);
+
 const updateHotelSchema = z
     .object({
         name: z.string().min(2).optional(),
         address: z.string().min(4).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
-        notes: z.string().max(500).optional()
+        notes: z.string().max(500).optional(),
+        cleaningChatId: cleaningChatIdSchema.optional().nullable()
     })
     .refine((values) => Object.keys(values).length > 0, {
         message: 'Не переданы поля для обновления'
@@ -24,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         const session = await getSessionUser(_request);
         assertAdmin(session);
 
-        const [hotel, ledgerGroups, ledgerEntries] = await prisma.$transaction([
+        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: params.hotelId },
                 include: {
@@ -62,6 +70,15 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     manager: true,
                     shift: { select: { number: true } }
                 }
+            }),
+            prisma.cashEntry.groupBy({
+                by: ['shiftId', 'entryType'],
+                orderBy: [
+                    { shiftId: 'asc' },
+                    { entryType: 'asc' }
+                ],
+                where: { hotelId: params.hotelId, shiftId: { not: null } },
+                _sum: { amount: true }
             })
         ]);
 
@@ -80,33 +97,92 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
         }
 
+        const shiftLedgerTotals = new Map<
+            string,
+            { cashIn: number; payouts: number }
+        >();
+
+        for (const group of shiftLedgerGroups) {
+            if (!group.shiftId) {
+                continue;
+            }
+            const bucket = shiftLedgerTotals.get(group.shiftId) ?? { cashIn: 0, payouts: 0 };
+            switch (group.entryType) {
+                case LedgerEntryType.CASH_IN:
+                    bucket.cashIn += group._sum?.amount ?? 0;
+                    break;
+                case LedgerEntryType.MANAGER_PAYOUT:
+                    bucket.payouts += group._sum?.amount ?? 0;
+                    break;
+                default:
+                    break;
+            }
+            shiftLedgerTotals.set(group.shiftId, bucket);
+        }
+
+        const assignmentComp = new Map<
+            string,
+            { shiftPayAmount: number | null | undefined; revenueSharePct: number | null | undefined }
+        >();
+
+        for (const assignment of hotel.assignments) {
+            assignmentComp.set(assignment.userId, {
+                shiftPayAmount: assignment.shiftPayAmount,
+                revenueSharePct: assignment.revenueSharePct
+            });
+        }
+
+        const computePayout = (shiftId: string, managerId: string) => {
+            const comp = assignmentComp.get(managerId);
+            if (!comp) {
+                return null;
+            }
+            const ledger = shiftLedgerTotals.get(shiftId) ?? { cashIn: 0, payouts: 0 };
+            const fixed = comp.shiftPayAmount ?? 0;
+            const sharePct = comp.revenueSharePct ?? 0;
+            const variable = sharePct ? Math.round((ledger.cashIn * sharePct) / 100) : 0;
+            const expected = fixed + variable;
+            const paid = ledger.payouts ?? 0;
+            const pending = expected > paid ? expected - paid : 0;
+            return { expected, paid, pending };
+        };
+
         const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
+        const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId) : null;
 
         const shiftHistory = hotel.shifts
             .filter((shift) => shift.status === ShiftStatus.CLOSED)
-            .map((shift) => ({
-                id: shift.id,
-                number: shift.number,
-                manager: shift.manager.displayName,
-                openedAt: shift.openedAt,
-                closedAt: shift.closedAt,
-                openingCash: shift.openingCash,
-                closingCash: shift.closingCash,
-                handoverCash: shift.handoverCash,
-                openingNote: shift.openingNote,
-                closingNote: shift.closingNote,
-                handoverNote: shift.handoverNote,
-                status: shift.status
-            }));
+            .map((shift) => {
+                const payout = computePayout(shift.id, shift.managerId);
+                return {
+                    id: shift.id,
+                    number: shift.number,
+                    managerId: shift.managerId,
+                    manager: shift.manager.displayName,
+                    openedAt: shift.openedAt,
+                    closedAt: shift.closedAt,
+                    openingCash: shift.openingCash,
+                    closingCash: shift.closingCash,
+                    handoverCash: shift.handoverCash,
+                    openingNote: shift.openingNote,
+                    closingNote: shift.closingNote,
+                    handoverNote: shift.handoverNote,
+                    status: shift.status,
+                    expectedPayout: payout?.expected ?? null,
+                    paidPayout: payout?.paid ?? null,
+                    pendingPayout: payout?.pending ?? null
+                };
+            });
 
         const payload = {
             id: hotel.id,
             name: hotel.name,
             address: hotel.address,
             managerSharePct: hotel.managerSharePct,
+            cleaningChatId: hotel.cleaningChatId,
             notes: hotel.notes,
             roomCount: hotel.rooms.length,
-            occupiedRooms: hotel.rooms.filter((room) => room.status !== 'AVAILABLE').length,
+            occupiedRooms: hotel.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
             rooms: hotel.rooms.map((room) => {
                 const stayHistory = room.stays.map((stay) => ({
                     id: stay.id,
@@ -141,11 +217,14 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 displayName: assignment.user.displayName,
                 telegramId: assignment.user.telegramId,
                 username: assignment.user.username,
-                pinCode: assignment.pinCode
+                pinCode: assignment.pinCode,
+                shiftPayAmount: assignment.shiftPayAmount,
+                revenueSharePct: assignment.revenueSharePct
             })),
             activeShift: activeShiftRecord
                 ? {
                     id: activeShiftRecord.id,
+                    managerId: activeShiftRecord.managerId,
                     manager: activeShiftRecord.manager.displayName,
                     openedAt: activeShiftRecord.openedAt,
                     openingCash: activeShiftRecord.openingCash,
@@ -155,7 +234,10 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     closingNote: activeShiftRecord.closingNote,
                     handoverNote: activeShiftRecord.handoverNote,
                     number: activeShiftRecord.number,
-                    status: activeShiftRecord.status
+                    status: activeShiftRecord.status,
+                    expectedPayout: activeShiftPayout?.expected ?? null,
+                    paidPayout: activeShiftPayout?.paid ?? null,
+                    pendingPayout: activeShiftPayout?.pending ?? null
                 }
                 : null,
             shiftHistory,

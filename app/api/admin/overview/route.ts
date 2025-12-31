@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
         const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups] = await prisma.$transaction([
             prisma.hotel.count({ where: hotelFilter }),
             prisma.room.count({ where: roomHotelFilter }),
-            prisma.room.count({ where: { status: { not: RoomStatus.AVAILABLE }, ...roomHotelFilter } }),
+            prisma.room.count({ where: { status: RoomStatus.OCCUPIED, ...roomHotelFilter } }),
             prisma.shift.count({ where: { status: ShiftStatus.OPEN, ...shiftWhere } }),
             prisma.shift.findFirst({ where: shiftWhere, orderBy: { openedAt: "desc" }, select: { openedAt: true } }),
             prisma.cashEntry.groupBy({

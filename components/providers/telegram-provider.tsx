@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import useSWR from 'swr';
 import type { SessionUser } from '@/lib/types';
@@ -27,7 +27,10 @@ interface TelegramContextValue {
     error?: string;
     refresh: () => void;
     manualMode: boolean;
+    devOverrideActive: boolean;
+    devOverrideAvailable: boolean;
     manualLogin: (token: string, session?: SessionUser) => void;
+    enableDevOverride: () => void;
     logout: () => void;
 }
 
@@ -37,6 +40,7 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
     const [initData, setInitData] = useState<string>();
     const [devOverride, setDevOverride] = useState<{ telegramId: string; role?: string }>();
     const [manualSession, setManualSession] = useState<{ token: string; user?: SessionUser }>();
+    const devOverrideSeed = useRef<{ telegramId: string; role?: string }>();
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -63,7 +67,9 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
 
             const devTelegramId = process.env.NEXT_PUBLIC_DEV_TELEGRAM_ID;
             if (devTelegramId) {
-                setDevOverride({ telegramId: devTelegramId, role: process.env.NEXT_PUBLIC_DEV_ROLE });
+                const payload = { telegramId: devTelegramId, role: process.env.NEXT_PUBLIC_DEV_ROLE };
+                devOverrideSeed.current = payload;
+                setDevOverride(payload);
             }
         };
 
@@ -123,14 +129,29 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
 
     const logout = useCallback(() => {
         setManualSession(undefined);
+        setDevOverride(undefined);
         if (typeof window !== 'undefined') {
             window.sessionStorage.removeItem('manualAdminToken');
         }
         mutate(undefined, false);
     }, [mutate]);
 
+    const enableDevOverride = useCallback(() => {
+        if (!devOverrideSeed.current) {
+            return;
+        }
+        setDevOverride(devOverrideSeed.current);
+        setManualSession(undefined);
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem('manualAdminToken');
+        }
+        mutate();
+    }, [mutate]);
+
     const resolvedUser = manualSession?.user ?? data;
     const manualMode = Boolean(manualSession?.token);
+    const devOverrideActive = Boolean(devOverride);
+    const devOverrideAvailable = Boolean(devOverrideSeed.current);
 
     const value = useMemo<TelegramContextValue>(
         () => ({
@@ -141,10 +162,26 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
             error: error?.message,
             refresh: () => mutate(),
             manualMode,
+            devOverrideActive,
+            devOverrideAvailable,
             manualLogin,
+            enableDevOverride,
             logout,
         }),
-        [initData, requestBody, resolvedUser, isLoading, error, mutate, manualMode, manualLogin, logout]
+        [
+            initData,
+            requestBody,
+            resolvedUser,
+            isLoading,
+            error,
+            mutate,
+            manualMode,
+            devOverrideActive,
+            devOverrideAvailable,
+            manualLogin,
+            enableDevOverride,
+            logout
+        ]
     );
 
     return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>;

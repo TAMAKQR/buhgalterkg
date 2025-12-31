@@ -11,7 +11,8 @@ const handoverSchema = z.object({
     handoverCash: z.number().int().nonnegative(),
     closingCash: z.number().int().nonnegative(),
     note: z.string().optional(),
-    pinCode: z.string().regex(/^\d{6}$/).optional()
+    pinCode: z.string().regex(/^\d{6}$/).optional(),
+    handoverRecipientId: z.string().cuid().optional()
 });
 
 export async function POST(request: NextRequest, { params }: { params: { shiftId: string } }) {
@@ -23,12 +24,30 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
 
         const shift = await ensureShiftOwnership(params.shiftId, session, { pinCode: payload.pinCode });
 
+        let handoverRecipientId: string | null = null;
+        if (payload.handoverRecipientId) {
+            const recipientAssignment = await prisma.hotelAssignment.findFirst({
+                where: {
+                    hotelId: shift.hotelId,
+                    userId: payload.handoverRecipientId,
+                    isActive: true
+                }
+            });
+
+            if (!recipientAssignment) {
+                return new NextResponse('Выбранный менеджер не назначен на эту точку', { status: 400 });
+            }
+
+            handoverRecipientId = payload.handoverRecipientId;
+        }
+
         const updated = await prisma.shift.update({
             where: { id: shift.id },
             data: {
                 closingCash: payload.closingCash,
                 handoverCash: payload.handoverCash,
                 closingNote: payload.note,
+                handoverRecipientId,
                 status: 'CLOSED',
                 closedAt: new Date()
             }

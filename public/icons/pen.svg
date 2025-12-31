@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Hotel Ops Pen Icon</title>
+  <desc id="desc">Stylized diagonal pen with ink nib for the Hotel Ops PWA.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0ea5e9" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="url(#bg)" />
+  <g transform="rotate(-45 256 256)">
+    <rect x="198" y="86" width="60" height="280" rx="26" fill="url(#body)" />
+    <rect x="198" y="66" width="60" height="40" rx="16" fill="#bae6fd" />
+    <path d="M228 366 L258 430 L198 430 Z" fill="#f8fafc" />
+    <path d="M230 388 L248 422" stroke="#94a3b8" stroke-width="6" stroke-linecap="round" />
+  </g>
+</svg>

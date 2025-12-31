@@ -4,15 +4,23 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
-import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+
+const cleaningChatIdSchema = z
+    .string()
+    .trim()
+    .regex(/^-?\d+$/, { message: 'ID чата должен содержать только цифры и, при необходимости, знак -' })
+    .min(5)
+    .max(32);
 
 const createHotelSchema = z.object({
     name: z.string().min(2),
     address: z.string().min(4),
     managerSharePct: z.number().int().min(0).max(100).optional(),
-    notes: z.string().max(500).optional()
+    notes: z.string().max(500).optional(),
+    cleaningChatId: cleaningChatIdSchema.optional().nullable()
 });
 
 export async function GET(request: NextRequest) {
@@ -76,15 +84,18 @@ export async function GET(request: NextRequest) {
             address: hotel.address,
             managerSharePct: hotel.managerSharePct,
             notes: hotel.notes,
+            cleaningChatId: hotel.cleaningChatId,
             roomCount: hotel.rooms.length,
-            occupiedRooms: hotel.rooms.filter((room) => room.status !== 'AVAILABLE').length,
+            occupiedRooms: hotel.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
             managers: hotel.assignments.map((assignment) => ({
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
                 telegramId: assignment.user.telegramId,
                 username: assignment.user.username,
                 role: assignment.role,
-                pinCode: assignment.pinCode
+                pinCode: assignment.pinCode,
+                shiftPayAmount: assignment.shiftPayAmount,
+                revenueSharePct: assignment.revenueSharePct
             })),
             activeShift: hotel.shifts[0]
                 ? {

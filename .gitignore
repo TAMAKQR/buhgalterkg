@@ -12,3 +12,4 @@ yarn-error.log*
 .pnp.loader.mjs
 .prisma
 tsconfig.tsbuildinfo
+backup-prod.dump

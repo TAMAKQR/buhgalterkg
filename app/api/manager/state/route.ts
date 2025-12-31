@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, ShiftStatus, UserRole } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 
 export const dynamic = 'force-dynamic';
@@ -38,14 +38,57 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
+        const [assignment, managerAssignments, categories, products] = await Promise.all([
+            prisma.hotelAssignment.findFirst({
+                where: { hotelId, userId: session.id, isActive: true },
+                select: { shiftPayAmount: true, revenueSharePct: true }
+            }),
+            prisma.hotelAssignment.findMany({
+                where: { hotelId, isActive: true, role: UserRole.MANAGER },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            displayName: true,
+                            username: true
+                        }
+                    }
+                }
+            }),
+            prisma.productCategory.findMany({
+                where: { hotelId },
+                include: {
+                    _count: { select: { products: true } }
+                },
+                orderBy: { name: 'asc' }
+            }),
+            prisma.product.findMany({
+                where: { hotelId, isActive: true },
+                include: {
+                    category: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                },
+                orderBy: [{ name: 'asc' }]
+            })
+        ]);
+
         const shift = await prisma.shift.findFirst({
             where: { hotelId, status: ShiftStatus.OPEN },
             orderBy: { openedAt: 'desc' }
         });
 
+        if (shift && shift.managerId !== session.id) {
+            return new NextResponse('Смена уже ведётся другим менеджером. Дождитесь закрытия.', { status: 409 });
+        }
+
         let shiftCash = shift ? shift.openingCash : null;
         let shiftPayments: { cash: number; card: number; total: number } | null = null;
         let shiftExpenses: number | null = null;
+        let managerPayoutTotals: Record<LedgerEntryType, number> | null = null;
         let shiftLedger: Array<{
             id: string;
             entryType: LedgerEntryType;
@@ -117,12 +160,76 @@ export async function GET(request: NextRequest) {
             };
 
             shiftLedger = ledgerEntries;
+            managerPayoutTotals = ledgerTotals;
         }
 
         const serializedLedger = shiftLedger.map((entry) => ({
             ...entry,
             recordedAt: entry.recordedAt.toISOString()
         }));
+
+        const payoutSummary = (() => {
+            if (!assignment || !shift) {
+                return null;
+            }
+            const fixed = assignment.shiftPayAmount ?? 0;
+            const sharePct = assignment.revenueSharePct ?? 0;
+            const turnover = shiftPayments?.total ?? 0;
+            const shareComponent = sharePct ? Math.round((turnover * sharePct) / 100) : 0;
+            const expected = fixed + shareComponent;
+            const paid = managerPayoutTotals?.[LedgerEntryType.MANAGER_PAYOUT] ?? 0;
+            const pending = expected > paid ? expected - paid : 0;
+            return { expected, paid, pending };
+        })();
+
+        const handoverManagers = managerAssignments
+            .map((assignment) => assignment.user)
+            .filter((user): user is NonNullable<typeof user> => Boolean(user?.id))
+            .sort((first, second) =>
+                first.displayName.localeCompare(second.displayName, 'ru', {
+                    sensitivity: 'base'
+                })
+            )
+            .map((user) => ({
+                id: user.id,
+                displayName: user.displayName,
+                username: user.username
+            }));
+
+        const inventoryProducts = products.map((product) => ({
+            id: product.id,
+            name: product.name,
+            unit: product.unit,
+            stockOnHand: product.stockOnHand,
+            sellPrice: product.sellPrice,
+            costPrice: product.costPrice,
+            categoryId: product.category?.id ?? null,
+            categoryName: product.category?.name ?? null,
+            reorderThreshold: product.reorderThreshold,
+            isActive: product.isActive
+        }));
+
+        const inventorySummary = inventoryProducts.reduce(
+            (acc, product) => {
+                acc.totalUnits += product.stockOnHand;
+                acc.stockValue += product.costPrice * product.stockOnHand;
+                acc.potentialRevenue += product.sellPrice * product.stockOnHand;
+                if (
+                    typeof product.reorderThreshold === 'number' &&
+                    product.reorderThreshold > 0 &&
+                    product.stockOnHand <= product.reorderThreshold
+                ) {
+                    acc.lowStock += 1;
+                }
+                return acc;
+            },
+            {
+                totalUnits: 0,
+                stockValue: 0,
+                potentialRevenue: 0,
+                lowStock: 0
+            }
+        );
 
         const response = {
             hotel: {
@@ -152,7 +259,33 @@ export async function GET(request: NextRequest) {
                         cardPaid: room.stays[0].cardPaid
                     }
                     : null
-            }))
+            })),
+            compensation: assignment
+                ? {
+                    shiftPayAmount: assignment.shiftPayAmount,
+                    revenueSharePct: assignment.revenueSharePct,
+                    expectedPayout: payoutSummary?.expected ?? null,
+                    paidPayout: payoutSummary?.paid ?? null,
+                    pendingPayout: payoutSummary?.pending ?? null
+                }
+                : null,
+            handoverManagers,
+            inventory: {
+                categories: categories.map((category) => ({
+                    id: category.id,
+                    name: category.name,
+                    description: category.description,
+                    productCount: category._count.products
+                })),
+                products: inventoryProducts,
+                summary: {
+                    totalProducts: inventoryProducts.length,
+                    totalUnits: inventorySummary.totalUnits,
+                    stockValue: inventorySummary.stockValue,
+                    potentialRevenue: inventorySummary.potentialRevenue,
+                    lowStock: inventorySummary.lowStock
+                }
+            }
         };
 
         return NextResponse.json(response);
