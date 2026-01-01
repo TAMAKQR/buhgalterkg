@@ -22,7 +22,7 @@ export const EntryRouter = () => {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen flex-col gap-4 p-6">
+            <div className="flex min-h-screen flex-col gap-4 px-3 py-6 sm:px-6">
                 <Skeleton className="h-10 w-40" />
                 <Skeleton className="h-40" />
                 <Skeleton className="h-40" />
@@ -33,7 +33,7 @@ export const EntryRouter = () => {
     if (!view) {
         if (mode === 'admin') {
             return (
-                <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">
+                <div className="flex min-h-screen items-center justify-center bg-slate-900 px-3 py-6 sm:px-6">
                     <AdminLoginGate embed onBack={() => setMode('manager')} contextError={error} />
                 </div>
             );

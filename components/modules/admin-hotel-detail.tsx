@@ -770,7 +770,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (user && user.role !== 'ADMIN') {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-white/70">
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center text-white/70 sm:px-6">
                 <p>Только администраторы могут управлять точками.</p>
                 <Button onClick={() => router.push('/')}>Вернуться</Button>
             </div>
@@ -779,7 +779,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (isLoading || !data) {
         return (
-            <div className="flex min-h-screen flex-col gap-4 p-6">
+            <div className="flex min-h-screen flex-col gap-4 px-3 py-6 sm:px-6">
                 <div className="flex items-center justify-between">
                     <Skeleton className="h-10 w-48" />
                     <Skeleton className="h-10 w-24" />
@@ -793,7 +793,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (error) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center text-rose-300 sm:px-6">
                 <p>Не удалось загрузить данные точки</p>
                 <p className="text-sm text-white/60">{String(error)}</p>
                 <Button onClick={() => router.refresh()}>Повторить</Button>
@@ -914,7 +914,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     });
 
     return (
-        <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
+        <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                     <h1 className="text-3xl font-semibold text-white">{data.name}</h1>

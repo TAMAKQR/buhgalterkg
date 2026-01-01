@@ -99,5 +99,5 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
         return card;
     }
 
-    return <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">{card}</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-slate-900 px-3 py-6 sm:px-6">{card}</div>;
 }

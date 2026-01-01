@@ -51,7 +51,7 @@ export function ManagerPinLogin({ onAdminMode, contextError }: ManagerPinLoginPr
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 text-white">
+        <div className="flex min-h-screen items-center justify-center bg-slate-950 px-3 py-8 text-white sm:px-6">
             <Card className="w-full max-w-md space-y-5 bg-white/5 p-6">
                 <div className="space-y-2">
                     <p className="text-xs uppercase tracking-[0.4em] text-white/40">Веб-панель</p>

@@ -710,7 +710,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center sm:px-6">
                     <p className="text-white/80">Администратор ещё не назначил вас на точку.</p>
                 </div>
             </>
@@ -721,7 +721,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center sm:px-6">
                     <p className="text-white/70">Загружаем данные точки…</p>
                 </div>
             </>
@@ -732,7 +732,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-rose-300">
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center text-rose-300 sm:px-6">
                     <p>Не удалось загрузить состояние менеджера</p>
                     <p className="text-sm text-white/60">{String(error)}</p>
                 </div>
@@ -744,7 +744,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col gap-6 p-6 pb-24">
+                <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
                     <header className="space-y-4">
                         <p className="mt-3 text-sm text-amber-200/80">Чтобы начать работу, введите код менеджера и сумму в кассе.</p>
                         {managerInfoBlock}
@@ -790,7 +790,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     return (
         <>
             <ExitButton />
-            <div className="flex min-h-screen flex-col gap-4 p-4 pb-24">
+            <div className="flex min-h-screen flex-col gap-4 px-3 pb-24 pt-3 sm:px-6 sm:pt-4">
                 <header className="space-y-4">
                     {data?.shift ? (
                         <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -840,7 +840,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                         </>
                     )}
                 </header>
-                <div className="sticky top-0 z-10 -mx-4 mb-2 mt-4 bg-slate-900/90 p-4 pb-3 backdrop-blur">
+                <div className="sticky top-0 z-10 -mx-3 mb-2 mt-4 bg-slate-900/90 px-3 pb-3 pt-3 backdrop-blur sm:-mx-6 sm:rounded-3xl">
                     <div className="flex gap-2 rounded-full bg-white/5 p-1 text-sm font-semibold text-white/60">
                         {panelTabs.map((tab) => (
                             <button

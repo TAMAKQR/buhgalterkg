@@ -899,7 +899,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     }, [isInventoryModalSaving]);
 
     return (
-        <div className="flex min-h-screen flex-col gap-4 p-4 pb-16">
+        <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-3 sm:px-6 sm:pt-4">
             <header className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -941,7 +941,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                     </p>
                 )}
             </header>
-            <div className="sticky top-0 z-10 -mx-4 mb-1 bg-slate-900/90 p-3 pb-2 backdrop-blur">
+            <div className="sticky top-0 z-10 -mx-3 mb-1 bg-slate-900/90 px-3 pb-2 pt-3 backdrop-blur sm:-mx-6 sm:rounded-3xl">
                 <div className="flex gap-1 rounded-full bg-white/5 p-1 text-sm font-semibold text-white/60">
                     {adminTabs.map((tab) => (
                         <button
@@ -1237,7 +1237,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                                 <h2 className="text-2xl font-semibold">Товары и категории</h2>
                                 <p className="text-sm text-white/60">Выберите объект, чтобы управлять остатками</p>
                             </div>
-                            <div className="w-full max-w-xs space-y-1">
+                            <div className="w-full space-y-1 sm:max-w-xs">
                                 <label className="text-xs font-semibold uppercase text-white/70" htmlFor="store-hotel">
                                     Объект
                                 </label>
