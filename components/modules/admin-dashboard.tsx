@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import useSWR from "swr";
 
-import { useTelegramContext } from "@/components/providers/telegram-provider";
 import type { SessionUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBishkekDateTime } from "@/lib/timezone";
@@ -147,6 +147,7 @@ type OverviewFilters = {
 
 interface AdminDashboardProps {
     user: SessionUser;
+    onLogout?: () => void;
 }
 
 interface CreateHotelPayload {
@@ -280,16 +281,19 @@ const AnalyticsFlowChart = ({ inflow, outflow, net }: AnalyticsFlowChartProps) =
     );
 };
 
-export function AdminDashboard({ user }: AdminDashboardProps) {
-    const { authPayload, manualMode, devOverrideActive, logout } = useTelegramContext();
-    const showLogout = manualMode || devOverrideActive;
-    const authHeader = authPayload ? JSON.stringify(authPayload) : undefined;
+export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
+    const router = useRouter();
 
-    const fetchWithAuth = useCallback(async ([url, header]: [string, string]) => {
+    const handleLogout = async () => {
+        await fetch('/api/session/logout', { method: 'POST' });
+        if (onLogout) {
+            onLogout();
+        }
+    };
+
+    const fetchWithAuth = useCallback(async (url: string) => {
         const response = await fetch(url, {
-            headers: {
-                "x-telegram-auth-payload": header,
-            },
+            credentials: 'include' // Include cookies
         });
 
         if (!response.ok) {
@@ -299,9 +303,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         return response.json();
     }, []);
 
-    const hotelsKey = authHeader ? (["/api/hotels", authHeader] as const) : null;
-
-    const { data, mutate, isLoading } = useSWR<AdminHotelSummary[]>(hotelsKey, fetchWithAuth);
+    const { data, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
 
     const [filters, setFilters] = useState<OverviewFilters>({ startDate: "", endDate: "", hotelId: "", managerId: "" });
 
@@ -323,8 +325,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     }, [filters]);
 
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
-    const overviewKey = authHeader ? ([overviewUrl, authHeader] as const) : null;
-    const { data: overview } = useSWR<AdminOverview>(overviewKey, fetchWithAuth);
+    const { data: overview } = useSWR<AdminOverview>(overviewUrl, fetchWithAuth);
 
     const createEmptyHotelForm = (): HotelFormState => ({
         name: "",
@@ -418,23 +419,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 return;
             }
 
-            if (!authPayload) {
-                notify("Нет авторизации Telegram");
-                return;
-            }
-
             try {
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (authHeader) {
-                    headers["x-telegram-auth-payload"] = authHeader;
-                }
-
-                const requestBody = { ...authPayload, ...payload };
-
                 const res = await fetch("/api/hotels", {
                     method: "POST",
-                    headers,
-                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
                 });
 
                 if (!res.ok) {
@@ -448,7 +438,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 notify("Ошибка создания");
             }
         },
-        [authHeader, authPayload, mutate],
+        [mutate],
     );
 
     const handleUpdateHotel = useCallback(
@@ -470,19 +460,9 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 return;
             }
 
-            if (!authPayload) {
-                notify("Нет авторизации Telegram");
-                return;
-            }
-
             setIsUpdatingHotel(true);
 
             try {
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (authHeader) {
-                    headers["x-telegram-auth-payload"] = authHeader;
-                }
-
                 const payload = {
                     name: editForm.name.trim(),
                     address: editForm.address.trim(),
@@ -492,8 +472,9 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
 
                 const res = await fetch(`/api/hotels/${selectedHotelId}`, {
                     method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ ...authPayload, ...payload }),
+                    headers: { "Content-Type": "application/json" },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
                 });
 
                 if (!res.ok) {
@@ -509,17 +490,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 setIsUpdatingHotel(false);
             }
         },
-        [authHeader, authPayload, editForm, mutate, selectedHotelId],
+        [editForm, mutate, selectedHotelId],
     );
 
     const handleDeleteHotel = useCallback(async () => {
         if (!selectedHotelId) {
             notify("Выберите отель");
-            return;
-        }
-
-        if (!authPayload) {
-            notify("Нет авторизации Telegram");
             return;
         }
 
@@ -530,15 +506,10 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         setIsDeletingHotel(true);
 
         try {
-            const headers: Record<string, string> = { "Content-Type": "application/json" };
-            if (authHeader) {
-                headers["x-telegram-auth-payload"] = authHeader;
-            }
-
             const res = await fetch(`/api/hotels/${selectedHotelId}`, {
                 method: "DELETE",
-                headers,
-                body: JSON.stringify({ ...authPayload }),
+                headers: { "Content-Type": "application/json" },
+                credentials: 'include',
             });
 
             if (!res.ok) {
@@ -555,7 +526,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         } finally {
             setIsDeletingHotel(false);
         }
-    }, [authHeader, authPayload, mutate, selectedHotelId]);
+    }, [mutate, selectedHotelId]);
 
     const hotels = useMemo(() => data ?? [], [data]);
 
@@ -565,12 +536,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         }
     }, [storeHotelId, hotels]);
 
-    const storeKey = authHeader && storeHotelId ? ([`/api/admin/products?hotelId=${storeHotelId}`, authHeader] as const) : null;
+    const storeUrl = storeHotelId ? `/api/admin/products?hotelId=${storeHotelId}` : null;
     const {
         data: storeData,
         mutate: refreshStore,
         isLoading: isStoreLoading,
-    } = useSWR<AdminStoreResponse>(storeKey, fetchWithAuth);
+    } = useSWR<AdminStoreResponse>(storeUrl, fetchWithAuth);
 
     const adminTabs: Array<{ id: AdminTab; label: string; hint?: string }> = [
         { id: "overview", label: "Сводка" },
@@ -666,9 +637,6 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
             if (!fields.productId) {
                 return { ok: false as const, error: "Выберите товар" };
             }
-            if (!authPayload) {
-                return { ok: false as const, error: "Нет авторизации Telegram" };
-            }
 
             const quantityValue = Number(fields.quantity);
             if (!Number.isFinite(quantityValue) || quantityValue === 0) {
@@ -692,12 +660,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
             }
 
             try {
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (authHeader) {
-                    headers["x-telegram-auth-payload"] = authHeader;
-                }
                 const payload = {
-                    ...authPayload,
                     adjustmentType: fields.adjustmentType,
                     quantity: Math.trunc(quantityValue),
                     costTotal: parsedCost,
@@ -705,7 +668,8 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 };
                 const response = await fetch(`/api/admin/products/${fields.productId}/inventory`, {
                     method: "POST",
-                    headers,
+                    headers: { "Content-Type": "application/json" },
+                    credentials: 'include',
                     body: JSON.stringify(payload),
                 });
                 if (!response.ok) {
@@ -718,7 +682,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 return { ok: false as const, error: "Не удалось записать операцию" };
             }
         },
-        [authHeader, authPayload, refreshStore],
+        [refreshStore],
     );
 
     const handleCreateCategory = useCallback(
@@ -732,26 +696,18 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 notify("Название категории обязательно");
                 return;
             }
-            if (!authPayload) {
-                notify("Нет авторизации Telegram");
-                return;
-            }
 
             setIsSavingCategory(true);
             try {
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (authHeader) {
-                    headers["x-telegram-auth-payload"] = authHeader;
-                }
                 const payload = {
-                    ...authPayload,
                     hotelId: storeHotelId,
                     name: categoryForm.name.trim(),
                     description: categoryForm.description.trim() || undefined,
                 };
                 const response = await fetch("/api/admin/product-categories", {
                     method: "POST",
-                    headers,
+                    headers: { "Content-Type": "application/json" },
+                    credentials: 'include',
                     body: JSON.stringify(payload),
                 });
                 if (!response.ok) {
@@ -767,7 +723,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 setIsSavingCategory(false);
             }
         },
-        [authHeader, authPayload, categoryForm, refreshStore, storeHotelId],
+        [categoryForm, refreshStore, storeHotelId],
     );
 
     const handleCreateProduct = useCallback(
@@ -791,19 +747,10 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 notify("Укажите цену продажи");
                 return;
             }
-            if (!authPayload) {
-                notify("Нет авторизации Telegram");
-                return;
-            }
 
             setIsSavingProduct(true);
             try {
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (authHeader) {
-                    headers["x-telegram-auth-payload"] = authHeader;
-                }
                 const payload = {
-                    ...authPayload,
                     hotelId: storeHotelId,
                     categoryId: productForm.categoryId || undefined,
                     name: productForm.name.trim(),
@@ -817,7 +764,8 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 };
                 const response = await fetch("/api/admin/products", {
                     method: "POST",
-                    headers,
+                    headers: { "Content-Type": "application/json" },
+                    credentials: 'include',
                     body: JSON.stringify(payload),
                 });
                 if (!response.ok) {
@@ -843,7 +791,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 setIsSavingProduct(false);
             }
         },
-        [authHeader, authPayload, productForm, refreshStore, storeHotelId],
+        [productForm, refreshStore, storeHotelId],
     );
 
     const handleInventorySubmit = useCallback(
@@ -914,26 +862,19 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                             ?
                         </button>
                     </div>
-                    {showLogout && (
-                        <div className="flex items-center justify-end text-xs text-white/80">
-                            <div className="flex items-center gap-2">
-                                {devOverrideActive && (
-                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] uppercase tracking-[0.3em] text-white/70">
-                                        DEV
-                                    </span>
-                                )}
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="border border-white/20 text-white/80 hover:bg-white/10"
-                                    onClick={logout}
-                                >
-                                    Выйти
-                                </Button>
-                            </div>
+                    <div className="flex items-center justify-end text-xs text-white/80">
+                        <div className="flex items-center gap-2">
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="border border-white/20 text-white/80 hover:bg-white/10"
+                                onClick={handleLogout}
+                            >
+                                Выйти
+                            </Button>
                         </div>
-                    )}
+                    </div>
                 </div>
                 {isHeaderHintVisible && (
                     <p className="max-w-sm text-xs text-white/60">

@@ -93,7 +93,15 @@ export async function POST(request: NextRequest) {
         const { token, user } = createManualAdminSession();
         clearAttempts(fingerprint);
 
-        return NextResponse.json({ token, user });
+        const response = NextResponse.json({ success: true, user });
+        response.cookies.set('manualSession', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 30 // 30 days
+        });
+
+        return response;
     } catch (error) {
         if (error instanceof z.ZodError) {
             registerFailure(fingerprint);

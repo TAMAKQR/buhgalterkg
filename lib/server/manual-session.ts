@@ -85,3 +85,20 @@ export const resolveManualSession = (token?: string): SessionUser | null => {
         return null;
     }
 };
+
+export const getManualSessionUser = async (req: Request): Promise<SessionUser | null> => {
+    const cookieHeader = req.headers.get('cookie');
+    if (!cookieHeader) {
+        return null;
+    }
+
+    const cookies = Object.fromEntries(
+        cookieHeader.split('; ').map((cookie) => {
+            const [name, ...rest] = cookie.split('=');
+            return [name, rest.join('=')];
+        })
+    );
+
+    const token = cookies['manualSession'];
+    return resolveManualSession(token);
+};

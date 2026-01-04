@@ -489,13 +489,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     }, [data]);
 
     const selectedShift = shiftList.find((shift) => shift.id === selectedShiftId) ?? null;
-    const selectedShiftPayout = selectedShift && (typeof selectedShift.expectedPayout === 'number' || typeof selectedShift.paidPayout === 'number' || typeof selectedShift.pendingPayout === 'number')
-        ? {
-            expected: selectedShift.expectedPayout ?? 0,
-            paid: selectedShift.paidPayout ?? 0,
-            pending: selectedShift.pendingPayout ?? 0
-        }
-        : null;
     const shiftTransactions = useMemo(() => {
         if (!data) {
             return new Map<number, HotelDetailPayload['transactions']>();

@@ -3,14 +3,14 @@
 import useSWR from 'swr';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { SessionUser } from '@/lib/types';
-import { useApi } from '@/hooks/useApi';
-import { useTelegramContext } from '@/components/providers/telegram-provider';
+import { useCookieApi } from '@/hooks/useCookieApi';
 import { formatBishkekDateTime, formatBishkekInputValue, parseBishkekInputValue } from '@/lib/timezone';
 
 interface ManagerStateResponse {
@@ -151,6 +151,7 @@ interface ExpenseForm {
 }
 
 interface ShiftOpenForm {
+    pinCode: string;
     openingCash: number;
     note?: string;
 }
@@ -192,9 +193,17 @@ const formatKgs = (amount?: number | null) => {
     })} KGS`;
 };
 
-export const ManagerScreen = ({ user }: { user: SessionUser }) => {
-    const { get, request } = useApi();
-    const { logout } = useTelegramContext();
+export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
+    const router = useRouter();
+    const { get, request } = useCookieApi();
+
+    const handleLogout = async () => {
+        await fetch('/api/session/logout', { method: 'POST' });
+        if (onLogout) {
+            // Pass null to immediately clear the cache
+            onLogout();
+        }
+    };
 
     const { data, mutate, isLoading, error } = useSWR<ManagerStateResponse>(
         user.hotels[0]?.id ? ['manager-state', user.hotels[0].id] : null,
@@ -202,7 +211,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     );
 
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT' } });
-    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, note: '' } });
+    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '', handoverRecipientId: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
@@ -232,7 +241,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     const ExitButton = () => (
         <button
             type="button"
-            onClick={logout}
+            onClick={handleLogout}
             className="fixed right-4 top-4 z-30 rounded-full border border-white/20 bg-slate-900/70 p-2 text-white/70 shadow-lg backdrop-blur transition hover:border-white hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
             aria-label="Выйти к экрану PIN"
         >
@@ -258,7 +267,6 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
     const shiftLedger = data?.shiftLedger ?? [];
     const compensation = data?.compensation ?? null;
-    const handoverTargets = data?.handoverManagers ?? [];
     const inventory = data?.inventory ?? null;
     const inventoryProducts = useMemo(
         () => inventory?.products ?? [],
@@ -752,12 +760,27 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                 <ExitButton />
                 <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
                     <header className="space-y-4">
-                        <p className="mt-3 text-sm text-amber-200/80">Перед стартом смены укажите фактическую сумму наличных, которую видите в кассе.</p>
+                        <p className="mt-3 text-sm text-amber-200/80">Для начала смены введите PIN-код и фактическую сумму наличных в кассе.</p>
                         {managerInfoBlock}
                     </header>
                     <Card>
-                        <CardHeader title="Принять смену" subtitle="Фактическая касса" />
+                        <CardHeader title="Принять смену" subtitle="PIN и касса" />
                         <form className="space-y-3" onSubmit={handleOpenShift}>
+                            <Input
+                                type="password"
+                                placeholder="PIN (6 цифр)"
+                                maxLength={6}
+                                inputMode="numeric"
+                                {...openShiftForm.register('pinCode', {
+                                    required: 'Введите PIN менеджера',
+                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
+                                })}
+                            />
+                            {openShiftForm.formState.errors.pinCode && (
+                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
+                            )}
                             <Input
                                 type="number"
                                 step="0.01"
@@ -778,7 +801,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                 Начать смену
                             </Button>
                             <p className="text-xs text-white/50">
-                                Фиксируйте ровно то, что лежит в ящике, чтобы расчёты по смене совпадали.
+                                PIN-код определяет, кто открывает смену. Администратор назначает PIN каждому менеджеру.
                             </p>
                         </form>
                     </Card>

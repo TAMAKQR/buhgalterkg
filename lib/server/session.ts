@@ -64,6 +64,25 @@ export const sessionFromPayload = async (payload?: AuthPayload): Promise<Session
 };
 
 export const getSessionUser = async (req: NextRequest, bodyPayload?: AuthPayload) => {
-    const payload = bodyPayload ?? readAuthPayloadFromHeader(req);
-    return sessionFromPayload(payload);
+    // Use cookie-based auth for both admin and manager
+    const cookieHeader = req.headers.get('cookie');
+    if (cookieHeader) {
+        const cookies = Object.fromEntries(
+            cookieHeader.split('; ').map((cookie) => {
+                const [name, ...rest] = cookie.split('=');
+                return [name, rest.join('=')];
+            })
+        );
+
+        const token = cookies['manualSession'];
+        if (token) {
+            const session = resolveManualSession(token);
+            if (session) {
+                return session;
+            }
+        }
+    }
+
+    // No valid auth found
+    throw new SessionError('Authentication required');
 };

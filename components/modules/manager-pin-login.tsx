@@ -1,25 +1,26 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-
-import { useTelegramContext } from '@/components/providers/telegram-provider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { SessionUser } from '@/lib/types';
+import { useManualSession } from '@/hooks/useManualSession';
 
 interface ManualLoginResponse {
-    token: string;
-    user: SessionUser;
+    success: boolean;
+    user?: {
+        id: string;
+        displayName: string;
+        role: string;
+    };
 }
 
 interface ManagerPinLoginProps {
     onAdminMode?: () => void;
-    contextError?: string;
 }
 
-export function ManagerPinLogin({ onAdminMode, contextError }: ManagerPinLoginProps) {
-    const { manualLogin, loading } = useTelegramContext();
+export function ManagerPinLogin({ onAdminMode }: ManagerPinLoginProps) {
+    const { mutate } = useManualSession();
     const [pinCode, setPinCode] = useState('');
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string>();
@@ -38,11 +39,15 @@ export function ManagerPinLogin({ onAdminMode, contextError }: ManagerPinLoginPr
 
             if (!response.ok) {
                 const message = await response.text();
-                throw new Error(message || 'Не удалось подтвердить PIN');
+                throw new Error(message || 'Неверный PIN-код');
             }
 
             const data = (await response.json()) as ManualLoginResponse;
-            manualLogin(data.token, data.user);
+
+            if (data.success) {
+                // Trigger session refresh
+                await mutate();
+            }
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -54,12 +59,11 @@ export function ManagerPinLogin({ onAdminMode, contextError }: ManagerPinLoginPr
         <div className="flex min-h-screen items-center justify-center bg-slate-950 px-3 py-8 text-white sm:px-6">
             <Card className="w-full max-w-md space-y-5 bg-white/5 p-6">
                 <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Веб-панель</p>
+                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Панель менеджера</p>
                     <h1 className="text-2xl font-semibold">Вход по PIN</h1>
                     <p className="text-sm text-white/60">
-                        Откройте смену без Telegram. Введите код менеджера, который выдали администраторы.
+                        Введите PIN-код менеджера, который назначил администратор.
                     </p>
-                    {contextError && <p className="text-xs text-amber-300/90">{contextError}</p>}
                 </div>
                 <form className="space-y-4" onSubmit={handleSubmit}>
                     <div className="space-y-2">
@@ -70,7 +74,7 @@ export function ManagerPinLogin({ onAdminMode, contextError }: ManagerPinLoginPr
                             inputMode="numeric"
                             value={pinCode}
                             onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))}
-                            disabled={pending || loading}
+                            disabled={pending}
                         />
                         {error && <p className="text-xs text-rose-300">{error}</p>}
                     </div>

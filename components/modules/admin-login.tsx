@@ -2,15 +2,18 @@
 
 import { FormEvent, useState } from 'react';
 
-import { useTelegramContext } from '@/components/providers/telegram-provider';
+import { useManualSession } from '@/hooks/useManualSession';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { SessionUser } from '@/lib/types';
 
 interface ManualLoginResponse {
-    token: string;
-    user: SessionUser;
+    success: boolean;
+    user?: {
+        id: string;
+        displayName: string;
+        role: string;
+    };
 }
 
 interface AdminLoginGateProps {
@@ -20,7 +23,7 @@ interface AdminLoginGateProps {
 }
 
 export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLoginGateProps = {}) {
-    const { manualLogin, manualMode, loading } = useTelegramContext();
+    const { mutate } = useManualSession();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string>();
@@ -44,7 +47,11 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
             }
 
             const data = (await response.json()) as ManualLoginResponse;
-            manualLogin(data.token, data.user);
+
+            if (data.success) {
+                // Trigger session refresh
+                await mutate();
+            }
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -71,7 +78,7 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
                         placeholder="Логин"
                         value={username}
                         onChange={(event) => setUsername(event.target.value)}
-                        disabled={pending || loading}
+                        disabled={pending}
                         autoComplete="username"
                     />
                     <Input
@@ -79,7 +86,7 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
                         placeholder="Пароль"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
-                        disabled={pending || loading}
+                        disabled={pending}
                         autoComplete="current-password"
                     />
                     {error && <p className="text-xs text-rose-300">{error}</p>}
@@ -87,10 +94,9 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
                 <Button type="submit" className="w-full" disabled={pending || !username || !password}>
                     {pending ? 'Проверяем…' : 'Войти'}
                 </Button>
-                {manualMode && <p className="text-center text-xs text-emerald-300">Сессия активна</p>}
             </form>
             <p className="text-xs text-white/50">
-                Для быстрой работы используйте Telegram WebApp. Логин по паролю нужен только в браузере.
+                Панель администратора
             </p>
         </Card>
     );
