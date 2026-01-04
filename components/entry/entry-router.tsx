@@ -15,7 +15,7 @@ export const EntryRouter = () => {
 
     const handleLogout = useCallback(async () => {
         // Immediately set user to null to trigger re-render
-        await mutate(null, false);
+        await mutate({ user: null }, false);
     }, [mutate]);
 
     const view = useMemo(() => {
