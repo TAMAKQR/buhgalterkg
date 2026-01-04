@@ -19,9 +19,8 @@ const openShiftSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
-        const payload = openShiftSchema.parse(rest);
+        const session = await getSessionUser(request);
+        const payload = openShiftSchema.parse(body);
 
         assertHotelAccess(session, payload.hotelId);
         await ensureNoActiveShift(payload.hotelId);

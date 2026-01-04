@@ -18,11 +18,10 @@ const updateCategorySchema = z
 export async function PATCH(request: NextRequest, { params }: { params: { categoryId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = updateCategorySchema.parse(rest);
+        const payload = updateCategorySchema.parse(body);
 
         const category = await prisma.productCategory.findUnique({ where: { id: params.categoryId } });
         if (!category) {

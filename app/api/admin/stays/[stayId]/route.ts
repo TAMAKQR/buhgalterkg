@@ -40,11 +40,10 @@ const parseDateOrNull = (value?: string | null) => {
 export async function PATCH(request: NextRequest, { params }: { params: { stayId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = updateStaySchema.parse(rest);
+        const payload = updateStaySchema.parse(body);
         const stay = await prisma.roomStay.findUnique({
             where: { id: params.stayId },
             include: { room: true }

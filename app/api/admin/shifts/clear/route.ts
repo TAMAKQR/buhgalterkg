@@ -16,11 +16,10 @@ const clearSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json().catch(() => ({}));
-        const { initData, devOverride, manualToken, ...rest } = body ?? {};
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const { hotelId } = clearSchema.parse(rest);
+        const { hotelId } = clearSchema.parse(body);
 
         const closedShifts = await prisma.shift.findMany({
             where: { hotelId, status: ShiftStatus.CLOSED },

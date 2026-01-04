@@ -24,9 +24,8 @@ const staySchema = z.object({
 export async function POST(request: NextRequest, { params }: { params: { roomId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
-        const payload = staySchema.parse(rest);
+        const session = await getSessionUser(request);
+        const payload = staySchema.parse(body);
 
         const room = await prisma.room.findUnique({
             where: { id: params.roomId },

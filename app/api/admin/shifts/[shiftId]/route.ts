@@ -45,11 +45,10 @@ function normalizeDate(value?: string | null, allowNull = false) {
 export async function PATCH(request: NextRequest, { params }: { params: { shiftId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = updateShiftSchema.parse(rest);
+        const payload = updateShiftSchema.parse(body);
 
         const shift = await prisma.shift.findUnique({ where: { id: params.shiftId } });
         if (!shift) {

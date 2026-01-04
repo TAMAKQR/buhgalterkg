@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AdminDashboard } from '@/components/modules/admin-dashboard';
 import { AdminLoginGate } from '@/components/modules/admin-login';
 import { ManagerPinLogin } from '@/components/modules/manager-pin-login';
@@ -13,10 +13,10 @@ export const EntryRouter = () => {
 
     const role = user?.role;
 
-    const handleLogout = async () => {
+    const handleLogout = useCallback(async () => {
         // Immediately set user to null to trigger re-render
         await mutate(null, false);
-    };
+    }, [mutate]);
 
     const view = useMemo(() => {
         if (!user) return null;

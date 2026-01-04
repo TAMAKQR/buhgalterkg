@@ -46,11 +46,10 @@ const updateRoomSchema = z
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = createRoomsSchema.parse(rest);
+        const payload = createRoomsSchema.parse(body);
 
         const hotel = await prisma.hotel.findUnique({ where: { id: payload.hotelId } });
         if (!hotel) {
@@ -115,11 +114,10 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     try {
         const body = await request.json().catch(() => ({}));
-        const { initData, devOverride, manualToken, ...rest } = body ?? {};
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = deleteRoomSchema.parse(rest);
+        const payload = deleteRoomSchema.parse(body);
 
         const room = await prisma.room.findUnique({ where: { id: payload.roomId } });
         if (!room) {
@@ -147,11 +145,10 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = updateRoomSchema.parse(rest);
+        const payload = updateRoomSchema.parse(body);
 
         const room = await prisma.room.findUnique({ where: { id: payload.roomId } });
         if (!room) {

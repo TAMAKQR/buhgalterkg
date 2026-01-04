@@ -171,11 +171,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = createProductSchema.parse(rest);
+        const payload = createProductSchema.parse(body);
 
         const hotel = await prisma.hotel.findUnique({ where: { id: payload.hotelId }, select: { id: true } });
         if (!hotel) {

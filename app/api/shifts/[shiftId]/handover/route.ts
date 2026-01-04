@@ -17,9 +17,8 @@ const handoverSchema = z.object({
 export async function POST(request: NextRequest, { params }: { params: { shiftId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
-        const payload = handoverSchema.parse(rest);
+        const session = await getSessionUser(request);
+        const payload = handoverSchema.parse(body);
 
         const shift = await ensureShiftOwnership(params.shiftId, session, { pinCode: payload.pinCode });
 

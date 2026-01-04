@@ -25,11 +25,10 @@ const toMinor = (value?: number) => {
 export async function POST(request: NextRequest, { params }: { params: { productId: string } }) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = inventorySchema.parse(rest);
+        const payload = inventorySchema.parse(body);
         const product = await prisma.product.findUnique({ where: { id: params.productId } });
         if (!product) {
             return new NextResponse('Product not found', { status: 404 });

@@ -28,9 +28,8 @@ const saleSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
-        const payload = saleSchema.parse(rest);
+        const session = await getSessionUser(request);
+        const payload = saleSchema.parse(body);
 
         const shift = await prisma.shift.findUnique({ where: { id: payload.shiftId } });
         if (!shift || shift.status !== ShiftStatus.OPEN) {

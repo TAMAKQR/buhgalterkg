@@ -49,11 +49,10 @@ const deleteAssignmentSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = assignmentSchema.parse(rest);
+        const payload = assignmentSchema.parse(body);
         const managerName = payload.displayName.trim();
         const normalizedUsername = payload.username?.trim();
         const normalizedTelegramId = payload.telegramId?.trim();
@@ -177,11 +176,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = updateAssignmentSchema.parse(rest);
+        const payload = updateAssignmentSchema.parse(body);
 
         const assignment = await prisma.hotelAssignment.findUnique({
             where: { id: payload.assignmentId },
@@ -288,11 +286,10 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     try {
         const body = await request.json().catch(() => ({}));
-        const { initData, devOverride, manualToken, ...rest } = body ?? {};
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
+        const session = await getSessionUser(request);
         assertAdmin(session);
 
-        const payload = deleteAssignmentSchema.parse(rest);
+        const payload = deleteAssignmentSchema.parse(body);
 
         const assignment = await prisma.hotelAssignment.findUnique({ where: { id: payload.assignmentId } });
         if (!assignment) {

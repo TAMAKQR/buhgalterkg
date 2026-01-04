@@ -20,9 +20,8 @@ const expenseSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { initData, devOverride, manualToken, ...rest } = body;
-        const session = await getSessionUser(request, { initData, devOverride, manualToken });
-        const payload = expenseSchema.parse(rest);
+        const session = await getSessionUser(request);
+        const payload = expenseSchema.parse(body);
 
         assertHotelAccess(session, payload.hotelId);
 
