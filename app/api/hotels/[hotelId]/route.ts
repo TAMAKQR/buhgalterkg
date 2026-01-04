@@ -297,7 +297,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
 
 export async function DELETE(request: NextRequest, { params }: { params: { hotelId: string } }) {
     try {
-        const body = await request.json().catch(() => ({}));
         const session = await getSessionUser(request);
         assertAdmin(session);
 
