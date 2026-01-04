@@ -11,7 +11,7 @@ export async function POST() {
     response.cookies.set('manualSession', '', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: 'none',
         maxAge: 0
     });
 
