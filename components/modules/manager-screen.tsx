@@ -3,7 +3,6 @@
 import useSWR from 'swr';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -194,7 +193,6 @@ const formatKgs = (amount?: number | null) => {
 };
 
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
-    const router = useRouter();
     const { get, request } = useCookieApi();
 
     const handleLogout = async () => {

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import useSWR from "swr";
 
@@ -282,8 +281,6 @@ const AnalyticsFlowChart = ({ inflow, outflow, net }: AnalyticsFlowChartProps) =
 };
 
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
-    const router = useRouter();
-
     const handleLogout = async () => {
         await fetch('/api/session/logout', { method: 'POST' });
         if (onLogout) {

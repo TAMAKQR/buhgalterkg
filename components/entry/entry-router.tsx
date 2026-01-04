@@ -23,7 +23,7 @@ export const EntryRouter = () => {
         if (role === 'ADMIN') return <AdminDashboard user={user} onLogout={handleLogout} />;
         if (role === 'MANAGER') return <ManagerScreen user={user} onLogout={handleLogout} />;
         return null;
-    }, [role, user]);
+    }, [role, user, handleLogout]);
 
     if (loading) {
         return (

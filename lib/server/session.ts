@@ -63,7 +63,7 @@ export const sessionFromPayload = async (payload?: AuthPayload): Promise<Session
     throw new SessionError('Telegram init data is required');
 };
 
-export const getSessionUser = async (req: NextRequest, bodyPayload?: AuthPayload) => {
+export const getSessionUser = async (req: NextRequest) => {
     // Use cookie-based auth for both admin and manager
     const cookieHeader = req.headers.get('cookie');
     if (cookieHeader) {
