@@ -29,7 +29,16 @@ interface ManagerStateResponse {
         number: number;
     } | null;
     shiftCash?: number | null;
-    shiftExpenses?: number | null;
+    shiftBalances?: {
+        cash: number;
+        card: number;
+        total: number;
+    } | null;
+    shiftExpenses?: {
+        total: number;
+        cash: number;
+        card: number;
+    } | null;
     shiftPayments?: {
         cash: number;
         card: number;
@@ -142,14 +151,11 @@ interface ExpenseForm {
 }
 
 interface ShiftOpenForm {
-    pinCode: string;
     openingCash: number;
     note?: string;
 }
 
 interface ShiftHandoverForm {
-    handoverCash?: number;
-    closingCash?: number;
     note?: string;
     pinCode: string;
     handoverRecipientId: string;
@@ -196,7 +202,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     );
 
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT' } });
-    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, pinCode: '', note: '' } });
+    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '', handoverRecipientId: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
@@ -236,13 +242,20 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
 
     const primaryHotel = data?.hotel ?? user.hotels[0];
     const hasOpenShift = Boolean(data?.shift);
-    const shiftCashValue = data?.shiftCash ?? data?.shift?.openingCash ?? 0;
-    const shiftExpensesValue = data?.shiftExpenses ?? 0;
-    const shiftPayments = data?.shiftPayments;
+    const shiftExpenses = data?.shiftExpenses ?? null;
+    const shiftExpensesTotal = shiftExpenses?.total ?? 0;
+    const shiftExpensesCash = shiftExpenses?.cash ?? 0;
+    const shiftExpensesCard = shiftExpenses?.card ?? 0;
+    const shiftPayments = data?.shiftPayments ?? null;
     const shiftRevenueTotal = shiftPayments?.total ?? 0;
     const shiftRevenueCash = shiftPayments?.cash ?? 0;
     const shiftRevenueCard = shiftPayments?.card ?? 0;
-    const shiftNetIncome = shiftRevenueTotal - shiftExpensesValue;
+    const shiftBalances = data?.shiftBalances ?? null;
+    const shiftCashValue = shiftBalances?.cash ?? data?.shiftCash ?? data?.shift?.openingCash ?? 0;
+    const computedCardFallback = shiftRevenueCard - shiftExpensesCard;
+    const shiftCardValue = shiftBalances?.card ?? computedCardFallback;
+    const shiftTotalBalance = shiftBalances?.total ?? shiftCashValue + shiftCardValue;
+    const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
     const shiftLedger = data?.shiftLedger ?? [];
     const compensation = data?.compensation ?? null;
     const handoverTargets = data?.handoverManagers ?? [];
@@ -312,9 +325,11 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
         <li><span>Открытие кассы</span><strong>${formatKgs(data.shift.openingCash)}</strong></li>
         <li><span>Выручка (нал)</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
         <li><span>Выручка (безнал)</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
-        <li><span>Затраты</span><strong>${formatKgs(shiftExpensesValue)}</strong></li>
+        <li><span>Затраты (нал/безнал)</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
         <li><span>Чистый доход</span><strong>${formatKgs(shiftNetIncome)}</strong></li>
-        <li><span>Текущая касса</span><strong>${formatKgs(shiftCashValue)}</strong></li>
+        <li><span>Остаток (нал)</span><strong>${formatKgs(shiftCashValue)}</strong></li>
+        <li><span>Остаток (безнал)</span><strong>${formatKgs(shiftCardValue)}</strong></li>
+        <li><span>Остаток суммарно</span><strong>${formatKgs(shiftTotalBalance)}</strong></li>
     </ul>
     <p class="footer">Сохраните в PDF через диалог печати браузера.</p>
 </div>
@@ -342,8 +357,7 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                 <span className="text-white/80">Процент: {shareDisplay ?? '—'}</span>
                 {data?.shift && payoutSummary && (
                     <span className="font-semibold text-amber-100">
-                        Начислено: {formatKgs(payoutSummary.expected ?? 0)} • Выплачено: {formatKgs(payoutSummary.paid ?? 0)} • Осталось:{' '}
-                        {formatKgs(payoutSummary.pending ?? 0)}
+                        Начислено: {formatKgs(payoutSummary.expected ?? 0)}
                     </span>
                 )}
             </div>
@@ -440,12 +454,6 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
     useEffect(() => {
         if (data?.shift) {
             handoverForm.reset({
-                handoverCash: typeof data.shift.handoverCash === 'number'
-                    ? data.shift.handoverCash / 100
-                    : undefined,
-                closingCash: typeof data.shift.closingCash === 'number'
-                    ? data.shift.closingCash / 100
-                    : undefined,
                 note: '',
                 pinCode: '',
                 handoverRecipientId: data.shift.handoverRecipientId ?? ''
@@ -487,28 +495,26 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                 hotelId: primaryHotel.id,
                 openingCash: toMinor(values.openingCash),
                 note: values.note,
-                action: 'open',
-                pinCode: values.pinCode
+                action: 'open'
             }
         });
-        openShiftForm.reset({ openingCash: 0, note: '', pinCode: '' });
+        openShiftForm.reset({ openingCash: 0, note: '' });
         mutate();
     });
 
     const handleCloseShift = handoverForm.handleSubmit(async (values) => {
         if (!data?.shift) return;
+        const cashToReport = shiftCashValue;
         await request(`/api/shifts/${data.shift.id}/handover`, {
             body: {
-                handoverCash: toMinor(values.handoverCash),
-                closingCash: toMinor(values.closingCash),
+                handoverCash: cashToReport,
+                closingCash: cashToReport,
                 note: values.note,
                 pinCode: values.pinCode,
                 handoverRecipientId: values.handoverRecipientId || undefined
             }
         });
         handoverForm.reset({
-            handoverCash: undefined,
-            closingCash: undefined,
             note: '',
             pinCode: '',
             handoverRecipientId: ''
@@ -746,39 +752,33 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                 <ExitButton />
                 <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
                     <header className="space-y-4">
-                        <p className="mt-3 text-sm text-amber-200/80">Чтобы начать работу, введите код менеджера и сумму в кассе.</p>
+                        <p className="mt-3 text-sm text-amber-200/80">Перед стартом смены укажите фактическую сумму наличных, которую видите в кассе.</p>
                         {managerInfoBlock}
                     </header>
                     <Card>
-                        <CardHeader title="Принять смену" subtitle="Код менеджера" />
+                        <CardHeader title="Принять смену" subtitle="Фактическая касса" />
                         <form className="space-y-3" onSubmit={handleOpenShift}>
-                            <Input
-                                type="password"
-                                placeholder="PIN (6 цифр)"
-                                maxLength={6}
-                                inputMode="numeric"
-                                {...openShiftForm.register('pinCode', {
-                                    required: 'Введите PIN менеджера',
-                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                    pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
-                                })}
-                            />
-                            {openShiftForm.formState.errors.pinCode && (
-                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
-                            )}
                             <Input
                                 type="number"
                                 step="0.01"
                                 placeholder="Наличные в кассе"
-                                {...openShiftForm.register('openingCash', { valueAsNumber: true })}
+                                inputMode="decimal"
+                                min={0}
+                                {...openShiftForm.register('openingCash', {
+                                    valueAsNumber: true,
+                                    required: 'Введите фактический остаток наличных',
+                                    min: { value: 0, message: 'Сумма не может быть отрицательной' }
+                                })}
                             />
+                            {openShiftForm.formState.errors.openingCash && (
+                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.openingCash.message}</p>
+                            )}
                             <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
                             <Button type="submit" className="w-full">
                                 Начать смену
                             </Button>
                             <p className="text-xs text-white/50">
-                                Код назначает администратор. Пока смена не закрыта, другой менеджер не сможет начать работу.
+                                Фиксируйте ровно то, что лежит в ящике, чтобы расчёты по смене совпадали.
                             </p>
                         </form>
                     </Card>
@@ -822,14 +822,18 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                     </div>
                                 </div>
                             )}
-                            <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-2">
+                            <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-3">
                                 <div className="rounded-xl border border-white/10 p-3">
                                     <p className="text-xs uppercase tracking-[0.35em] text-white/40">Операции</p>
-                                    <p className="text-base font-semibold text-white">{formatKgs(shiftExpensesValue)}</p>
+                                    <p className="text-base font-semibold text-white">{formatKgs(shiftExpensesTotal)}</p>
                                 </div>
                                 <div className="rounded-xl border border-white/10 p-3">
-                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Факт в кассе</p>
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Факт наличными</p>
                                     <p className="text-base font-semibold text-white">{formatKgs(shiftCashValue)}</p>
+                                </div>
+                                <div className="rounded-xl border border-white/10 p-3">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Факт безналично</p>
+                                    <p className="text-base font-semibold text-white">{formatKgs(shiftCardValue)}</p>
                                 </div>
                             </div>
                         </div>
@@ -1056,16 +1060,29 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                                         </span>
                                     </div>
                                     <div className="flex items-center justify-between">
-                                        <span className="text-white/60">Затраты</span>
-                                        <span className="font-semibold text-rose-200">{formatKgs(shiftExpensesValue)}</span>
+                                        <span className="text-white/60">Затраты (нал/безнал)</span>
+                                        <span className="font-semibold text-rose-200">
+                                            {formatKgs(shiftExpensesTotal)}
+                                            <span className="ml-2 text-xs text-white/60">
+                                                ({formatKgs(shiftExpensesCash)} / {formatKgs(shiftExpensesCard)})
+                                            </span>
+                                        </span>
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <span className="text-white/60">Чистый доход</span>
                                         <span className="font-semibold text-amber-200">{formatKgs(shiftNetIncome)}</span>
                                     </div>
                                     <div className="flex items-center justify-between">
-                                        <span className="text-white/60">Текущая касса</span>
+                                        <span className="text-white/60">Остаток (нал)</span>
                                         <span className="font-semibold text-sky-200">{formatKgs(shiftCashValue)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-white/60">Остаток (безнал)</span>
+                                        <span className="font-semibold text-indigo-200">{formatKgs(shiftCardValue)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-white/60">Остаток суммарно</span>
+                                        <span className="font-semibold text-cyan-100">{formatKgs(shiftTotalBalance)}</span>
                                     </div>
                                 </div>
                                 <div className="sm:col-span-2 flex flex-wrap items-center justify-end gap-2">
@@ -1077,35 +1094,11 @@ export const ManagerScreen = ({ user }: { user: SessionUser }) => {
                         )}
                         {data?.shift ? (
                             <form className="grid gap-3 md:grid-cols-2" onSubmit={handleCloseShift}>
-                                <Input type="number" step="0.01" placeholder="Касса фактическая" {...handoverForm.register('closingCash', { valueAsNumber: true })} />
-                                <Input type="number" step="0.01" placeholder="Передаю" {...handoverForm.register('handoverCash', { valueAsNumber: true })} />
-                                <div className="space-y-1 md:col-span-2">
-                                    <Select
-                                        className="min-w-0 bg-slate-900/80 text-white"
-                                        disabled={!handoverTargets.length}
-                                        {...handoverForm.register('handoverRecipientId', {
-                                            required: handoverTargets.length ? 'Укажите кому передаёте смену' : false
-                                        })}
-                                    >
-                                        <option value="">
-                                            {handoverTargets.length ? 'Кому передаю смену' : 'Менеджеры ещё не назначены'}
-                                        </option>
-                                        {handoverTargets.map((manager) => (
-                                            <option key={manager.id} value={manager.id}>
-                                                {manager.displayName}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                    {handoverForm.formState.errors.handoverRecipientId && (
-                                        <p className="text-xs text-rose-300">
-                                            {handoverForm.formState.errors.handoverRecipientId.message}
-                                        </p>
-                                    )}
-                                    {!handoverTargets.length && (
-                                        <p className="text-xs text-white/50">
-                                            Обратитесь к администратору, чтобы назначить менеджеров для передачи смены.
-                                        </p>
-                                    )}
+                                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80 md:col-span-2">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-white/40">Сумма к передаче</p>
+                                    <p className="text-2xl font-semibold text-white">{formatKgs(shiftCashValue)}</p>
+                                    <p className="text-xs text-white/60">Система вычисляет кассу автоматически по операциям смены.</p>
+                                    <p className="text-xs text-white/60">Безналичный остаток по данным системы: {formatKgs(shiftCardValue)}.</p>
                                 </div>
                                 <div className="space-y-1">
                                     <Input

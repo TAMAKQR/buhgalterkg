@@ -321,10 +321,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const { user } = useTelegramContext();
 
     const hotelKey = hotelId ? `/api/hotels/${hotelId}` : null;
-    const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(
-        hotelKey,
-        (url: string) => get<HotelDetailPayload>(url)
-    );
+    const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(hotelKey, (url: string) => get<HotelDetailPayload>(url));
 
     const managerForm = useForm<AddManagerForm>({
         defaultValues: { displayName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined }
@@ -541,12 +538,45 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return shiftTransactions.get(selectedShift.number) ?? [];
     }, [selectedShift, shiftTransactions]);
 
+    const selectedShiftIncomeBreakdown = useMemo(() => {
+        if (!selectedShift) {
+            return null;
+        }
+        const base = () => ({ total: 0, cash: 0, card: 0 });
+        const stays = base();
+        const cashbox = base();
+        for (const entry of selectedShiftTransactions) {
+            if (entry.entryType !== 'CASH_IN') {
+                continue;
+            }
+            const note = entry.note?.toLowerCase() ?? '';
+            const target = note.startsWith('заселение') ? stays : cashbox;
+            if (entry.method === 'CARD') {
+                target.card += entry.amount;
+            } else {
+                target.cash += entry.amount;
+            }
+            target.total += entry.amount;
+        }
+        return { stays, cashbox };
+    }, [selectedShift, selectedShiftTransactions]);
+
+    const selectedShiftOutflows = useMemo(() => {
+        if (!selectedShift) {
+            return [];
+        }
+        return selectedShiftTransactions.filter((entry) => entry.entryType === 'CASH_OUT');
+    }, [selectedShift, selectedShiftTransactions]);
+
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
+    const [isOutflowModalOpen, setIsOutflowModalOpen] = useState(false);
     useEffect(() => {
         setIsTransactionsExpanded(false);
         setIsRoomHistoryExpanded(false);
+        setIsOutflowModalOpen(false);
     }, [selectedShiftId]);
+    const closeOutflowModal = () => setIsOutflowModalOpen(false);
 
     const toMinor = (value: number) => Math.round(value * 100);
     const toOptionalMinor = (value?: number | null) => {
@@ -913,918 +943,965 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         mutate();
     });
 
-    return (
-        <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                    <h1 className="text-3xl font-semibold text-white">{data.name}</h1>
-                    <p className="text-white/60">{data.address}</p>
-                </div>
-                <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-                    <Button
-                        type="button"
-                        variant="secondary"
-                        className="border border-white/20"
-                        onClick={() => setIsManagementPanelOpen(true)}
-                    >
-                        Панель управления
-                    </Button>
-                    <Link href="/">
-                        <Button variant="ghost">Назад</Button>
-                    </Link>
-                </div>
+    if (error) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center text-rose-200 sm:px-6">
+                <p className="text-lg font-semibold">Не удалось загрузить данные объекта</p>
+                <p className="text-sm text-rose-100/70">{String(error)}</p>
+                <Button type="button" variant="secondary" onClick={() => mutate()}>
+                    Повторить запрос
+                </Button>
             </div>
+        );
+    }
 
-            <section className="grid gap-4 md:grid-cols-3">
-                <Card>
-                    <CardHeader title="Номеров" subtitle="Под учётом" />
-                    <p className="text-4xl font-semibold text-white">{data.roomCount}</p>
-                </Card>
-                <Card>
-                    <CardHeader title="Занято" subtitle="Сейчас" />
-                    <p className="text-4xl font-semibold text-white">{`${data.occupiedRooms}/${data.roomCount}`}</p>
-                </Card>
-                <Card>
-                    <CardHeader title="Менеджеры" subtitle="Назначено" />
-                    <p className="text-4xl font-semibold text-white">{data.managers.length}</p>
-                </Card>
-            </section>
+    if (!data || isLoading) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-3 py-6 text-center text-white/70 sm:px-6">
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-4 w-64" />
+                <p className="text-sm">Загружаем актуальные данные отеля…</p>
+            </div>
+        );
+    }
 
-            <Card>
-                <CardHeader title="Финансы" subtitle="Только этот отель" />
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 p-4">
-                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">Чистый доход</p>
-                        <p className="text-3xl font-semibold text-white">{formatCurrency(data.financials.netCash)}</p>
-                        <p className="text-xs text-white/60">С учётом корректировок</p>
+    if (!data) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-3 py-6 text-center text-white/70 sm:px-6">
+                <p className="text-lg font-semibold">Отель не найден</p>
+                <Button type="button" variant="secondary" onClick={() => mutate()}>
+                    Обновить
+                </Button>
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <div className="flex min-h-screen flex-col gap-6 px-3 pb-24 pt-6 sm:px-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <h1 className="text-3xl font-semibold text-white">{data.name}</h1>
+                        <p className="text-white/60">{data.address}</p>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Поступления</p>
-                            <p className="text-xl font-semibold text-emerald-300">{formatCurrency(data.financials.cashIn)}</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Списания</p>
-                            <p className="text-xl font-semibold text-rose-300">{formatCurrency(data.financials.cashOut)}</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Платежи менеджерам</p>
-                            <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.payouts)}</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Корректировки</p>
-                            <p className="text-xl font-semibold text-white">{formatCurrency(data.financials.adjustments)}</p>
-                        </div>
+                    <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="border border-white/20"
+                            onClick={() => setIsManagementPanelOpen(true)}
+                        >
+                            Панель управления
+                        </Button>
+                        <Link href="/">
+                            <Button variant="ghost">Назад</Button>
+                        </Link>
                     </div>
                 </div>
-            </Card>
 
-            <Card>
-                <CardHeader
-                    title="Смены"
-                    subtitle="Активная и архив"
-                    actions={
-                        data.shiftHistory.length ? (
-                            <div className="text-right">
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="border border-white/15 text-white/80 hover:bg-white/10"
-                                    onClick={handleClearShiftHistory}
-                                    disabled={isClearingHistory}
+                <Card>
+                    <CardHeader
+                        title="Смены"
+                        actions={
+                            data.shiftHistory.length ? (
+                                <div className="text-right">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="border border-white/15 text-white/80 hover:bg-white/10"
+                                        onClick={handleClearShiftHistory}
+                                        disabled={isClearingHistory}
+                                    >
+                                        {isClearingHistory ? 'Очищаем…' : 'Очистить архив'}
+                                    </Button>
+                                    <p className="mt-1 text-[11px] text-white/40">Удаляет закрытые смены и кассовые записи</p>
+                                </div>
+                            ) : null
+                        }
+                    />
+                    {shiftList.length ? (
+                        <div className="space-y-4">
+                            <div>
+                                <Select
+                                    className="bg-slate-900/80 text-white"
+                                    value={selectedShiftId ?? activeShiftId ?? shiftList[0]?.id ?? ''}
+                                    onChange={(event) => setSelectedShiftId(event.target.value)}
                                 >
-                                    {isClearingHistory ? 'Очищаем…' : 'Очистить архив'}
-                                </Button>
-                                <p className="mt-1 text-[11px] text-white/40">Удаляет закрытые смены и кассовые записи</p>
+                                    {shiftList.map((shift) => (
+                                        <option key={shift.id} value={shift.id}>
+                                            Смена №{shift.number} · {shift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'} · {formatBishkekDateTime(shift.openedAt)} · {shift.manager}
+                                        </option>
+                                    ))}
+                                </Select>
                             </div>
-                        ) : null
-                    }
-                />
-                {shiftList.length ? (
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <label className="text-xs uppercase tracking-[0.3em] text-white/40">Выберите смену</label>
-                            <Select
-                                className="bg-slate-900/80 text-white"
-                                value={selectedShiftId ?? activeShiftId ?? shiftList[0]?.id ?? ''}
-                                onChange={(event) => setSelectedShiftId(event.target.value)}
-                            >
-                                {shiftList.map((shift) => (
-                                    <option key={shift.id} value={shift.id}>
-                                        {shift.status === 'CLOSED' ? 'Архив' : 'Активная'} · №{shift.number} · {formatBishkekDateTime(shift.openedAt)} · {shift.manager}
-                                    </option>
-                                ))}
-                            </Select>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            {selectedShift ? (
-                                <>
-                                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
-                                        <Badge label={`Смена №${selectedShift.number}`} />
-                                        <Badge
-                                            label={selectedShift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'}
-                                            tone={selectedShift.status === 'CLOSED' ? 'success' : 'warning'}
-                                        />
-                                        {selectedShift.isCurrent && <Badge label="Текущая" tone="warning" />}
-                                    </div>
-                                    <p className="mt-3 text-sm text-white/70">Менеджер {selectedShift.manager}</p>
-                                    {selectedShiftCash && (
-                                        <div className="mt-4 grid gap-3 text-sm text-white md:grid-cols-2">
-                                            <div className="rounded-2xl border border-white/10 p-3">
-                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Касса сейчас</p>
-                                                <p className="mt-1 text-2xl font-semibold text-white">
-                                                    {formatCurrency(selectedShiftCash.currentCash)}
-                                                </p>
-                                                <p className="text-xs text-white/60">Открытие {formatCurrency(selectedShiftCash.openingCash)}</p>
-                                                {selectedShift.handoverCash != null && (
-                                                    <p className="text-xs text-white/60">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
-                                                )}
-                                            </div>
-                                            <div className="rounded-2xl border border-white/10 p-3">
-                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Движение</p>
-                                                <div className="mt-2 space-y-1">
-                                                    <p className="flex items-center justify-between">
-                                                        <span>Поступления</span>
-                                                        <span className="text-emerald-300">{formatCurrency(selectedShiftCash.cashIn)}</span>
-                                                    </p>
-                                                    <p className="flex items-center justify-between">
-                                                        <span>Списания</span>
-                                                        <span className="text-rose-300">{formatCurrency(selectedShiftCash.cashOut)}</span>
-                                                    </p>
-                                                    <p className="flex items-center justify-between">
-                                                        <span>Выплаты</span>
-                                                        <span className="text-amber-200">{formatCurrency(selectedShiftCash.payouts)}</span>
-                                                    </p>
-                                                    <p className="flex items-center justify-between">
-                                                        <span>Корректировки</span>
-                                                        <span>{formatCurrency(selectedShiftCash.adjustments)}</span>
-                                                    </p>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                {selectedShift ? (
+                                    <>
+                                        <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+                                            <Badge label={`Смена №${selectedShift.number}`} />
+                                            <Badge
+                                                label={selectedShift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'}
+                                                tone={selectedShift.status === 'CLOSED' ? 'success' : 'warning'}
+                                            />
+                                            {selectedShift.isCurrent && <Badge label="Текущая" tone="warning" />}
+                                        </div>
+                                        <p className="mt-3 text-sm text-white/70">Менеджер {selectedShift.manager}</p>
+                                        {selectedShiftCash && (
+                                            <div className="mt-4 grid gap-3 text-sm text-white md:grid-cols-2">
+                                                <div className="rounded-2xl border border-white/10 p-3">
+                                                    <p className="mt-1 text-2xl font-semibold text-emerald-300">Касса сейчас {formatCurrency(selectedShiftCash.currentCash)}</p>
+                                                    <p className="mt-1 text-2xl font-semibold text-amber-200">Открытие {formatCurrency(selectedShiftCash.openingCash)}</p>
+                                                    {selectedShift.handoverCash != null && (
+                                                        <p className="text-xs text-white/60">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
+                                                    )}
+                                                </div>
+                                                <div className="rounded-2xl border border-white/10 p-3">
+                                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Движение</p>
+                                                    <div className="mt-2 space-y-3">
+                                                        <div>
+                                                            <p className="flex items-center justify-between">
+                                                                <span>Поступления</span>
+                                                                <span className="text-emerald-300">{formatCurrency(selectedShiftCash.cashIn)}</span>
+                                                            </p>
+                                                            {selectedShiftIncomeBreakdown && (
+                                                                <div className="mt-2 rounded-2xl border border-white/5 bg-white/5 p-2 text-[11px] text-white/60">
+                                                                    <div className="space-y-2">
+                                                                        <div>
+                                                                            <p className="flex items-center justify-between text-xs text-white/70">
+                                                                                <span>Заселения</span>
+                                                                                <span className="text-white">{formatCurrency(selectedShiftIncomeBreakdown.stays.total)}</span>
+                                                                            </p>
+                                                                            <p className="flex items-center justify-between">
+                                                                                <span>наличные</span>
+                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.stays.cash)}</span>
+                                                                            </p>
+                                                                            <p className="flex items-center justify-between">
+                                                                                <span>безналично</span>
+                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.stays.card)}</span>
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="border-t border-white/10 pt-2">
+                                                                            <p className="flex items-center justify-between text-xs text-white/70">
+                                                                                <span>Касса</span>
+                                                                                <span className="text-white">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.total)}</span>
+                                                                            </p>
+                                                                            <p className="flex items-center justify-between">
+                                                                                <span>наличные</span>
+                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.cash)}</span>
+                                                                            </p>
+                                                                            <p className="flex items-center justify-between">
+                                                                                <span>безналично</span>
+                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</span>
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className={`flex w-full items-center justify-between text-left transition ${selectedShiftOutflows.length ? 'hover:text-white' : 'text-white/50'}`}
+                                                            onClick={() => selectedShiftOutflows.length && setIsOutflowModalOpen(true)}
+                                                            disabled={!selectedShiftOutflows.length}
+                                                        >
+                                                            <span>Списания</span>
+                                                            <span className="text-rose-300">{formatCurrency(selectedShiftCash.cashOut)}</span>
+                                                        </button>
+                                                        <p className="flex items-center justify-between">
+                                                            <span>Выплаты</span>
+                                                            <span className="text-amber-200">{formatCurrency(selectedShiftCash.payouts)}</span>
+                                                        </p>
+                                                        <p className="flex items-center justify-between">
+                                                            <span>Корректировки</span>
+                                                            <span>{formatCurrency(selectedShiftCash.adjustments)}</span>
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
-                                    {selectedShiftPayout && (
-                                        <div className="mt-4 rounded-2xl border border-amber-200/30 bg-amber-100/5 p-4 text-white">
-                                            <p className="text-xs uppercase tracking-[0.35em] text-amber-100/70">К выплате менеджеру ({selectedShift.manager})</p>
-                                            <div className="mt-2 grid gap-3 text-sm sm:grid-cols-3">
-                                                <div>
-                                                    <p className="text-xs text-white/60">Начислено</p>
-                                                    <p className="text-lg font-semibold text-white">{formatCurrency(selectedShiftPayout.expected)}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-white/60">Уже выплачено</p>
-                                                    <p className="text-lg font-semibold text-emerald-200">{formatCurrency(selectedShiftPayout.paid)}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-white/60">Осталось выплатить</p>
-                                                    <p className="text-lg font-semibold text-amber-200">{formatCurrency(selectedShiftPayout.pending)}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                    <div className="mt-4 grid gap-3 text-sm text-white/90 md:grid-cols-3">
-                                        <div>
-                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">На начало</p>
-                                            <p className="font-semibold">{formatShiftAmount(selectedShift.openingCash)}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Передано</p>
-                                            <p className="font-semibold">{formatShiftAmount(selectedShift.handoverCash)}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Касса факт</p>
-                                            <p className="font-semibold">{formatShiftAmount(selectedShift.closingCash)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 space-y-1 text-xs text-white/60">
-                                        <p>Открыта {formatBishkekDateTime(selectedShift.openedAt)}</p>
-                                        {selectedShift.closedAt && <p>Закрыта {formatBishkekDateTime(selectedShift.closedAt)}</p>}
-                                    </div>
-                                    {(selectedShift.openingNote || selectedShift.handoverNote || selectedShift.closingNote) && (
-                                        <div className="mt-3 space-y-1 text-xs text-white/70">
-                                            {selectedShift.openingNote && <p>Комментарий (старт): {selectedShift.openingNote}</p>}
-                                            {selectedShift.handoverNote && <p>Комментарий (передача): {selectedShift.handoverNote}</p>}
-                                            {selectedShift.closingNote && <p>Комментарий (конец): {selectedShift.closingNote}</p>}
-                                        </div>
-                                    )}
-                                    <div className="mt-4 rounded-2xl border border-white/10 p-3">
-                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">Номера</p>
-                                        <div className="mt-2 grid gap-2 text-sm text-white/80 sm:grid-cols-2">
-                                            <div className="flex items-center justify-between">
-                                                <span>Свободно</span>
-                                                <span>{roomStatusBuckets.available.length}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span>Занято</span>
-                                                <span>{roomStatusBuckets.occupied.length}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span>Уборка</span>
-                                                <span>{roomStatusBuckets.dirty.length}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span>Бронь</span>
-                                                <span>{roomStatusBuckets.hold.length}</span>
-                                            </div>
-                                        </div>
-                                        <div className="mt-3 grid gap-3 text-xs text-white/60 sm:grid-cols-2">
+                                        )}
+                                        <div className="mt-4 grid gap-3 text-sm text-white/90 md:grid-cols-3">
                                             <div>
-                                                <p className="font-semibold text-white/70">Свободные</p>
-                                                <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.available.length ? roomStatusBuckets.available.join(', ') : '—'}</p>
+                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">На начало</p>
+                                                <p className="font-semibold">{formatShiftAmount(selectedShift.openingCash)}</p>
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-white/70">Занятые</p>
-                                                <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.occupied.length ? roomStatusBuckets.occupied.join(', ') : '—'}</p>
+                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Передано</p>
+                                                <p className="font-semibold">{formatShiftAmount(selectedShift.handoverCash)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Касса факт</p>
+                                                <p className="font-semibold">{formatShiftAmount(selectedShift.closingCash)}</p>
                                             </div>
                                         </div>
-                                    </div>
-                                    {selectedShiftTransactions.length ? (
+                                        <div className="mt-4 space-y-1 text-xs text-white/60">
+                                            <p>Открыта {formatBishkekDateTime(selectedShift.openedAt)}</p>
+                                            {selectedShift.closedAt && <p>Закрыта {formatBishkekDateTime(selectedShift.closedAt)}</p>}
+                                        </div>
+                                        {(selectedShift.openingNote || selectedShift.handoverNote || selectedShift.closingNote) && (
+                                            <div className="mt-3 space-y-1 text-xs text-white/70">
+                                                {selectedShift.openingNote && <p>Комментарий (старт): {selectedShift.openingNote}</p>}
+                                                {selectedShift.handoverNote && <p>Комментарий (передача): {selectedShift.handoverNote}</p>}
+                                                {selectedShift.closingNote && <p>Комментарий (конец): {selectedShift.closingNote}</p>}
+                                            </div>
+                                        )}
                                         <div className="mt-4 rounded-2xl border border-white/10 p-3">
-                                            <div className="mb-3 flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">
-                                                        Операции по кассе
-                                                        <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
-                                                            · записи привязаны к смене
-                                                        </span>
-                                                    </p>
+                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Номера</p>
+                                            <div className="mt-2 grid gap-2 text-sm text-white/80 sm:grid-cols-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span>Свободно</span>
+                                                    <span>{roomStatusBuckets.available.length}</span>
                                                 </div>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="border border-white/15 text-white/80 hover:bg-white/10"
-                                                    onClick={() => setIsTransactionsExpanded((prev) => !prev)}
-                                                >
-                                                    {isTransactionsExpanded ? 'Свернуть' : 'Развернуть'}
-                                                </Button>
+                                                <div className="flex items-center justify-between">
+                                                    <span>Занято</span>
+                                                    <span>{roomStatusBuckets.occupied.length}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span>Уборка</span>
+                                                    <span>{roomStatusBuckets.dirty.length}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span>Бронь</span>
+                                                    <span>{roomStatusBuckets.hold.length}</span>
+                                                </div>
                                             </div>
-                                            {isTransactionsExpanded ? (
-                                                <div className="space-y-3">
-                                                    {selectedShiftTransactions.map((entry) => {
-                                                        const note = entry.note?.trim() || null;
-                                                        return (
-                                                            <div key={entry.id} className="rounded-2xl border border-white/10 p-3">
-                                                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                                                    <div>
-                                                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">{formatBishkekDateTime(entry.recordedAt)}</p>
-                                                                        <p className="text-sm text-white/70">{entry.managerName ?? 'Система'}</p>
-                                                                    </div>
-                                                                    <div className="text-right">
-                                                                        <p className={`text-lg font-semibold ${ledgerAmountClass[entry.entryType]}`}>
-                                                                            {ledgerSignSymbol[entry.entryType]}
-                                                                            {formatCurrency(entry.amount)}
-                                                                        </p>
-                                                                        <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="mt-3 flex flex-wrap gap-2">
-                                                                    <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
-                                                                    <Badge label={ledgerMethodLabels[entry.method]} />
-                                                                </div>
-                                                                <p className="mt-3 text-sm text-white/70">{note ?? 'Без комментария'}</p>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            ) : (
-                                                <p className="text-xs text-white/60">
-                                                    Показано {selectedShiftTransactions.length} записей. Нажмите «Развернуть», чтобы увидеть детали.
-                                                </p>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <p className="mt-4 text-xs text-white/50">Для этой смены нет кассовых операций.</p>
-                                    )}
-                                    <div className="mt-6 space-y-6">
-                                        <div className="rounded-2xl border border-white/10 p-4">
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="mt-3 grid gap-3 text-xs text-white/60 sm:grid-cols-2">
                                                 <div>
-                                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">
-                                                        История номеров
-                                                        <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
-                                                            · текущие состояния и архив
-                                                        </span>
-                                                    </p>
+                                                    <p className="font-semibold text-white/70">Свободные</p>
+                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.available.length ? roomStatusBuckets.available.join(', ') : '—'}</p>
                                                 </div>
-                                                <div className="flex items-center gap-3 text-xs text-white/50">
-                                                    <span>{sortedRooms.length ? `${sortedRooms.length} номеров` : 'Нет номеров'}</span>
+                                                <div>
+                                                    <p className="font-semibold text-white/70">Занятые</p>
+                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.occupied.length ? roomStatusBuckets.occupied.join(', ') : '—'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {selectedShiftTransactions.length ? (
+                                            <div className="mt-4 rounded-2xl border border-white/10 p-3">
+                                                <div className="mb-3 flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+                                                            Операции по кассе
+                                                            <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
+                                                                · записи привязаны к смене
+                                                            </span>
+                                                        </p>
+                                                    </div>
                                                     <Button
                                                         type="button"
                                                         size="sm"
                                                         variant="ghost"
                                                         className="border border-white/15 text-white/80 hover:bg-white/10"
-                                                        onClick={() => setIsRoomHistoryExpanded((prev) => !prev)}
+                                                        onClick={() => setIsTransactionsExpanded((prev) => !prev)}
                                                     >
-                                                        {isRoomHistoryExpanded ? 'Свернуть' : 'Открыть'}
+                                                        {isTransactionsExpanded ? 'Свернуть' : 'Развернуть'}
                                                     </Button>
                                                 </div>
-                                            </div>
-                                            {isRoomHistoryExpanded ? (
-                                                <div className="mt-4 grid gap-3">
-                                                    {sortedRooms.length ? (
-                                                        sortedRooms.map((room) => {
-                                                            const stayHistory = [...(room.stays ?? [])].sort(
-                                                                (first, second) => stayStartTimestamp(first) - stayStartTimestamp(second)
-                                                            );
-                                                            const latestStayIndex = stayHistory.length - 1;
-
+                                                {isTransactionsExpanded ? (
+                                                    <div className="space-y-3">
+                                                        {selectedShiftTransactions.map((entry) => {
+                                                            const note = entry.note?.trim() || null;
                                                             return (
-                                                                <div key={`shift-room-history-${room.id}`} className="rounded-2xl border border-white/10 p-4">
-                                                                    <div className="flex items-start justify-between gap-3">
+                                                                <div key={entry.id} className="rounded-2xl border border-white/10 p-3">
+                                                                    <div className="flex flex-wrap items-start justify-between gap-3">
                                                                         <div>
-                                                                            <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
-                                                                            <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
-                                                                            {room.floor && <p className="text-xs text-white/60">Этаж / корпус: {room.floor}</p>}
+                                                                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">{formatBishkekDateTime(entry.recordedAt)}</p>
+                                                                            <p className="text-sm text-white/70">{entry.managerName ?? 'Система'}</p>
                                                                         </div>
-                                                                        <div className="flex flex-col items-end gap-2 text-right">
-                                                                            <Badge
-                                                                                label={
-                                                                                    room.status === 'OCCUPIED'
-                                                                                        ? 'Занят'
-                                                                                        : room.status === 'DIRTY'
-                                                                                            ? 'Уборка'
-                                                                                            : room.status === 'HOLD'
-                                                                                                ? 'Бронь'
-                                                                                                : 'Свободен'
-                                                                                }
-                                                                                tone={
-                                                                                    room.status === 'OCCUPIED'
-                                                                                        ? 'warning'
-                                                                                        : room.status === 'DIRTY'
-                                                                                            ? 'danger'
-                                                                                            : room.status === 'HOLD'
-                                                                                                ? 'default'
-                                                                                                : 'success'
-                                                                                }
-                                                                            />
-                                                                            <div className="flex gap-2">
-                                                                                <Button
-                                                                                    type="button"
-                                                                                    size="sm"
-                                                                                    variant="ghost"
-                                                                                    className="text-[11px] text-rose-200 hover:bg-rose-500/10"
-                                                                                    onClick={() => handleDeleteRoom(room.id)}
-                                                                                    disabled={removingRoomId === room.id}
-                                                                                >
-                                                                                    {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
-                                                                                </Button>
-                                                                            </div>
+                                                                        <div className="text-right">
+                                                                            <p className={`text-lg font-semibold ${ledgerAmountClass[entry.entryType]}`}>
+                                                                                {ledgerSignSymbol[entry.entryType]}
+                                                                                {formatCurrency(entry.amount)}
+                                                                            </p>
+                                                                            <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                                         </div>
                                                                     </div>
-                                                                    {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
-                                                                    {stayHistory.length ? (
-                                                                        <div className="mt-3 space-y-3">
-                                                                            {stayHistory.map((stayEntry, index) => {
-                                                                                const isLatest = index === latestStayIndex;
-                                                                                const guestLabel =
-                                                                                    stayEntry.guestName?.trim() || (stayEntry.status === 'CHECKED_IN' ? 'Гость' : '—');
-                                                                                const checkInLabel = formatStayDate(stayEntry.actualCheckIn ?? stayEntry.scheduledCheckIn);
-                                                                                const checkOutLabel = formatStayDate(stayEntry.actualCheckOut ?? stayEntry.scheduledCheckOut);
-                                                                                const cashPortion = stayEntry.cashPaid ?? 0;
-                                                                                const cardPortion = stayEntry.cardPaid ?? 0;
-                                                                                const paymentLabel = (() => {
-                                                                                    const segments: string[] = [];
-                                                                                    if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
-                                                                                    if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
-                                                                                    if (!segments.length && stayEntry.paymentMethod) {
-                                                                                        return stayEntry.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
-                                                                                    }
-                                                                                    return segments.join(' · ') || undefined;
-                                                                                })();
-
-                                                                                return (
-                                                                                    <div key={stayEntry.id} className="rounded-2xl border border-white/10 p-3">
-                                                                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                                                                            <div>
-                                                                                                <p className="text-xs uppercase tracking-[0.2em] text-white/40">
-                                                                                                    {isLatest ? 'Актуальная запись' : `История ${index + 1}`}
-                                                                                                </p>
-                                                                                                <p className="text-sm font-semibold text-white">{guestLabel}</p>
-                                                                                            </div>
-                                                                                            <Badge label={stayStatusLabels[stayEntry.status]} tone={stayStatusTone[stayEntry.status]} />
-                                                                                        </div>
-                                                                                        <div className="mt-2 space-y-1 text-xs text-white/70">
-                                                                                            <p>Заезд: {checkInLabel}</p>
-                                                                                            <p>Выезд: {checkOutLabel}</p>
-                                                                                            <p>Статус: {stayStatusLabels[stayEntry.status]}</p>
-                                                                                            {stayEntry.amountPaid != null && (
-                                                                                                <p>
-                                                                                                    Оплата: {formatCurrency(stayEntry.amountPaid)}
-                                                                                                    {paymentLabel ? ` • ${paymentLabel}` : ''}
-                                                                                                </p>
-                                                                                            )}
-                                                                                            {stayEntry.notes && <p>Комментарий: {stayEntry.notes}</p>}
-                                                                                        </div>
-                                                                                        <div className="mt-3 flex flex-wrap gap-2">
-                                                                                            <Button
-                                                                                                type="button"
-                                                                                                size="sm"
-                                                                                                variant="ghost"
-                                                                                                className="border border-amber-200/30 text-[11px] text-amber-100 hover:bg-amber-500/10"
-                                                                                                onClick={() => handleSelectStayForEdit(room, stayEntry)}
-                                                                                            >
-                                                                                                Корректировать заселение
-                                                                                            </Button>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
-                                                                    )}
+                                                                    <div className="mt-3 flex flex-wrap gap-2">
+                                                                        <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
+                                                                        <Badge label={ledgerMethodLabels[entry.method]} />
+                                                                    </div>
+                                                                    <p className="mt-3 text-sm text-white/70">{note ?? 'Без комментария'}</p>
                                                                 </div>
                                                             );
-                                                        })
-                                                    ) : (
-                                                        <p className="mt-4 text-sm text-white/60">Номеров пока нет</p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <p className="mt-4 text-xs text-white/60">Список скрыт. Нажмите «Открыть», чтобы увидеть историю номеров.</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            className="border border-white/15 text-white/80 hover:bg-white/10"
-                                            onClick={() => handleSelectShiftForEdit(selectedShift)}
-                                        >
-                                            Редактировать смену
-                                        </Button>
-                                    </div>
-                                </>
-                            ) : (
-                                <p className="text-sm text-white/60">Выберите смену слева.</p>
-                            )}
-                        </div>
-                    </div>
-                ) : (
-                    <p className="text-sm text-white/60">Смен пока нет.</p>
-                )}
-
-                {editingShift && (
-                    <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4">
-                        <p className="text-sm font-semibold text-white">Редактирование смены №{editingShift.number}</p>
-                        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleUpdateShift}>
-                            <div className="space-y-1">
-                                <label className="text-xs font-semibold uppercase text-white/60">На начало (KGS)</label>
-                                <Input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="0"
-                                    {...shiftEditForm.register('openingCash', {
-                                        valueAsNumber: true,
-                                        required: 'Укажите сумму на начало'
-                                    })}
-                                />
-                                {shiftEditForm.formState.errors.openingCash && (
-                                    <p className="text-xs text-rose-300">{shiftEditForm.formState.errors.openingCash.message}</p>
-                                )}
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-semibold uppercase text-white/60">Передано (KGS)</label>
-                                <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('handoverCash', { valueAsNumber: true })} />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-semibold uppercase text-white/60">Касса факт (KGS)</label>
-                                <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('closingCash', { valueAsNumber: true })} />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-semibold uppercase text-white/60">Статус смены</label>
-                                <select
-                                    className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
-                                    {...shiftEditForm.register('status')}
-                                >
-                                    <option value="CLOSED" className="bg-slate-900 text-white">
-                                        Закрыта
-                                    </option>
-                                    <option value="OPEN" className="bg-slate-900 text-white">
-                                        Открыта
-                                    </option>
-                                </select>
-                            </div>
-                            <TextArea rows={2} placeholder="Комментарий к открытию" {...shiftEditForm.register('openingNote')} />
-                            <TextArea rows={2} placeholder="Комментарий к передаче" {...shiftEditForm.register('handoverNote')} />
-                            <TextArea rows={2} placeholder="Комментарий к закрытию" {...shiftEditForm.register('closingNote')} className="md:col-span-2" />
-                            <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row">
-                                <Button type="submit" className="flex-1">
-                                    Сохранить изменения
-                                </Button>
-                                <Button type="button" variant="ghost" className="flex-1 border border-white/20" onClick={handleResetShiftEditor}>
-                                    Отменить
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                )}
-            </Card>
-
-            {isStayEditorOpen && hasStaySelection && (
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-slate-950/70" onClick={handleCloseStayEditor} />
-                    <div className="relative z-10 mx-auto mt-12 w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/40">
-                                    Редактирование заселения
-                                    <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
-                                        • номер {stayEditForm.watch('roomLabel')} · ID {stayEditForm.watch('stayId')}
-                                    </span>
-                                </p>
-                            </div>
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="border border-white/20 text-white/80 hover:bg-white/10"
-                                onClick={handleCloseStayEditor}
-                            >
-                                Закрыть
-                            </Button>
-                        </div>
-                        <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
-                            <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый заезд</label>
-                                    <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckIn')} />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый выезд</label>
-                                    <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckOut')} />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический заезд</label>
-                                    <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckIn')} />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический выезд</label>
-                                    <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckOut')} />
-                                </div>
-                            </div>
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Статус</label>
-                                    <select
-                                        className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
-                                        {...stayEditForm.register('status')}
-                                    >
-                                        {stayStatusOptions.map((option) => (
-                                            <option key={`stay-status-${option.value}`} value={option.value} className="bg-slate-900 text-white">
-                                                {option.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Способ оплаты</label>
-                                    <select
-                                        className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
-                                        {...stayEditForm.register('paymentMethod')}
-                                    >
-                                        {stayPaymentOptions.map((option) => (
-                                            <option key={`stay-method-${option.value}`} value={option.value} className="bg-slate-900 text-white">
-                                                {option.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="grid gap-3 md:grid-cols-3">
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Наличные (KGS)</label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        {...stayEditForm.register('cashPaid', { valueAsNumber: true })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Безнал (KGS)</label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase tracking-[0.3em] text-white/40">Общая оплата (KGS)</label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        {...stayEditForm.register('totalPaid', { valueAsNumber: true })}
-                                    />
-                                </div>
-                            </div>
-                            <p className="text-xs text-white/60">
-                                По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KGS
-                                {' • '}Поле «Общая оплата»: {roomPaymentPreview.totalField.toLocaleString('ru-RU', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                })}{' '}
-                                KGS
-                            </p>
-                            <TextArea rows={3} placeholder="Комментарий для администратора" {...stayEditForm.register('notes')} />
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <Button type="submit">Сохранить заселение</Button>
-                                <Button type="button" variant="ghost" className="border border-white/20" onClick={handleCloseStayEditor}>
-                                    Отменить
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {isManagementPanelOpen && (
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-slate-950/70" onClick={() => setIsManagementPanelOpen(false)} />
-                    <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-slate-950/95 p-4 shadow-2xl sm:p-6 md:max-w-xl">
-                        <div className="mb-6 flex items-center justify-between gap-3">
-                            <div>
-                                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Панель</p>
-                                <h3 className="text-xl font-semibold text-white">Менеджеры и номера</h3>
-                            </div>
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="border border-white/20 text-white/80 hover:bg-white/10"
-                                onClick={() => setIsManagementPanelOpen(false)}
-                            >
-                                Закрыть
-                            </Button>
-                        </div>
-                        <div className="flex-1 space-y-5 overflow-y-auto pr-2">
-                            <Card className="border-white/20 bg-white/5">
-                                <CardHeader title="Менеджеры" subtitle="Управление назначениями" />
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        {data.managers.length ? (
-                                            data.managers.map((manager) => (
-                                                <div
-                                                    key={manager.assignmentId}
-                                                    className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
-                                                >
-                                                    <div>
-                                                        <p className="text-sm font-medium text-white">{manager.displayName}</p>
-                                                        <p className="text-xs text-white/50">
-                                                            {manager.username ? `@${manager.username} • ` : ''}
-                                                            PIN {manager.pinCode ?? 'не задан'}
-                                                        </p>
-                                                        <p className="text-xs text-white/50">
-                                                            Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
-                                                            Процент: {manager.revenueSharePct != null ? formatPercentage(manager.revenueSharePct) : '—'}
-                                                        </p>
+                                                        })}
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Badge label="Менеджер" />
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="border border-white/10 text-xs text-white/80 hover:bg-white/10"
-                                                            onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
-                                                        >
-                                                            Редактировать
-                                                        </Button>
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
-                                                            onClick={() => handleRemoveManager(manager.assignmentId)}
-                                                            disabled={removingManagerId === manager.assignmentId}
-                                                        >
-                                                            {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <p className="text-sm text-white/60">Назначений пока нет</p>
-                                        )}
-                                    </div>
-                                    <div className="rounded-2xl border border-white/10 p-3">
-                                        <div className="mb-3 flex items-center justify-between gap-3">
-                                            <div>
-                                                <p className="text-sm font-semibold text-white">Добавление менеджера</p>
-                                                <p className="text-xs text-white/60">Имя, PIN и @username</p>
+                                                ) : (
+                                                    <p className="text-xs text-white/60">
+                                                        Показано {selectedShiftTransactions.length} записей. Нажмите «Развернуть», чтобы увидеть детали.
+                                                    </p>
+                                                )}
                                             </div>
+                                        ) : (
+                                            <p className="mt-4 text-xs text-white/50">Для этой смены нет кассовых операций.</p>
+                                        )}
+                                        <div className="mt-6 space-y-6">
+                                            <div className="rounded-2xl border border-white/10 p-4">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+                                                            История номеров
+                                                            <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
+                                                                · текущие состояния и архив
+                                                            </span>
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 text-xs text-white/50">
+                                                        <span>{sortedRooms.length ? `${sortedRooms.length} номеров` : 'Нет номеров'}</span>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="border border-white/15 text-white/80 hover:bg-white/10"
+                                                            onClick={() => setIsRoomHistoryExpanded((prev) => !prev)}
+                                                        >
+                                                            {isRoomHistoryExpanded ? 'Свернуть' : 'Открыть'}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                {isRoomHistoryExpanded ? (
+                                                    <div className="mt-4 grid gap-3">
+                                                        {sortedRooms.length ? (
+                                                            sortedRooms.map((room) => {
+                                                                const stayHistory = [...(room.stays ?? [])].sort(
+                                                                    (first, second) => stayStartTimestamp(first) - stayStartTimestamp(second)
+                                                                );
+                                                                const latestStayIndex = stayHistory.length - 1;
+
+                                                                return (
+                                                                    <div key={`shift-room-history-${room.id}`} className="rounded-2xl border border-white/10 p-4">
+                                                                        <div className="flex items-start justify-between gap-3">
+                                                                            <div>
+                                                                                <p className="text-xs uppercase tracking-[0.4em] text-white/40">№ {room.label}</p>
+                                                                                <p className="text-lg font-semibold text-white">{room.notes ?? 'Без описания'}</p>
+                                                                                {room.floor && <p className="text-xs text-white/60">Этаж / корпус: {room.floor}</p>}
+                                                                            </div>
+                                                                            <div className="flex flex-col items-end gap-2 text-right">
+                                                                                <Badge
+                                                                                    label={
+                                                                                        room.status === 'OCCUPIED'
+                                                                                            ? 'Занят'
+                                                                                            : room.status === 'DIRTY'
+                                                                                                ? 'Уборка'
+                                                                                                : room.status === 'HOLD'
+                                                                                                    ? 'Бронь'
+                                                                                                    : 'Свободен'
+                                                                                    }
+                                                                                    tone={
+                                                                                        room.status === 'OCCUPIED'
+                                                                                            ? 'warning'
+                                                                                            : room.status === 'DIRTY'
+                                                                                                ? 'danger'
+                                                                                                : room.status === 'HOLD'
+                                                                                                    ? 'default'
+                                                                                                    : 'success'
+                                                                                    }
+                                                                                />
+                                                                                <div className="flex gap-2">
+                                                                                    <Button
+                                                                                        type="button"
+                                                                                        size="sm"
+                                                                                        variant="ghost"
+                                                                                        className="text-[11px] text-rose-200 hover:bg-rose-500/10"
+                                                                                        onClick={() => handleDeleteRoom(room.id)}
+                                                                                        disabled={removingRoomId === room.id}
+                                                                                    >
+                                                                                        {removingRoomId === room.id ? 'Удаляем…' : 'Удалить'}
+                                                                                    </Button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        {!room.isActive && <p className="mt-2 text-xs text-rose-300">Выключен из учёта</p>}
+                                                                        {stayHistory.length ? (
+                                                                            <div className="mt-3 space-y-3">
+                                                                                {stayHistory.map((stayEntry, index) => {
+                                                                                    const isLatest = index === latestStayIndex;
+                                                                                    const guestLabel =
+                                                                                        stayEntry.guestName?.trim() || (stayEntry.status === 'CHECKED_IN' ? 'Гость' : '—');
+                                                                                    const checkInLabel = formatStayDate(stayEntry.actualCheckIn ?? stayEntry.scheduledCheckIn);
+                                                                                    const checkOutLabel = formatStayDate(stayEntry.actualCheckOut ?? stayEntry.scheduledCheckOut);
+                                                                                    const cashPortion = stayEntry.cashPaid ?? 0;
+                                                                                    const cardPortion = stayEntry.cardPaid ?? 0;
+                                                                                    const paymentLabel = (() => {
+                                                                                        const segments: string[] = [];
+                                                                                        if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
+                                                                                        if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
+                                                                                        if (!segments.length && stayEntry.paymentMethod) {
+                                                                                            return stayEntry.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
+                                                                                        }
+                                                                                        return segments.join(' · ') || undefined;
+                                                                                    })();
+
+                                                                                    return (
+                                                                                        <div key={stayEntry.id} className="rounded-2xl border border-white/10 p-3">
+                                                                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                                                <div>
+                                                                                                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                                                                                                        {isLatest ? 'Актуальная запись' : `История ${index + 1}`}
+                                                                                                    </p>
+                                                                                                    <p className="text-sm font-semibold text-white">{guestLabel}</p>
+                                                                                                </div>
+                                                                                                <Badge label={stayStatusLabels[stayEntry.status]} tone={stayStatusTone[stayEntry.status]} />
+                                                                                            </div>
+                                                                                            <div className="mt-2 space-y-1 text-xs text-white/70">
+                                                                                                <p>Заезд: {checkInLabel}</p>
+                                                                                                <p>Выезд: {checkOutLabel}</p>
+                                                                                                <p>Статус: {stayStatusLabels[stayEntry.status]}</p>
+                                                                                                {stayEntry.amountPaid != null && (
+                                                                                                    <p>
+                                                                                                        Оплата: {formatCurrency(stayEntry.amountPaid)}
+                                                                                                        {paymentLabel ? ` • ${paymentLabel}` : ''}
+                                                                                                    </p>
+                                                                                                )}
+                                                                                                {stayEntry.notes && <p>Комментарий: {stayEntry.notes}</p>}
+                                                                                            </div>
+                                                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                                                <Button
+                                                                                                    type="button"
+                                                                                                    size="sm"
+                                                                                                    variant="ghost"
+                                                                                                    className="border border-amber-200/30 text-[11px] text-amber-100 hover:bg-amber-500/10"
+                                                                                                    onClick={() => handleSelectStayForEdit(room, stayEntry)}
+                                                                                                >
+                                                                                                    Корректировать заселение
+                                                                                                </Button>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <p className="mt-3 text-sm text-white/60">История поселений отсутствует.</p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <p className="mt-4 text-sm text-white/60">Номеров пока нет</p>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <p className="mt-4 text-xs text-white/60">Список скрыт. Нажмите «Открыть», чтобы увидеть историю номеров.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="mt-4 flex flex-wrap gap-2">
                                             <Button
                                                 type="button"
                                                 size="sm"
                                                 variant="ghost"
                                                 className="border border-white/15 text-white/80 hover:bg-white/10"
-                                                onClick={() => setIsAddManagerExpanded((prev) => !prev)}
+                                                onClick={() => handleSelectShiftForEdit(selectedShift)}
                                             >
-                                                {isAddManagerExpanded ? 'Свернуть' : 'Открыть'}
+                                                Редактировать смену
                                             </Button>
                                         </div>
-                                        {isAddManagerExpanded ? (
-                                            <>
-                                                <form className="space-y-3" onSubmit={handleAddManager}>
-                                                    <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: 'Укажите имя менеджера' })} />
-                                                    {managerForm.formState.errors.displayName && (
-                                                        <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
-                                                    )}
-                                                    <Input
-                                                        placeholder="PIN (6 цифр)"
-                                                        maxLength={6}
-                                                        inputMode="numeric"
-                                                        {...managerForm.register('pinCode', {
-                                                            required: 'Укажите PIN',
-                                                            minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                                            maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                                            pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
-                                                        })}
-                                                    />
-                                                    {managerForm.formState.errors.pinCode && (
-                                                        <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
-                                                    )}
-                                                    <Input
-                                                        type="number"
-                                                        step="0.01"
-                                                        min="0"
-                                                        placeholder="Ставка за смену (KGS)"
-                                                        {...managerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
-                                                    />
-                                                    <Input
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        placeholder="Процент с оборота"
-                                                        {...managerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
-                                                    />
-                                                    <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
-                                                    <Button type="submit" className="w-full">
-                                                        Добавить менеджера
-                                                    </Button>
-                                                    <p className="text-center text-xs text-white/50">
-                                                        Telegram не требуется: имя и PIN формируют профиль менеджера.
-                                                    </p>
-                                                </form>
-                                            </>
-                                        ) : (
-                                            <p className="text-xs text-white/50">Форма свернута. Нажмите «Открыть», чтобы добавить менеджера.</p>
-                                        )}
+                                    </>
+                                ) : (
+                                    <p className="text-sm text-white/60">Выберите смену слева.</p>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-white/60">Смен пока нет.</p>
+                    )}
+
+                    {editingShift && (
+                        <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4">
+                            <p className="text-sm font-semibold text-white">Редактирование смены №{editingShift.number}</p>
+                            <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleUpdateShift}>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold uppercase text-white/60">На начало (KGS)</label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0"
+                                        {...shiftEditForm.register('openingCash', {
+                                            valueAsNumber: true,
+                                            required: 'Укажите сумму на начало'
+                                        })}
+                                    />
+                                    {shiftEditForm.formState.errors.openingCash && (
+                                        <p className="text-xs text-rose-300">{shiftEditForm.formState.errors.openingCash.message}</p>
+                                    )}
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold uppercase text-white/60">Передано (KGS)</label>
+                                    <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('handoverCash', { valueAsNumber: true })} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold uppercase text-white/60">Касса факт (KGS)</label>
+                                    <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('closingCash', { valueAsNumber: true })} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold uppercase text-white/60">Статус смены</label>
+                                    <select
+                                        className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                        {...shiftEditForm.register('status')}
+                                    >
+                                        <option value="CLOSED" className="bg-slate-900 text-white">
+                                            Закрыта
+                                        </option>
+                                        <option value="OPEN" className="bg-slate-900 text-white">
+                                            Открыта
+                                        </option>
+                                    </select>
+                                </div>
+                                <TextArea rows={2} placeholder="Комментарий к открытию" {...shiftEditForm.register('openingNote')} />
+                                <TextArea rows={2} placeholder="Комментарий к передаче" {...shiftEditForm.register('handoverNote')} />
+                                <TextArea rows={2} placeholder="Комментарий к закрытию" {...shiftEditForm.register('closingNote')} className="md:col-span-2" />
+                                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row">
+                                    <Button type="submit" className="flex-1">
+                                        Сохранить изменения
+                                    </Button>
+                                    <Button type="button" variant="ghost" className="flex-1 border border-white/20" onClick={handleResetShiftEditor}>
+                                        Отменить
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                </Card>
+
+                {isStayEditorOpen && hasStaySelection && (
+                    <div className="fixed inset-0 z-50">
+                        <div className="absolute inset-0 bg-slate-950/70" onClick={handleCloseStayEditor} />
+                        <div className="relative z-10 mx-auto mt-12 w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+                                        Редактирование заселения
+                                        <span className="ml-2 text-xs font-semibold text-white/60 tracking-normal normal-case">
+                                            • номер {stayEditForm.watch('roomLabel')} · ID {stayEditForm.watch('stayId')}
+                                        </span>
+                                    </p>
+                                </div>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="border border-white/20 text-white/80 hover:bg-white/10"
+                                    onClick={handleCloseStayEditor}
+                                >
+                                    Закрыть
+                                </Button>
+                            </div>
+                            <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
+                                <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый заезд</label>
+                                        <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckIn')} />
                                     </div>
-                                    {data.managers.length > 0 && (
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Планируемый выезд</label>
+                                        <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckOut')} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический заезд</label>
+                                        <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckIn')} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Фактический выезд</label>
+                                        <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckOut')} />
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Статус</label>
+                                        <select
+                                            className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                            {...stayEditForm.register('status')}
+                                        >
+                                            {stayStatusOptions.map((option) => (
+                                                <option key={`stay-status-${option.value}`} value={option.value} className="bg-slate-900 text-white">
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Способ оплаты</label>
+                                        <select
+                                            className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                            {...stayEditForm.register('paymentMethod')}
+                                        >
+                                            {stayPaymentOptions.map((option) => (
+                                                <option key={`stay-method-${option.value}`} value={option.value} className="bg-slate-900 text-white">
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Наличные (KGS)</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...stayEditForm.register('cashPaid', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Безнал (KGS)</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-[0.3em] text-white/40">Общая оплата (KGS)</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...stayEditForm.register('totalPaid', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-white/60">
+                                    По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KGS
+                                    {' • '}Поле «Общая оплата»: {roomPaymentPreview.totalField.toLocaleString('ru-RU', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    })}{' '}
+                                    KGS
+                                </p>
+                                <TextArea rows={3} placeholder="Комментарий для администратора" {...stayEditForm.register('notes')} />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <Button type="submit">Сохранить заселение</Button>
+                                    <Button type="button" variant="ghost" className="border border-white/20" onClick={handleCloseStayEditor}>
+                                        Отменить
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {isManagementPanelOpen && (
+                    <div className="fixed inset-0 z-50">
+                        <div className="absolute inset-0 bg-slate-950/70" onClick={() => setIsManagementPanelOpen(false)} />
+                        <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-slate-950/95 p-4 shadow-2xl sm:p-6 md:max-w-xl">
+                            <div className="mb-6 flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.3em] text-white/50">Панель</p>
+                                    <h3 className="text-xl font-semibold text-white">Менеджеры и номера</h3>
+                                </div>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="border border-white/20 text-white/80 hover:bg-white/10"
+                                    onClick={() => setIsManagementPanelOpen(false)}
+                                >
+                                    Закрыть
+                                </Button>
+                            </div>
+                            <div className="flex-1 space-y-5 overflow-y-auto pr-2">
+                                <Card className="border-white/20 bg-white/5">
+                                    <CardHeader title="Менеджеры" subtitle="Управление назначениями" />
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            {data.managers.length ? (
+                                                data.managers.map((manager) => (
+                                                    <div
+                                                        key={manager.assignmentId}
+                                                        className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
+                                                    >
+                                                        <div>
+                                                            <p className="text-sm font-medium text-white">{manager.displayName}</p>
+                                                            <p className="text-xs text-white/50">
+                                                                {manager.username ? `@${manager.username} • ` : ''}
+                                                                PIN {manager.pinCode ?? 'не задан'}
+                                                            </p>
+                                                            <p className="text-xs text-white/50">
+                                                                Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
+                                                                Процент: {manager.revenueSharePct != null ? formatPercentage(manager.revenueSharePct) : '—'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge label="Менеджер" />
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="border border-white/10 text-xs text-white/80 hover:bg-white/10"
+                                                                onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
+                                                            >
+                                                                Редактировать
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
+                                                                onClick={() => handleRemoveManager(manager.assignmentId)}
+                                                                disabled={removingManagerId === manager.assignmentId}
+                                                            >
+                                                                {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-sm text-white/60">Назначений пока нет</p>
+                                            )}
+                                        </div>
                                         <div className="rounded-2xl border border-white/10 p-3">
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div>
-                                                    <p className="text-sm font-semibold text-white">Редактирование менеджера</p>
-                                                    <p className="text-xs text-white/60">Обновите подпись, PIN или имя</p>
+                                                    <p className="text-sm font-semibold text-white">Добавление менеджера</p>
+                                                    <p className="text-xs text-white/60">Имя, PIN и @username</p>
                                                 </div>
                                                 <Button
                                                     type="button"
                                                     size="sm"
                                                     variant="ghost"
                                                     className="border border-white/15 text-white/80 hover:bg-white/10"
-                                                    onClick={() => setIsUpdateManagerExpanded((prev) => !prev)}
+                                                    onClick={() => setIsAddManagerExpanded((prev) => !prev)}
                                                 >
-                                                    {isUpdateManagerExpanded ? 'Свернуть' : 'Открыть'}
+                                                    {isAddManagerExpanded ? 'Свернуть' : 'Открыть'}
                                                 </Button>
                                             </div>
-                                            {isUpdateManagerExpanded ? (
-                                                <form className="space-y-3" onSubmit={handleUpdateManager}>
-                                                    <select
-                                                        className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
-                                                        defaultValue=""
-                                                        {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
-                                                    >
-                                                        <option value="" className="bg-slate-900 text-white">
-                                                            Выберите менеджера для обновления
-                                                        </option>
-                                                        {data.managers.map((manager) => (
-                                                            <option key={`edit-${manager.assignmentId}`} value={manager.assignmentId} className="bg-slate-900 text-white">
-                                                                {manager.displayName}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                    {updateManagerForm.formState.errors.assignmentId && (
-                                                        <p className="text-xs text-rose-300">
-                                                            {updateManagerForm.formState.errors.assignmentId.message}
+                                            {isAddManagerExpanded ? (
+                                                <>
+                                                    <form className="space-y-3" onSubmit={handleAddManager}>
+                                                        <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: 'Укажите имя менеджера' })} />
+                                                        {managerForm.formState.errors.displayName && (
+                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
+                                                        )}
+                                                        <Input
+                                                            placeholder="PIN (6 цифр)"
+                                                            maxLength={6}
+                                                            inputMode="numeric"
+                                                            {...managerForm.register('pinCode', {
+                                                                required: 'Укажите PIN',
+                                                                minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                                                maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                                                pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
+                                                            })}
+                                                        />
+                                                        {managerForm.formState.errors.pinCode && (
+                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
+                                                        )}
+                                                        <Input
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            placeholder="Ставка за смену (KGS)"
+                                                            {...managerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
+                                                        />
+                                                        <Input
+                                                            type="number"
+                                                            step="1"
+                                                            min="0"
+                                                            placeholder="Процент с оборота"
+                                                            {...managerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
+                                                        />
+                                                        <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
+                                                        <Button type="submit" className="w-full">
+                                                            Добавить менеджера
+                                                        </Button>
+                                                        <p className="text-center text-xs text-white/50">
+                                                            Telegram не требуется: имя и PIN формируют профиль менеджера.
                                                         </p>
-                                                    )}
-                                                    <Input
-                                                        placeholder={selectedManager ? `Новое имя (сейчас ${selectedManager.displayName})` : 'Новое имя менеджера'}
-                                                        {...updateManagerForm.register('displayName')}
-                                                    />
-                                                    <Input
-                                                        placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
-                                                        {...updateManagerForm.register('username')}
-                                                    />
-                                                    <Input
-                                                        placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
-                                                        maxLength={6}
-                                                        inputMode="numeric"
-                                                        {...updateManagerForm.register('pinCode', {
-                                                            validate: (value) => {
-                                                                if (!value.trim()) {
-                                                                    return true;
-                                                                }
-                                                                return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
-                                                            }
-                                                        })}
-                                                    />
-                                                    {updateManagerForm.formState.errors.pinCode && (
-                                                        <p className="text-xs text-rose-300">
-                                                            {updateManagerForm.formState.errors.pinCode.message}
-                                                        </p>
-                                                    )}
-                                                    <Input
-                                                        type="number"
-                                                        step="0.01"
-                                                        min="0"
-                                                        placeholder={
-                                                            selectedManager?.shiftPayAmount != null
-                                                                ? `Ставка (сейчас ${formatCurrency(selectedManager.shiftPayAmount)})`
-                                                                : 'Новая ставка за смену (KGS)'
-                                                        }
-                                                        {...updateManagerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
-                                                    />
-                                                    <Input
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        placeholder={
-                                                            selectedManager?.revenueSharePct != null
-                                                                ? `Процент (сейчас ${formatPercentage(selectedManager.revenueSharePct)})`
-                                                                : 'Новый процент с оборота'
-                                                        }
-                                                        {...updateManagerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
-                                                    />
-                                                    <Button type="submit" className="w-full" variant="secondary">
-                                                        Обновить менеджера
-                                                    </Button>
-                                                    <p className="text-xs text-white/50">
-                                                        Заполните только те поля, которые хотите изменить. Остальные можно оставить пустыми.
-                                                    </p>
-                                                </form>
+                                                    </form>
+                                                </>
                                             ) : (
-                                                <p className="text-xs text-white/50">Форма редактирования скрыта.</p>
+                                                <p className="text-xs text-white/50">Форма свернута. Нажмите «Открыть», чтобы добавить менеджера.</p>
                                             )}
                                         </div>
-                                    )}
-                                </div>
-                            </Card>
-
-                            <Card className="border-white/20 bg-white/5">
-                                <CardHeader
-                                    title="Номера"
-                                    subtitle="Массовое добавление"
-                                    actions={
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            className="border border-white/15 text-white/80 hover:bg-white/10"
-                                            onClick={() => setIsMassAddRoomsExpanded((prev) => !prev)}
-                                        >
-                                            {isMassAddRoomsExpanded ? 'Свернуть' : 'Открыть'}
-                                        </Button>
-                                    }
-                                />
-                                {isMassAddRoomsExpanded ? (
-                                    <form className="space-y-3" onSubmit={handleAddRooms}>
-                                        <TextArea
-                                            rows={6}
-                                            placeholder="Номера через запятую или с новой строки: 101, 102"
-                                            {...roomForm.register('roomLabels', { required: true })}
-                                        />
-                                        {roomForm.formState.errors.roomLabels && (
-                                            <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
+                                        {data.managers.length > 0 && (
+                                            <div className="rounded-2xl border border-white/10 p-3">
+                                                <div className="mb-3 flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-white">Редактирование менеджера</p>
+                                                        <p className="text-xs text-white/60">Обновите подпись, PIN или имя</p>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="border border-white/15 text-white/80 hover:bg-white/10"
+                                                        onClick={() => setIsUpdateManagerExpanded((prev) => !prev)}
+                                                    >
+                                                        {isUpdateManagerExpanded ? 'Свернуть' : 'Открыть'}
+                                                    </Button>
+                                                </div>
+                                                {isUpdateManagerExpanded ? (
+                                                    <form className="space-y-3" onSubmit={handleUpdateManager}>
+                                                        <select
+                                                            className="w-full rounded-2xl border border-white/20 bg-slate-900/70 p-3 text-sm text-white focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber"
+                                                            defaultValue=""
+                                                            {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
+                                                        >
+                                                            <option value="" className="bg-slate-900 text-white">
+                                                                Выберите менеджера для обновления
+                                                            </option>
+                                                            {data.managers.map((manager) => (
+                                                                <option key={`edit-${manager.assignmentId}`} value={manager.assignmentId} className="bg-slate-900 text-white">
+                                                                    {manager.displayName}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {updateManagerForm.formState.errors.assignmentId && (
+                                                            <p className="text-xs text-rose-300">
+                                                                {updateManagerForm.formState.errors.assignmentId.message}
+                                                            </p>
+                                                        )}
+                                                        <Input
+                                                            placeholder={selectedManager ? `Новое имя (сейчас ${selectedManager.displayName})` : 'Новое имя менеджера'}
+                                                            {...updateManagerForm.register('displayName')}
+                                                        />
+                                                        <Input
+                                                            placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
+                                                            {...updateManagerForm.register('username')}
+                                                        />
+                                                        <Input
+                                                            placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
+                                                            maxLength={6}
+                                                            inputMode="numeric"
+                                                            {...updateManagerForm.register('pinCode', {
+                                                                validate: (value) => {
+                                                                    if (!value.trim()) {
+                                                                        return true;
+                                                                    }
+                                                                    return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
+                                                                }
+                                                            })}
+                                                        />
+                                                        {updateManagerForm.formState.errors.pinCode && (
+                                                            <p className="text-xs text-rose-300">
+                                                                {updateManagerForm.formState.errors.pinCode.message}
+                                                            </p>
+                                                        )}
+                                                        <Input
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            placeholder={
+                                                                selectedManager?.shiftPayAmount != null
+                                                                    ? `Ставка (сейчас ${formatCurrency(selectedManager.shiftPayAmount)})`
+                                                                    : 'Новая ставка за смену (KGS)'
+                                                            }
+                                                            {...updateManagerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
+                                                        />
+                                                        <Input
+                                                            type="number"
+                                                            step="1"
+                                                            min="0"
+                                                            placeholder={
+                                                                selectedManager?.revenueSharePct != null
+                                                                    ? `Процент (сейчас ${formatPercentage(selectedManager.revenueSharePct)})`
+                                                                    : 'Новый процент с оборота'
+                                                            }
+                                                            {...updateManagerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
+                                                        />
+                                                        <Button type="submit" className="w-full" variant="secondary">
+                                                            Обновить менеджера
+                                                        </Button>
+                                                        <p className="text-xs text-white/50">
+                                                            Заполните только те поля, которые хотите изменить. Остальные можно оставить пустыми.
+                                                        </p>
+                                                    </form>
+                                                ) : (
+                                                    <p className="text-xs text-white/50">Форма редактирования скрыта.</p>
+                                                )}
+                                            </div>
                                         )}
-                                        <div className="grid gap-3 md:grid-cols-2">
-                                            <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
-                                            <Input placeholder="Комментарий" {...roomForm.register('notes')} />
-                                        </div>
-                                        <Button type="submit" className="w-full">
-                                            Добавить номера
-                                        </Button>
-                                        <p className="text-xs text-white/50">
-                                            Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
-                                        </p>
-                                    </form>
-                                ) : (
-                                    <p className="px-2 pb-4 text-xs text-white/60">Форма массового добавления скрыта.</p>
-                                )}
-                            </Card>
+                                    </div>
+                                </Card>
 
+                                <Card className="border-white/20 bg-white/5">
+                                    <CardHeader
+                                        title="Номера"
+                                        subtitle="Массовое добавление"
+                                        actions={
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-white/15 text-white/80 hover:bg-white/10"
+                                                onClick={() => setIsMassAddRoomsExpanded((prev) => !prev)}
+                                            >
+                                                {isMassAddRoomsExpanded ? 'Свернуть' : 'Открыть'}
+                                            </Button>
+                                        }
+                                    />
+                                    {isMassAddRoomsExpanded ? (
+                                        <form className="space-y-3" onSubmit={handleAddRooms}>
+                                            <TextArea
+                                                rows={6}
+                                                placeholder="Номера через запятую или с новой строки: 101, 102"
+                                                {...roomForm.register('roomLabels', { required: true })}
+                                            />
+                                            {roomForm.formState.errors.roomLabels && (
+                                                <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
+                                            )}
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
+                                                <Input placeholder="Комментарий" {...roomForm.register('notes')} />
+                                            </div>
+                                            <Button type="submit" className="w-full">
+                                                Добавить номера
+                                            </Button>
+                                            <p className="text-xs text-white/50">
+                                                Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
+                                            </p>
+                                        </form>
+                                    ) : (
+                                        <p className="px-2 pb-4 text-xs text-white/60">Форма массового добавления скрыта.</p>
+                                    )}
+                                </Card>
+
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )}
+                {isOutflowModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center px-3 py-6 sm:px-6">
+                        <div className="absolute inset-0 bg-slate-900/80" onClick={closeOutflowModal} />
+                        <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 p-5 text-white shadow-2xl">
+                            <div className="mb-4 flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Списания смены №{selectedShift?.number ?? '—'}</p>
+                                    <p className="text-2xl font-semibold text-rose-200">{formatCurrency(selectedShiftCash?.cashOut ?? 0)}</p>
+                                    <p className="text-xs text-white/60">Нажмите по фону или кнопку, чтобы закрыть окно.</p>
+                                </div>
+                                <Button type="button" variant="ghost" size="sm" className="text-white/80 hover:text-white" onClick={closeOutflowModal}>
+                                    Закрыть
+                                </Button>
+                            </div>
+                            <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                                {selectedShiftOutflows.length ? (
+                                    selectedShiftOutflows.map((entry) => {
+                                        const note = entry.note?.trim() || 'Без комментария';
+                                        return (
+                                            <div key={entry.id} className="rounded-2xl border border-white/10 p-4">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/60">
+                                                    <span>{formatBishkekDateTime(entry.recordedAt)}</span>
+                                                    <span>{entry.managerName ?? 'Система'}</span>
+                                                </div>
+                                                <p className="mt-2 text-lg font-semibold text-rose-200">-{formatCurrency(entry.amount)}</p>
+                                                <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
+                                                <p className="mt-3 text-sm text-white/80">{note}</p>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="rounded-2xl border border-white/10 p-4 text-sm text-white/70">
+                                        Для этой смены нет записей о списаниях.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </>
     );
 };

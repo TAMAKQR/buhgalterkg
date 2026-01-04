@@ -87,7 +87,8 @@ export async function GET(request: NextRequest) {
 
         let shiftCash = shift ? shift.openingCash : null;
         let shiftPayments: { cash: number; card: number; total: number } | null = null;
-        let shiftExpenses: number | null = null;
+        let shiftExpenses: { total: number; cash: number; card: number } | null = null;
+        let shiftBalances: { cash: number; card: number; total: number } | null = null;
         let managerPayoutTotals: Record<LedgerEntryType, number> | null = null;
         let shiftLedger: Array<{
             id: string;
@@ -143,16 +144,6 @@ export async function GET(request: NextRequest) {
                 paymentTotals[group.method] = group._sum?.amount ?? 0;
             }
 
-            shiftCash =
-                shift.openingCash +
-                ledgerTotals[LedgerEntryType.CASH_IN] -
-                ledgerTotals[LedgerEntryType.CASH_OUT] -
-                ledgerTotals[LedgerEntryType.MANAGER_PAYOUT] +
-                ledgerTotals[LedgerEntryType.ADJUSTMENT];
-
-            shiftExpenses =
-                ledgerTotals[LedgerEntryType.CASH_OUT] + ledgerTotals[LedgerEntryType.MANAGER_PAYOUT];
-
             shiftPayments = {
                 cash: paymentTotals[PaymentMethod.CASH],
                 card: paymentTotals[PaymentMethod.CARD],
@@ -160,7 +151,58 @@ export async function GET(request: NextRequest) {
             };
 
             shiftLedger = ledgerEntries;
+            shiftExpenses = ledgerEntries.reduce(
+                (totals, entry) => {
+                    if (
+                        entry.entryType === LedgerEntryType.CASH_OUT ||
+                        entry.entryType === LedgerEntryType.MANAGER_PAYOUT
+                    ) {
+                        totals.total += entry.amount;
+                        if (entry.method === PaymentMethod.CASH) {
+                            totals.cash += entry.amount;
+                        } else if (entry.method === PaymentMethod.CARD) {
+                            totals.card += entry.amount;
+                        }
+                    }
+                    return totals;
+                },
+                { total: 0, cash: 0, card: 0 }
+            );
             managerPayoutTotals = ledgerTotals;
+
+            const balances = ledgerEntries.reduce(
+                (acc, entry) => {
+                    const signedAmount = (() => {
+                        switch (entry.entryType) {
+                            case LedgerEntryType.CASH_IN:
+                                return entry.amount;
+                            case LedgerEntryType.ADJUSTMENT:
+                                return entry.amount;
+                            case LedgerEntryType.CASH_OUT:
+                            case LedgerEntryType.MANAGER_PAYOUT:
+                                return -entry.amount;
+                            default:
+                                return 0;
+                        }
+                    })();
+
+                    if (entry.method === PaymentMethod.CASH) {
+                        acc.cash += signedAmount;
+                    } else if (entry.method === PaymentMethod.CARD) {
+                        acc.card += signedAmount;
+                    }
+
+                    return acc;
+                },
+                { cash: shift.openingCash, card: 0 }
+            );
+
+            shiftCash = balances.cash;
+            shiftBalances = {
+                cash: balances.cash,
+                card: balances.card,
+                total: balances.cash + balances.card
+            };
         }
 
         const serializedLedger = shiftLedger.map((entry) => ({
@@ -239,6 +281,7 @@ export async function GET(request: NextRequest) {
             },
             shift,
             shiftCash,
+            shiftBalances,
             shiftExpenses,
             shiftPayments,
             shiftLedger: serializedLedger,
