@@ -41,9 +41,15 @@ const safeCompare = (input: string, expected: string) => {
 
 export const manualAuthConfigured = () => {
     if (!ADMIN_LOGIN || !ADMIN_PASSWORD || !manualSessionAvailable()) {
+        console.error('[manual-auth] Configuration check failed:', {
+            hasLogin: !!ADMIN_LOGIN,
+            hasPassword: !!ADMIN_PASSWORD,
+            sessionAvailable: manualSessionAvailable()
+        });
         return false;
     }
     if (!passwordStrongEnough(ADMIN_PASSWORD)) {
+        console.error('[manual-auth] Password strength check failed');
         if (process.env.NODE_ENV !== "production") {
             console.warn("ADMIN_PASSWORD не соответствует политике сложности");
         }

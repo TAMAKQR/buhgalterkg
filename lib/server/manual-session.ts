@@ -15,7 +15,13 @@ const cloneSessionUser = (user: SessionUser): SessionUser => ({
     hotels: user.hotels.map((hotel) => ({ ...hotel }))
 });
 
-const manualSecretReady = () => Boolean(SESSION_SECRET);
+const manualSecretReady = () => {
+    const hasSecret = Boolean(SESSION_SECRET);
+    if (!hasSecret) {
+        console.error('[manual-session] ADMIN_SESSION_SECRET is not configured');
+    }
+    return hasSecret;
+};
 
 const sign = (payload: string) => {
     if (!SESSION_SECRET) {
