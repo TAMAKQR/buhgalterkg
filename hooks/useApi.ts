@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback } from 'react';
-import { useTelegramContext } from '@/components/providers/telegram-provider';
 
 type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
@@ -17,14 +16,8 @@ const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
 };
 
 export function useApi() {
-    const { authPayload } = useTelegramContext();
-
     const request = useCallback(
         async <T,>(path: string, options?: ApiRequestOptions) => {
-            if (!authPayload) {
-                throw new Error('Auth payload missing. Make sure Telegram has initialised.');
-            }
-
             const { body, headers, ...rest } = options ?? {};
             const jsonBody = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
 
@@ -34,8 +27,9 @@ export function useApi() {
                     'Content-Type': 'application/json',
                     ...normalizeHeaders(headers)
                 },
+                credentials: 'include', // Include cookies
                 ...rest,
-                body: JSON.stringify({ ...authPayload, ...jsonBody })
+                body: JSON.stringify(jsonBody)
             });
 
             if (!response.ok) {
@@ -45,23 +39,20 @@ export function useApi() {
 
             return (await response.json()) as T;
         },
-        [authPayload]
+        []
     );
 
     const get = useCallback(
         async <T,>(path: string) => {
-            if (!authPayload) throw new Error('Auth payload missing.');
             const response = await fetch(path, {
-                headers: {
-                    'x-telegram-auth-payload': JSON.stringify(authPayload)
-                }
+                credentials: 'include' // Include cookies
             });
             if (!response.ok) {
                 throw new Error(await response.text());
             }
             return (await response.json()) as T;
         },
-        [authPayload]
+        []
     );
 
     return { request, get };

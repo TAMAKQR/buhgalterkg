@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useApi } from '@/hooks/useApi';
-import { useTelegramContext } from '@/components/providers/telegram-provider';
 import { formatBishkekDateTime } from '@/lib/timezone';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
@@ -318,7 +317,6 @@ interface AdminHotelDetailProps {
 export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const router = useRouter();
     const { request, get } = useApi();
-    const { user } = useTelegramContext();
 
     const hotelKey = hotelId ? `/api/hotels/${hotelId}` : null;
     const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(hotelKey, (url: string) => get<HotelDetailPayload>(url));
