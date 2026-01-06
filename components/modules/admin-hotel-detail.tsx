@@ -789,15 +789,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     });
 
-    if (user && user.role !== 'ADMIN') {
-        return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-3 py-6 text-center text-white/70 sm:px-6">
-                <p>Только администраторы могут управлять точками.</p>
-                <Button onClick={() => router.push('/')}>Вернуться</Button>
-            </div>
-        );
-    }
-
     if (isLoading || !data) {
         return (
             <div className="flex min-h-screen flex-col gap-4 px-3 py-6 sm:px-6">
