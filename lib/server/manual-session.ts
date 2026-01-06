@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
 import type { SessionUser } from '@/lib/types';
+import { registerSession, isSessionValid } from '@/lib/server/session-store';
 
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
 const SESSION_TTL_MINUTES = Number(process.env.ADMIN_SESSION_TTL_MINUTES ?? '720');
@@ -55,9 +56,13 @@ export const createManualSession = (user: SessionUser): { token: string; user: S
 
     const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const signature = sign(encoded);
+    const token = `${encoded}.${signature}`;
+
+    // Register this session and invalidate any previous sessions for this user
+    registerSession(user.id, token);
 
     return {
-        token: `${encoded}.${signature}`,
+        token,
         user: payload.user
     };
 };
@@ -85,7 +90,15 @@ export const resolveManualSession = (token?: string): SessionUser | null => {
             return null;
         }
 
-        return cloneSessionUser(payload.user);
+        const user = cloneSessionUser(payload.user);
+
+        // Check if this session is still valid (not invalidated by a newer login)
+        if (!isSessionValid(user.id, token)) {
+            console.log('[manual-session] Session invalidated due to new login from another device');
+            return null;
+        }
+
+        return user;
     } catch (error) {
         console.error('Failed to decode manual session token', error);
         return null;
