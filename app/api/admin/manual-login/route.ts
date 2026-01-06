@@ -94,15 +94,15 @@ export async function POST(request: NextRequest) {
         clearAttempts(fingerprint);
 
         const response = NextResponse.json({ success: true, user });
-        const cookieOptions: any = {
+        const cookieOptions = {
             httpOnly: true,
             path: '/',
-            maxAge: 60 * 60 * 24 * 30 // 30 days
+            maxAge: 60 * 60 * 24 * 30, // 30 days
+            ...(process.env.NODE_ENV === 'production' && {
+                secure: true,
+                sameSite: 'none' as const
+            })
         };
-        if (process.env.NODE_ENV === 'production') {
-            cookieOptions.secure = true;
-            cookieOptions.sameSite = 'none';
-        }
         response.cookies.set('manualSession', token, cookieOptions);
 
         return response;
