@@ -94,13 +94,16 @@ export async function POST(request: NextRequest) {
         clearAttempts(fingerprint);
 
         const response = NextResponse.json({ success: true, user });
-        response.cookies.set('manualSession', token, {
+        const cookieOptions: any = {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'none',
             path: '/',
             maxAge: 60 * 60 * 24 * 30 // 30 days
-        });
+        };
+        if (process.env.NODE_ENV === 'production') {
+            cookieOptions.secure = true;
+            cookieOptions.sameSite = 'none';
+        }
+        response.cookies.set('manualSession', token, cookieOptions);
 
         return response;
     } catch (error) {
