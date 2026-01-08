@@ -9,6 +9,7 @@ import { handleApiError } from '@/lib/server/errors';
 
 const updateShiftSchema = z
     .object({
+        managerId: z.string().cuid().optional(),
         openingCash: z.number().int().nonnegative().optional(),
         closingCash: z.number().int().nonnegative().nullable().optional(),
         handoverCash: z.number().int().nonnegative().nullable().optional(),
@@ -56,6 +57,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         }
 
         const data: Prisma.ShiftUpdateInput = {};
+
+        // Обновление менеджера смены
+        if (payload.managerId) {
+            const assignment = await prisma.hotelAssignment.findFirst({
+                where: {
+                    hotelId: shift.hotelId,
+                    userId: payload.managerId,
+                    isActive: true
+                }
+            });
+
+            if (!assignment) {
+                return new NextResponse('Менеджер не назначен на этот отель', { status: 400 });
+            }
+
+            data.manager = { connect: { id: payload.managerId } };
+        }
 
         if (Object.prototype.hasOwnProperty.call(payload, 'openingCash')) {
             data.openingCash = payload.openingCash as number;
