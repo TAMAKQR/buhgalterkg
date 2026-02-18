@@ -14,6 +14,8 @@ model User {
   username    String?
   role        UserRole          @default(MANAGER)
   avatarUrl   String?
+  loginName   String?           @unique @map("login_name")
+  loginHash   String?           @map("login_hash")
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   ledger      CashEntry[]
@@ -149,6 +151,7 @@ model CashEntry {
 enum UserRole {
   ADMIN
   MANAGER
+  OBSERVER
 }
 
 enum ShiftStatus {

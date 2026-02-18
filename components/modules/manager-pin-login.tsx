@@ -17,9 +17,10 @@ interface ManualLoginResponse {
 
 interface ManagerPinLoginProps {
     onAdminMode?: () => void;
+    onObserverMode?: () => void;
 }
 
-export function ManagerPinLogin({ onAdminMode }: ManagerPinLoginProps) {
+export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLoginProps) {
     const { mutate } = useManualSession();
     const [pinCode, setPinCode] = useState('');
     const [pending, setPending] = useState(false);
@@ -82,6 +83,13 @@ export function ManagerPinLogin({ onAdminMode }: ManagerPinLoginProps) {
                     onClick={onAdminMode}
                 >
                     Войти как администратор
+                </button>
+                <button
+                    type="button"
+                    className="block w-full text-center text-xs text-white/40 hover:text-white/60 transition-colors"
+                    onClick={onObserverMode}
+                >
+                    Войти как наблюдатель
                 </button>
             </Card>
         </div>

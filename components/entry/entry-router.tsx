@@ -5,11 +5,13 @@ import { AdminDashboard } from '@/components/modules/admin-dashboard';
 import { AdminLoginGate } from '@/components/modules/admin-login';
 import { ManagerPinLogin } from '@/components/modules/manager-pin-login';
 import { ManagerScreen } from '@/components/modules/manager-screen';
+import { ObserverLogin } from '@/components/modules/observer-login';
+import { ObserverScreen } from '@/components/modules/observer-screen';
 import { useManualSession } from '@/hooks/useManualSession';
 
 export const EntryRouter = () => {
     const { user, loading, mutate } = useManualSession();
-    const [mode, setMode] = useState<'manager' | 'admin'>('manager');
+    const [mode, setMode] = useState<'manager' | 'admin' | 'observer'>('manager');
 
     const role = user?.role;
 
@@ -22,6 +24,7 @@ export const EntryRouter = () => {
         if (!user) return null;
         if (role === 'ADMIN') return <AdminDashboard user={user} onLogout={handleLogout} />;
         if (role === 'MANAGER') return <ManagerScreen user={user} onLogout={handleLogout} />;
+        if (role === 'OBSERVER') return <ObserverScreen user={user} onLogout={handleLogout} />;
         return null;
     }, [role, user, handleLogout]);
 
@@ -41,7 +44,10 @@ export const EntryRouter = () => {
                 </div>
             );
         }
-        return <ManagerPinLogin onAdminMode={() => setMode('admin')} />;
+        if (mode === 'observer') {
+            return <ObserverLogin onBack={() => setMode('manager')} />;
+        }
+        return <ManagerPinLogin onAdminMode={() => setMode('admin')} onObserverMode={() => setMode('observer')} />;
     }
 
     return view;

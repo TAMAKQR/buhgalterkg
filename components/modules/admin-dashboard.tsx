@@ -424,6 +424,83 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const [activeTab, setActiveTab] = useState<AdminTab>("overview");
     const { toast: notify } = useToast();
 
+    // Observer management state
+    type ObserverItem = {
+        id: string;
+        displayName: string;
+        loginName: string;
+        hotels: Array<{ id: string; name: string }>;
+    };
+    const { data: observers, mutate: mutateObservers } = useSWR<ObserverItem[]>(
+        '/api/admin/observers',
+        fetchWithAuth
+    );
+    const [newObserver, setNewObserver] = useState({ displayName: '', loginName: '', password: '', hotelId: '' });
+    const [creatingObserver, setCreatingObserver] = useState(false);
+    const [deletingObserverId, setDeletingObserverId] = useState<string | null>(null);
+    const [resetPasswordId, setResetPasswordId] = useState<string | null>(null);
+    const [resetPasswordValue, setResetPasswordValue] = useState('');
+    const [resettingPassword, setResettingPassword] = useState(false);
+
+    const handleCreateObserver = async (event: FormEvent) => {
+        event.preventDefault();
+        if (!newObserver.displayName || !newObserver.loginName || !newObserver.password || !newObserver.hotelId) return;
+        setCreatingObserver(true);
+        try {
+            const response = await fetch('/api/admin/observers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newObserver),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || 'Ошибка');
+            }
+            setNewObserver({ displayName: '', loginName: '', password: '', hotelId: '' });
+            mutateObservers();
+            notify('Наблюдатель создан', 'success');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : 'Не удалось создать', 'error');
+        } finally {
+            setCreatingObserver(false);
+        }
+    };
+
+    const handleDeleteObserver = async (observerId: string) => {
+        setDeletingObserverId(observerId);
+        try {
+            await fetch(`/api/admin/observers/${observerId}`, {
+                method: 'DELETE',
+            });
+            mutateObservers();
+            notify('Наблюдатель удалён', 'success');
+        } catch {
+            notify('Не удалось удалить', 'error');
+        } finally {
+            setDeletingObserverId(null);
+        }
+    };
+
+    const handleResetObserverPassword = async () => {
+        if (!resetPasswordId || resetPasswordValue.length < 6) return;
+        setResettingPassword(true);
+        try {
+            const response = await fetch(`/api/admin/observers/${resetPasswordId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: resetPasswordValue }),
+            });
+            if (!response.ok) throw new Error('Ошибка');
+            setResetPasswordId(null);
+            setResetPasswordValue('');
+            notify('Пароль обновлён', 'success');
+        } catch {
+            notify('Не удалось обновить пароль', 'error');
+        } finally {
+            setResettingPassword(false);
+        }
+    };
+
     useEffect(() => {
         if (!selectedHotelId) {
             setEditForm(createEmptyHotelForm());
@@ -1046,6 +1123,114 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 </Button>
                             </>
                         )}
+                    </Card>
+
+                    {/* Observer management */}
+                    <Card className="p-3 lg:col-span-2">
+                        <h2 className="mb-3 text-sm font-semibold text-white">Наблюдатели</h2>
+
+                        {/* Existing observers list */}
+                        {observers && observers.length > 0 && (
+                            <div className="mb-4 space-y-2">
+                                {observers.map((obs) => (
+                                    <div key={obs.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-white truncate">{obs.displayName}</p>
+                                            <p className="text-xs text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                                type="button"
+                                                className="text-xs text-amber-300 hover:text-amber-200 transition"
+                                                onClick={() => { setResetPasswordId(obs.id); setResetPasswordValue(''); }}
+                                            >
+                                                Пароль
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="text-xs text-rose-400 hover:text-rose-300 transition"
+                                                disabled={deletingObserverId === obs.id}
+                                                onClick={() => handleDeleteObserver(obs.id)}
+                                            >
+                                                {deletingObserverId === obs.id ? '…' : 'Удалить'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Reset password inline */}
+                        {resetPasswordId && (
+                            <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 space-y-2">
+                                <p className="text-xs text-white/60">Новый пароль (мин. 6 символов)</p>
+                                <div className="flex gap-2">
+                                    <Input
+                                        type="text"
+                                        placeholder="Новый пароль"
+                                        value={resetPasswordValue}
+                                        onChange={(e) => setResetPasswordValue(e.target.value)}
+                                    />
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={resetPasswordValue.length < 6 || resettingPassword}
+                                        onClick={handleResetObserverPassword}
+                                    >
+                                        {resettingPassword ? '…' : 'OK'}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setResetPasswordId(null)}
+                                    >
+                                        ✕
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Create observer form */}
+                        <form className="space-y-3" onSubmit={handleCreateObserver}>
+                            <p className="text-xs text-white/40">Новый наблюдатель</p>
+                            <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
+                                <Input
+                                    placeholder="Имя"
+                                    value={newObserver.displayName}
+                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, displayName: e.target.value }))}
+                                    required
+                                />
+                                <Input
+                                    placeholder="Логин (латиница)"
+                                    value={newObserver.loginName}
+                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, loginName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') }))}
+                                    required
+                                />
+                                <Input
+                                    placeholder="Пароль (мин. 6)"
+                                    type="password"
+                                    value={newObserver.password}
+                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, password: e.target.value }))}
+                                    required
+                                    minLength={6}
+                                />
+                                <select
+                                    value={newObserver.hotelId}
+                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
+                                    className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    required
+                                >
+                                    <option value="">Выберите объект</option>
+                                    {hotels.map((hotel) => (
+                                        <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <Button type="submit" className="w-full" disabled={creatingObserver}>
+                                {creatingObserver ? 'Создаём…' : 'Создать наблюдателя'}
+                            </Button>
+                        </form>
                     </Card>
                 </section>
             )
