@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getManualSessionUser } from '@/lib/server/manual-session';
-import { invalidateSession } from '@/lib/server/session-store';
 
 /**
  * POST /api/session/logout
  * Clear the manual session cookie to log out the user
  */
 export async function POST(request: NextRequest) {
-    // Get current user to invalidate their session
-    const user = await getManualSessionUser(request);
-    if (user) {
-        invalidateSession(user.id);
-    }
+    void request; // consume param
 
     const response = NextResponse.json({ success: true });
 
