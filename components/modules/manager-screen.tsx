@@ -257,6 +257,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     ul { list-style: none; padding: 0; margin: 24px 0 0 0; }
     li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; font-size: 15px; }
     li strong { color: #0f172a; }
+    .expenses { margin: 0; border-left: 3px solid #fecdd3; margin-left: 4px; }
+    .expenses li { padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
     .footer { margin-top: 24px; font-size: 13px; color: #475569; }
     .brand { font-weight: 600; font-size: 16px; }
 </style>
@@ -275,6 +277,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         <li><span>Выручка (нал)</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
         <li><span>Выручка (безнал)</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
         <li><span>Затраты (нал/безнал)</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
+    </ul>
+    ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').length > 0 ? `
+    <ul class="expenses">
+        ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').map(e =>
+            `<li><span style="padding-left:16px;color:#64748b">↳ ${e.note?.trim() || 'Расход'} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${formatKgs(e.amount)}</strong></li>`
+        ).join('')}
+    </ul>` : ''}
+    <ul>
         <li><span>Чистый доход</span><strong>${formatKgs(shiftNetIncome)}</strong></li>
         <li><span>Остаток (нал)</span><strong>${formatKgs(shiftCashValue)}</strong></li>
         <li><span>Остаток (безнал)</span><strong>${formatKgs(shiftCardValue)}</strong></li>
