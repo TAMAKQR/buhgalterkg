@@ -393,6 +393,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isClearingHistory, setIsClearingHistory] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
+    const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+    const [editRoomData, setEditRoomData] = useState<{ label: string; floor: string; notes: string; isActive: boolean }>({ label: '', floor: '', notes: '', isActive: true });
+    const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
+    const [isRoomListExpanded, setIsRoomListExpanded] = useState(false);
     const [isStayEditorOpen, setIsStayEditorOpen] = useState(false);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
@@ -759,11 +763,46 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 body: { roomId }
             });
             mutate();
+            toast('Номер удалён', 'success');
         } catch (roomError) {
             console.error(roomError);
             toast('Не удалось удалить номер', 'error');
         } finally {
             setRemovingRoomId((current) => (current === roomId ? null : current));
+        }
+    };
+
+    const handleStartEditRoom = (room: HotelDetailPayload['rooms'][number]) => {
+        setEditingRoomId(room.id);
+        setEditRoomData({
+            label: room.label,
+            floor: room.floor ?? '',
+            notes: room.notes ?? '',
+            isActive: room.isActive
+        });
+    };
+
+    const handleSaveRoom = async (roomId: string) => {
+        setSavingRoomId(roomId);
+        try {
+            await request('/api/rooms', {
+                method: 'PATCH',
+                body: {
+                    roomId,
+                    label: editRoomData.label.trim() || undefined,
+                    floor: editRoomData.floor.trim() || null,
+                    notes: editRoomData.notes.trim() || null,
+                    isActive: editRoomData.isActive
+                }
+            });
+            setEditingRoomId(null);
+            mutate();
+            toast('Номер обновлён', 'success');
+        } catch (saveError) {
+            console.error(saveError);
+            toast(String(saveError), 'error');
+        } finally {
+            setSavingRoomId(null);
         }
     };
 
@@ -1950,6 +1989,122 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </form>
                                     ) : (
                                         <p className="px-2 pb-4 text-xs text-white/60">Форма массового добавления скрыта.</p>
+                                    )}
+                                </Card>
+
+                                <Card>
+                                    <CardHeader
+                                        title={`Список номеров (${sortedRooms.length})`}
+                                        actions={
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                onClick={() => setIsRoomListExpanded((prev) => !prev)}
+                                            >
+                                                {isRoomListExpanded ? 'Свернуть' : 'Показать'}
+                                            </Button>
+                                        }
+                                    />
+                                    {isRoomListExpanded && (
+                                        <div className="divide-y divide-white/[0.06]">
+                                            {sortedRooms.length === 0 && (
+                                                <p className="py-3 px-2 text-xs text-white/40">Номеров пока нет</p>
+                                            )}
+                                            {sortedRooms.map((room) => (
+                                                <div key={room.id} className="py-2.5 px-1">
+                                                    {editingRoomId === room.id ? (
+                                                        <div className="space-y-2">
+                                                            <div className="grid grid-cols-3 gap-2">
+                                                                <Input
+                                                                    placeholder="Номер"
+                                                                    value={editRoomData.label}
+                                                                    onChange={(e) => setEditRoomData((prev) => ({ ...prev, label: e.target.value }))}
+                                                                />
+                                                                <Input
+                                                                    placeholder="Этаж"
+                                                                    value={editRoomData.floor}
+                                                                    onChange={(e) => setEditRoomData((prev) => ({ ...prev, floor: e.target.value }))}
+                                                                />
+                                                                <Input
+                                                                    placeholder="Заметка"
+                                                                    value={editRoomData.notes}
+                                                                    onChange={(e) => setEditRoomData((prev) => ({ ...prev, notes: e.target.value }))}
+                                                                />
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <label className="flex items-center gap-1.5 text-xs text-white/60 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={editRoomData.isActive}
+                                                                        onChange={(e) => setEditRoomData((prev) => ({ ...prev, isActive: e.target.checked }))}
+                                                                        className="accent-emerald-400"
+                                                                    />
+                                                                    Активен
+                                                                </label>
+                                                                <span className="flex-1" />
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="text-white/50 hover:text-white"
+                                                                    onClick={() => setEditingRoomId(null)}
+                                                                >
+                                                                    Отмена
+                                                                </Button>
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="secondary"
+                                                                    disabled={savingRoomId === room.id}
+                                                                    onClick={() => handleSaveRoom(room.id)}
+                                                                >
+                                                                    {savingRoomId === room.id ? 'Сохраняем…' : 'Сохранить'}
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-white">№ {room.label}</span>
+                                                            {room.floor && <span className="text-[11px] text-white/30">{room.floor}</span>}
+                                                            {room.notes && <span className="text-[11px] text-white/25 truncate max-w-[120px]" title={room.notes}>{room.notes}</span>}
+                                                            <Badge
+                                                                label={
+                                                                    room.status === 'OCCUPIED' ? 'Занят'
+                                                                        : room.status === 'DIRTY' ? 'Уборка'
+                                                                            : room.status === 'HOLD' ? 'Бронь'
+                                                                                : 'Свободен'
+                                                                }
+                                                                tone={
+                                                                    room.status === 'OCCUPIED' ? 'warning'
+                                                                        : room.status === 'DIRTY' ? 'danger'
+                                                                            : room.status === 'HOLD' ? 'default'
+                                                                                : 'success'
+                                                                }
+                                                            />
+                                                            {!room.isActive && <span className="text-[11px] text-rose-300">выкл</span>}
+                                                            <span className="flex-1" />
+                                                            <button
+                                                                type="button"
+                                                                className="text-[11px] text-white/30 hover:text-white transition"
+                                                                onClick={() => handleStartEditRoom(room)}
+                                                            >
+                                                                ✎
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="text-[11px] text-rose-300/60 hover:text-rose-300 transition"
+                                                                onClick={() => handleDeleteRoom(room.id)}
+                                                                disabled={removingRoomId === room.id}
+                                                            >
+                                                                {removingRoomId === room.id ? '…' : '✕'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </Card>
 
