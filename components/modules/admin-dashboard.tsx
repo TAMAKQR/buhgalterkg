@@ -692,15 +692,17 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
             {activeTab === "overview" && (
                 <>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:grid-cols-4">
                         <Input
                             type="date"
+                            className="min-w-0"
                             value={filters.startDate}
                             onChange={(event) => handleFilterInput("startDate", event.target.value)}
                             placeholder="С даты"
                         />
                         <Input
                             type="date"
+                            className="min-w-0"
                             value={filters.endDate}
                             min={filters.startDate || undefined}
                             onChange={(event) => handleFilterInput("endDate", event.target.value)}
@@ -709,7 +711,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         <select
                             value={filters.hotelId}
                             onChange={(event) => handleHotelFilterChange(event.target.value)}
-                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                            className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
                         >
                             <option value="">Все объекты</option>
                             {hotels.map((hotel) => (
@@ -720,7 +722,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             value={filters.managerId}
                             onChange={(event) => handleFilterInput("managerId", event.target.value)}
                             disabled={!managerOptions.length}
-                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20"
+                            className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20"
                         >
                             <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
                             {managerOptions.map((manager) => (
@@ -735,28 +737,28 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </Button>
                         </div>
                     )}
-                    <section className="grid gap-2 grid-cols-2 lg:grid-cols-4">
+                    <section className="grid gap-2 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
                         {overview ? (
                             <>
-                                <Card className="p-3 text-white">
+                                <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Баланс</p>
-                                    <p className="mt-1 text-xl font-semibold">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                    <p className="mt-1 text-xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
                                 </Card>
-                                <Card className="p-3 text-white">
+                                <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Вход</p>
-                                    <p className="mt-1 text-lg font-semibold text-emerald-400">
+                                    <p className="mt-1 text-lg font-semibold text-emerald-400 truncate">
                                         {formatCurrency(overview.totals.cashIn, overviewCurrency)}
                                     </p>
-                                    <p className="text-[11px] text-white/40">нал {formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}</p>
+                                    <p className="text-[11px] text-white/40 break-words">нал {formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}</p>
                                 </Card>
-                                <Card className="p-3 text-white">
+                                <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Выход</p>
-                                    <p className="mt-1 text-lg font-semibold text-rose-400">
+                                    <p className="mt-1 text-lg font-semibold text-rose-400 truncate">
                                         {formatCurrency(overview.totals.cashOut, overviewCurrency)}
                                     </p>
-                                    <p className="text-[11px] text-white/40">нал {formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}</p>
+                                    <p className="text-[11px] text-white/40 break-words">нал {formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}</p>
                                 </Card>
-                                <Card className="p-3 text-white">
+                                <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Загрузка</p>
                                     <p className="mt-1 text-lg font-semibold">
                                         {formatPercent(overview.occupancy.rate)}

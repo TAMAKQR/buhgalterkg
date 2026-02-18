@@ -2174,7 +2174,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <div key={room.id} className="py-2.5 px-1">
                                                     {editingRoomId === room.id ? (
                                                         <div className="space-y-2">
-                                                            <div className="grid grid-cols-3 gap-2">
+                                                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                                                 <Input
                                                                     placeholder="Номер"
                                                                     value={editRoomData.label}
@@ -2187,6 +2187,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 />
                                                                 <Input
                                                                     placeholder="Заметка"
+                                                                    className="col-span-2 sm:col-span-1"
                                                                     value={editRoomData.notes}
                                                                     onChange={(e) => setEditRoomData((prev) => ({ ...prev, notes: e.target.value }))}
                                                                 />
