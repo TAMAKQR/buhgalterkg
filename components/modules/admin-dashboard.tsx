@@ -169,12 +169,12 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
         <Card className={`p-3 ${colSpan ?? "col-span-2 lg:col-span-4"}`}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                 <div
-                    className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-full"
+                    className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full"
                     style={chartStyle}
                 >
-                    <div className="absolute inset-[28%] flex flex-col items-center justify-center rounded-full bg-night text-center">
+                    <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-night text-center">
                         <span className="text-[9px] uppercase tracking-widest text-white/35">{centerLabel}</span>
-                        <span className={`text-base font-semibold ${centerColor}`}>{centerValue}</span>
+                        <span className={`text-sm font-semibold leading-tight ${centerColor}`}>{centerValue}</span>
                     </div>
                 </div>
                 <div className="flex-1 space-y-2.5 text-sm">
