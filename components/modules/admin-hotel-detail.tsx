@@ -65,6 +65,7 @@ interface ShiftHistoryEntry {
     expectedPayout?: number | null;
     paidPayout?: number | null;
     pendingPayout?: number | null;
+    bonus?: number | null;
 }
 
 type ShiftListItem = ShiftHistoryEntry & { isCurrent: boolean };
@@ -109,6 +110,12 @@ interface HotelDetailPayload {
         adjustments: number;
         netCash: number;
     };
+    bonusTiers?: Array<{
+        id: string;
+        threshold: number;
+        bonus: number;
+        bonusPct: number | null;
+    }>;
 }
 
 interface AddManagerForm {
@@ -402,6 +409,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
     const [isMassAddRoomsExpanded, setIsMassAddRoomsExpanded] = useState(false);
+    const [isBonusTiersExpanded, setIsBonusTiersExpanded] = useState(false);
+    const [newTier, setNewTier] = useState({ threshold: '', bonus: '', bonusPct: '', usePercent: false });
+    const [savingTier, setSavingTier] = useState(false);
+    const [removingTierId, setRemovingTierId] = useState<string | null>(null);
 
     const stayFormValues = stayEditForm.watch();
     const hasStaySelection = Boolean(stayFormValues.stayId);
@@ -806,6 +817,45 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     };
 
+    const handleAddBonusTier = async () => {
+        const threshold = Math.round(parseFloat(newTier.threshold) * 100);
+        if (!threshold || threshold <= 0) return;
+        setSavingTier(true);
+        try {
+            const body: Record<string, unknown> = { hotelId, threshold };
+            if (newTier.usePercent) {
+                const pct = Math.round(parseFloat(newTier.bonusPct) * 100);
+                if (!pct || pct <= 0) { toast('Укажите процент', 'error'); return; }
+                body.bonusPct = pct;
+            } else {
+                const bonus = Math.round(parseFloat(newTier.bonus) * 100);
+                if (!bonus || bonus <= 0) { toast('Укажите бонус', 'error'); return; }
+                body.bonus = bonus;
+            }
+            await request('/api/admin/bonus-tiers', { body });
+            setNewTier({ threshold: '', bonus: '', bonusPct: '', usePercent: false });
+            mutate();
+            toast('Бонусный порог добавлен', 'success');
+        } catch (e) {
+            toast(String(e), 'error');
+        } finally {
+            setSavingTier(false);
+        }
+    };
+
+    const handleDeleteBonusTier = async (tierId: string) => {
+        setRemovingTierId(tierId);
+        try {
+            await request(`/api/admin/bonus-tiers/${tierId}`, { method: 'DELETE' });
+            mutate();
+            toast('Порог удалён', 'success');
+        } catch (e) {
+            toast(String(e), 'error');
+        } finally {
+            setRemovingTierId(null);
+        }
+    };
+
     const resetStayEditor = () => {
         stayEditForm.reset(createStayEditDefaults());
     };
@@ -1195,6 +1245,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <span>Корректировки</span>
                                                             <span>{formatCurrency(selectedShiftCash.adjustments)}</span>
                                                         </p>
+                                                        {selectedShift.bonus != null && selectedShift.bonus > 0 && (
+                                                            <p className="flex items-center justify-between">
+                                                                <span>Бонус</span>
+                                                                <span className="text-emerald-300">+{formatCurrency(selectedShift.bonus)}</span>
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1949,6 +2005,108 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             </div>
                                         )}
                                     </div>
+                                </Card>
+
+                                <Card>
+                                    <CardHeader
+                                        title="Бонусы за кассу"
+                                        actions={
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                onClick={() => setIsBonusTiersExpanded((prev) => !prev)}
+                                            >
+                                                {isBonusTiersExpanded ? 'Свернуть' : 'Открыть'}
+                                            </Button>
+                                        }
+                                    />
+                                    {isBonusTiersExpanded && (
+                                        <div className="space-y-3">
+                                            {(data?.bonusTiers ?? []).length > 0 && (
+                                                <div className="divide-y divide-white/[0.06]">
+                                                    {data!.bonusTiers!.map((tier) => (
+                                                        <div key={tier.id} className="flex items-center gap-3 py-2 px-1">
+                                                            <span className="text-sm text-white">
+                                                                {formatCurrency(tier.threshold)} →{' '}
+                                                                <span className="text-emerald-300 font-medium">
+                                                                    {tier.bonusPct != null && tier.bonusPct > 0
+                                                                        ? `${(tier.bonusPct / 100).toFixed(1)}%`
+                                                                        : `+${formatCurrency(tier.bonus)}`
+                                                                    }
+                                                                </span>
+                                                            </span>
+                                                            <span className="flex-1" />
+                                                            <button
+                                                                type="button"
+                                                                className="text-[11px] text-rose-300/60 hover:text-rose-300 transition"
+                                                                onClick={() => handleDeleteBonusTier(tier.id)}
+                                                                disabled={removingTierId === tier.id}
+                                                            >
+                                                                {removingTierId === tier.id ? '…' : '✕'}
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="space-y-2 px-1">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <Input
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        placeholder="Порог кассы"
+                                                        value={newTier.threshold}
+                                                        onChange={(e) => setNewTier((prev) => ({ ...prev, threshold: e.target.value }))}
+                                                    />
+                                                    {newTier.usePercent ? (
+                                                        <Input
+                                                            type="number"
+                                                            step="0.1"
+                                                            min="0"
+                                                            placeholder="Процент %"
+                                                            value={newTier.bonusPct}
+                                                            onChange={(e) => setNewTier((prev) => ({ ...prev, bonusPct: e.target.value }))}
+                                                        />
+                                                    ) : (
+                                                        <Input
+                                                            type="number"
+                                                            step="1"
+                                                            min="0"
+                                                            placeholder="Бонус (сумма)"
+                                                            value={newTier.bonus}
+                                                            onChange={(e) => setNewTier((prev) => ({ ...prev, bonus: e.target.value }))}
+                                                        />
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <label className="flex items-center gap-1.5 text-xs text-white/60 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={newTier.usePercent}
+                                                            onChange={(e) => setNewTier((prev) => ({ ...prev, usePercent: e.target.checked }))}
+                                                            className="accent-emerald-400"
+                                                        />
+                                                        Процент от кассы
+                                                    </label>
+                                                    <span className="flex-1" />
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        disabled={savingTier}
+                                                        onClick={handleAddBonusTier}
+                                                    >
+                                                        {savingTier ? 'Добавляем…' : 'Добавить порог'}
+                                                    </Button>
+                                                </div>
+                                                <p className="text-[11px] text-white/30">
+                                                    При достижении порога кассы за смену менеджер получает бонус. Применяется наивысший достигнутый порог.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </Card>
 
                                 <Card>

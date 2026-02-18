@@ -76,6 +76,8 @@ interface ManagerStateResponse {
         expectedPayout?: number | null;
         paidPayout?: number | null;
         pendingPayout?: number | null;
+        bonus?: number | null;
+        bonusThreshold?: number | null;
     } | null;
     handoverManagers?: Array<{
         id: string;
@@ -305,6 +307,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 {data?.shift && payoutSummary && (
                     <span className="font-semibold text-amber-100">
                         Начислено: {formatKgs(payoutSummary.expected ?? 0)}
+                    </span>
+                )}
+                {compensation?.bonus != null && compensation.bonus > 0 && (
+                    <span className="font-semibold text-emerald-300">
+                        Бонус: +{formatKgs(compensation.bonus)}
                     </span>
                 )}
             </div>

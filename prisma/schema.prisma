@@ -39,6 +39,7 @@ model Hotel {
   rooms           Room[]
   stays           RoomStay[]
   shifts          Shift[]
+  bonusTiers      BonusTier[]
 }
 
 model HotelAssignment {
@@ -179,5 +180,18 @@ enum RoomStatus {
   OCCUPIED
   DIRTY
   HOLD
+}
+
+model BonusTier {
+  id        String   @id @default(cuid())
+  hotelId   String
+  threshold Int      // cash threshold in smallest unit (tiyin/tenge)
+  bonus     Int      // fixed bonus amount in smallest unit
+  bonusPct  Int?     @map("bonus_pct") // alternative: percentage * 100 (e.g. 500 = 5%)
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([hotelId, threshold])
+  @@index([hotelId])
 }
 

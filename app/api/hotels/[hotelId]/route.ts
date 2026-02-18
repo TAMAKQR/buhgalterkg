@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { calculateBonusFromTiers } from '@/lib/bonus';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         const session = await getSessionUser(_request);
         assertAdmin(session);
 
-        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups] = await prisma.$transaction([
+        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: params.hotelId },
                 include: {
@@ -81,6 +82,10 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 ],
                 where: { hotelId: params.hotelId, shiftId: { not: null } },
                 _sum: { amount: true }
+            }),
+            prisma.bonusTier.findMany({
+                where: { hotelId: params.hotelId },
+                orderBy: { threshold: 'asc' }
             })
         ]);
 
@@ -149,13 +154,21 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return { expected, paid, pending };
         };
 
+        const computeShiftBonus = (shiftId: string) => {
+            const ledger = shiftLedgerTotals.get(shiftId);
+            const cashIn = ledger?.cashIn ?? 0;
+            return calculateBonusFromTiers(cashIn, bonusTiers);
+        };
+
         const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
         const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId) : null;
+        const activeShiftBonus = activeShiftRecord ? computeShiftBonus(activeShiftRecord.id) : null;
 
         const shiftHistory = hotel.shifts
             .filter((shift) => shift.status === ShiftStatus.CLOSED)
             .map((shift) => {
                 const payout = computePayout(shift.id, shift.managerId);
+                const shiftBonus = computeShiftBonus(shift.id);
                 return {
                     id: shift.id,
                     number: shift.number,
@@ -172,7 +185,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     status: shift.status,
                     expectedPayout: payout?.expected ?? null,
                     paidPayout: payout?.paid ?? null,
-                    pendingPayout: payout?.pending ?? null
+                    pendingPayout: payout?.pending ?? null,
+                    bonus: shiftBonus?.computed ?? null
                 };
             });
 
@@ -241,7 +255,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     status: activeShiftRecord.status,
                     expectedPayout: activeShiftPayout?.expected ?? null,
                     paidPayout: activeShiftPayout?.paid ?? null,
-                    pendingPayout: activeShiftPayout?.pending ?? null
+                    pendingPayout: activeShiftPayout?.pending ?? null,
+                    bonus: activeShiftBonus?.computed ?? null
                 }
                 : null,
             shiftHistory,
@@ -254,6 +269,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 recordedAt: entry.recordedAt,
                 managerName: entry.manager?.displayName ?? null,
                 shiftNumber: entry.shift?.number ?? null
+            })),
+            bonusTiers: bonusTiers.map((t) => ({
+                id: t.id,
+                threshold: t.threshold,
+                bonus: t.bonus,
+                bonusPct: t.bonusPct
             })),
             financials: {
                 cashIn: ledgerTotals[LedgerEntryType.CASH_IN],

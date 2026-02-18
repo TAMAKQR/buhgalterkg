@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { LedgerEntryType, PaymentMethod, ShiftStatus, UserRole } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
+import { calculateBonusFromTiers } from '@/lib/bonus';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const [assignment, managerAssignments] = await Promise.all([
+        const [assignment, managerAssignments, bonusTiers] = await Promise.all([
             prisma.hotelAssignment.findFirst({
                 where: { hotelId, userId: session.id, isActive: true },
                 select: { shiftPayAmount: true, revenueSharePct: true }
@@ -54,6 +55,10 @@ export async function GET(request: NextRequest) {
                         }
                     }
                 }
+            }),
+            prisma.bonusTier.findMany({
+                where: { hotelId },
+                orderBy: { threshold: 'asc' }
             })
         ]);
 
@@ -205,6 +210,10 @@ export async function GET(request: NextRequest) {
             return { expected, paid, pending };
         })();
 
+        const shiftBonus = shift && shiftPayments
+            ? calculateBonusFromTiers(shiftPayments.total, bonusTiers)
+            : null;
+
         const handoverManagers = managerAssignments
             .map((assignment) => assignment.user)
             .filter((user): user is NonNullable<typeof user> => Boolean(user?.id))
@@ -257,7 +266,9 @@ export async function GET(request: NextRequest) {
                     revenueSharePct: assignment.revenueSharePct,
                     expectedPayout: payoutSummary?.expected ?? null,
                     paidPayout: payoutSummary?.paid ?? null,
-                    pendingPayout: payoutSummary?.pending ?? null
+                    pendingPayout: payoutSummary?.pending ?? null,
+                    bonus: shiftBonus?.computed ?? null,
+                    bonusThreshold: shiftBonus?.threshold ?? null
                 }
                 : null,
             handoverManagers
