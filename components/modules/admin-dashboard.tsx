@@ -144,6 +144,33 @@ function OverviewSkeleton() {
     );
 }
 
+/* ── Summary card with collapsible detail on mobile ── */
+
+function SummaryCard({ label, value, valueColor, detail }: {
+    label: string;
+    value: string;
+    valueColor: string;
+    detail: string;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <Card className="p-3 text-white overflow-hidden">
+            <div className="flex items-center justify-between">
+                <p className="text-[11px] uppercase tracking-widest text-white/35">{label}</p>
+                <button
+                    onClick={() => setOpen((v) => !v)}
+                    className="sm:hidden flex items-center justify-center h-5 w-5 rounded-full bg-white/[0.08] text-white/40 text-[11px] font-bold leading-none"
+                    aria-label="Подробнее"
+                >
+                    {open ? '✕' : 'ⓘ'}
+                </button>
+            </div>
+            <p className={`mt-1 text-sm sm:text-lg font-semibold ${valueColor} truncate`}>{value}</p>
+            <p className={`text-[11px] text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
+        </Card>
+    );
+}
+
 /* ── Donut helper ───────────────────────────────────── */
 
 type DonutSegment = { value: number; color: string; label: string; textColor: string };
@@ -819,25 +846,23 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             <>
                                 <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Баланс</p>
-                                    <p className="mt-1 text-xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                    <p className="mt-1 text-sm sm:text-xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
                                 </Card>
-                                <Card className="p-3 text-white overflow-hidden">
-                                    <p className="text-[11px] uppercase tracking-widest text-white/35">Вход</p>
-                                    <p className="mt-1 text-lg font-semibold text-emerald-400 truncate">
-                                        {formatCurrency(overview.totals.cashIn, overviewCurrency)}
-                                    </p>
-                                    <p className="text-[11px] text-white/40 break-words">нал {formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}</p>
-                                </Card>
-                                <Card className="p-3 text-white overflow-hidden">
-                                    <p className="text-[11px] uppercase tracking-widest text-white/35">Выход</p>
-                                    <p className="mt-1 text-lg font-semibold text-rose-400 truncate">
-                                        {formatCurrency(overview.totals.cashOut, overviewCurrency)}
-                                    </p>
-                                    <p className="text-[11px] text-white/40 break-words">нал {formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта {formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}</p>
-                                </Card>
+                                <SummaryCard
+                                    label="Вход"
+                                    value={formatCurrency(overview.totals.cashIn, overviewCurrency)}
+                                    valueColor="text-emerald-400"
+                                    detail={`нал ${formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}`}
+                                />
+                                <SummaryCard
+                                    label="Выход"
+                                    value={formatCurrency(overview.totals.cashOut, overviewCurrency)}
+                                    valueColor="text-rose-400"
+                                    detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
+                                />
                                 <Card className="p-3 text-white overflow-hidden">
                                     <p className="text-[11px] uppercase tracking-widest text-white/35">Загрузка</p>
-                                    <p className="mt-1 text-lg font-semibold">
+                                    <p className="mt-1 text-sm sm:text-lg font-semibold">
                                         {formatPercent(overview.occupancy.rate)}
                                     </p>
                                     <p className="text-[11px] text-white/40">
