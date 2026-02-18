@@ -153,3 +153,34 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         return handleApiError(error, 'Failed to update shift');
     }
 }
+
+export async function DELETE(_request: NextRequest, { params }: { params: { shiftId: string } }) {
+    try {
+        const session = await getSessionUser(_request);
+        assertAdmin(session);
+
+        const shift = await prisma.shift.findUnique({ where: { id: params.shiftId } });
+        if (!shift) {
+            return new NextResponse('Shift not found', { status: 404 });
+        }
+
+        // Detach related records (keep cash entries and stays, just unlink from shift)
+        await prisma.$transaction([
+            prisma.cashEntry.updateMany({
+                where: { shiftId: params.shiftId },
+                data: { shiftId: null }
+            }),
+            prisma.roomStay.updateMany({
+                where: { shiftId: params.shiftId },
+                data: { shiftId: null }
+            }),
+            prisma.shift.delete({
+                where: { id: params.shiftId }
+            })
+        ]);
+
+        return NextResponse.json({ ok: true });
+    } catch (error) {
+        return handleApiError(error, 'Failed to delete shift');
+    }
+}

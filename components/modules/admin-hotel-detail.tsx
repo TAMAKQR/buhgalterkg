@@ -398,6 +398,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
     const [isCreatingShift, setIsCreatingShift] = useState(false);
     const [isClearingHistory, setIsClearingHistory] = useState(false);
+    const [isDeletingShift, setIsDeletingShift] = useState(false);
+    const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
     const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
@@ -733,6 +735,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         handleResetShiftEditor();
         mutate();
     });
+
+    const handleDeleteShift = async () => {
+        if (!editingShift) return;
+        setIsDeletingShift(true);
+        try {
+            await request(`/api/admin/shifts/${editingShift.id}`, { method: 'DELETE' });
+            handleResetShiftEditor();
+            mutate();
+            toast('Смена удалена', 'success');
+        } catch (deleteError) {
+            console.error(deleteError);
+            toast('Не удалось удалить смену', 'error');
+        } finally {
+            setIsDeletingShift(false);
+            setConfirmDeleteShift(false);
+        }
+    };
 
     const handleClearShiftHistory = async () => {
         setIsClearingHistory(true);
@@ -1573,6 +1592,36 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </Button>
                                 </div>
                             </form>
+                            {!confirmDeleteShift ? (
+                                <Button
+                                    type="button"
+                                    variant="danger"
+                                    className="mt-3 w-full"
+                                    onClick={() => setConfirmDeleteShift(true)}
+                                >
+                                    Удалить смену
+                                </Button>
+                            ) : (
+                                <div className="mt-3 flex gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="danger"
+                                        className="flex-1"
+                                        disabled={isDeletingShift}
+                                        onClick={handleDeleteShift}
+                                    >
+                                        {isDeletingShift ? 'Удаляем…' : 'Да, удалить'}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="flex-1 border border-white/20"
+                                        onClick={() => setConfirmDeleteShift(false)}
+                                    >
+                                        Отмена
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     )}
 
