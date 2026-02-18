@@ -169,19 +169,19 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
         <Card className={`p-3 ${colSpan ?? "col-span-2 lg:col-span-4"}`}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                 <div
-                    className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full bg-white/[0.04]"
+                    className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-full"
                     style={chartStyle}
                 >
-                    <div className="absolute inset-5 flex flex-col items-center justify-center rounded-full bg-night text-center">
-                        <span className="text-[10px] uppercase tracking-widest text-white/35">{centerLabel}</span>
-                        <span className={`text-lg font-semibold ${centerColor}`}>{centerValue}</span>
+                    <div className="absolute inset-[28%] flex flex-col items-center justify-center rounded-full bg-night text-center">
+                        <span className="text-[9px] uppercase tracking-widest text-white/35">{centerLabel}</span>
+                        <span className={`text-base font-semibold ${centerColor}`}>{centerValue}</span>
                     </div>
                 </div>
-                <div className="flex-1 space-y-3 text-sm">
+                <div className="flex-1 space-y-2.5 text-sm">
                     {segments.map((seg) => (
                         <div key={seg.label} className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-white/50">
-                                <span className="h-2 w-5 rounded-full" style={{ backgroundColor: seg.color }} />
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seg.color }} />
                                 <span>{seg.label}</span>
                             </div>
                             <p className={`text-sm font-semibold ${seg.textColor}`}>
@@ -331,13 +331,13 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
                     fill="rgba(248,113,113,0.08)"
                 />
                 {/* lines */}
-                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="2" strokeLinejoin="round" />
-                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="2" strokeLinejoin="round" strokeDasharray="6 3" />
+                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
-                        <circle cx={toX(i)} cy={toY(d.cashIn)} r="3" fill="#34d399" />
-                        <circle cx={toX(i)} cy={toY(d.cashOut)} r="3" fill="#f87171" />
+                        <circle cx={toX(i)} cy={toY(d.cashIn)} r="2.5" fill="#34d399" />
+                        <circle cx={toX(i)} cy={toY(d.cashOut)} r="2.5" fill="#f87171" />
                     </g>
                 ))}
                 {/* x labels */}

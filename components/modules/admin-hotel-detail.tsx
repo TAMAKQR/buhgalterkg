@@ -1369,7 +1369,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
                                                                         <Badge label={ledgerMethodLabels[entry.method]} />
                                                                     </div>
-                                                                    {note && <p className="mt-2 text-xs text-white/40">{note}</p>}
+                                                                    <p className="mt-2 text-xs text-white/40">{note || ledgerEntryTypeLabels[entry.entryType]}</p>
                                                                 </div>
                                                             );
                                                         })}
@@ -2345,7 +2345,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </div>
                                                 <p className="mt-2 text-lg font-semibold text-rose-200">-{formatCurrency(entry.amount)}</p>
                                                 <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
-                                                {note && <p className="mt-1 text-xs text-white/40">{note}</p>}
+                                                <p className="mt-1 text-xs text-white/40">{note || 'Расход'}</p>
                                             </div>
                                         );
                                     })
