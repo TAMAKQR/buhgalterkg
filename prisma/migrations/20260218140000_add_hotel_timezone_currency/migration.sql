@@ -1,3 +1,3 @@
-﻿-- AlterTable
+-- AlterTable
 ALTER TABLE "Hotel" ADD COLUMN "timezone" TEXT NOT NULL DEFAULT 'Asia/Bishkek';
 ALTER TABLE "Hotel" ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'KGS';

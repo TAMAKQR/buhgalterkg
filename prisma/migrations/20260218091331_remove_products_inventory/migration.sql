@@ -1,4 +1,4 @@
-﻿-- DropForeignKey
+-- DropForeignKey
 ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "Product_categoryId_fkey";
 ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "Product_hotelId_fkey";
 ALTER TABLE "ProductCategory" DROP CONSTRAINT IF EXISTS "ProductCategory_hotelId_fkey";
