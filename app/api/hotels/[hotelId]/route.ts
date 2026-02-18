@@ -35,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         const session = await getSessionUser(_request);
         assertAdmin(session);
 
-        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers] = await prisma.$transaction([
+        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: params.hotelId },
                 include: {
@@ -86,6 +86,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             prisma.bonusTier.findMany({
                 where: { hotelId: params.hotelId },
                 orderBy: { threshold: 'asc' }
+            }),
+            prisma.roomStay.groupBy({
+                by: ['shiftId'],
+                orderBy: { shiftId: 'asc' },
+                where: { hotelId: params.hotelId, shiftId: { not: null } },
+                _sum: { amountPaid: true }
             })
         ]);
 
@@ -154,10 +160,16 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return { expected, paid, pending };
         };
 
+        const shiftStayRevenue = new Map<string, number>();
+        for (const group of stayRevenueByShift) {
+            if (group.shiftId) {
+                shiftStayRevenue.set(group.shiftId, group._sum?.amountPaid ?? 0);
+            }
+        }
+
         const computeShiftBonus = (shiftId: string) => {
-            const ledger = shiftLedgerTotals.get(shiftId);
-            const cashIn = ledger?.cashIn ?? 0;
-            return calculateBonusFromTiers(cashIn, bonusTiers);
+            const revenue = shiftStayRevenue.get(shiftId) ?? 0;
+            return calculateBonusFromTiers(revenue, bonusTiers);
         };
 
         const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);

@@ -210,8 +210,15 @@ export async function GET(request: NextRequest) {
             return { expected, paid, pending };
         })();
 
-        const shiftBonus = shift && shiftPayments
-            ? calculateBonusFromTiers(shiftPayments.total, bonusTiers)
+        const shiftStayRevenue = shift
+            ? (await prisma.roomStay.aggregate({
+                where: { shiftId: shift.id, hotelId },
+                _sum: { amountPaid: true }
+            }))._sum.amountPaid ?? 0
+            : 0;
+
+        const shiftBonus = shift && shiftStayRevenue > 0
+            ? calculateBonusFromTiers(shiftStayRevenue, bonusTiers)
             : null;
 
         const handoverManagers = managerAssignments
