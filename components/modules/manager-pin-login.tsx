@@ -56,42 +56,33 @@ export function ManagerPinLogin({ onAdminMode }: ManagerPinLoginProps) {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 px-3 py-8 text-white sm:px-6">
-            <Card className="w-full max-w-md space-y-5 bg-white/5 p-6">
-                <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-[0.4em] text-white/40">Панель менеджера</p>
-                    <h1 className="text-2xl font-semibold">Вход по PIN</h1>
-                    <p className="text-sm text-white/60">
-                        Введите PIN-код менеджера, который назначил администратор.
-                    </p>
+        <div className="flex min-h-screen items-center justify-center bg-night px-4 text-white">
+            <Card className="w-full max-w-sm space-y-5 p-5">
+                <div>
+                    <h1 className="text-xl font-semibold">Вход по PIN</h1>
                 </div>
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                    <div className="space-y-2">
-                        <Input
-                            type="password"
-                            placeholder="PIN (6 цифр)"
-                            maxLength={6}
-                            inputMode="numeric"
-                            value={pinCode}
-                            onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))}
-                            disabled={pending}
-                        />
-                        {error && <p className="text-xs text-rose-300">{error}</p>}
-                    </div>
+                <form className="space-y-3" onSubmit={handleSubmit}>
+                    <Input
+                        type="password"
+                        placeholder="PIN (6 цифр)"
+                        maxLength={6}
+                        inputMode="numeric"
+                        value={pinCode}
+                        onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))}
+                        disabled={pending}
+                    />
+                    {error && <p className="text-xs text-rose-400">{error}</p>}
                     <Button type="submit" className="w-full" disabled={pending || pinCode.length !== 6}>
-                        {pending ? 'Проверяем…' : 'Войти'}
+                        {pending ? 'Вход…' : 'Войти'}
                     </Button>
                 </form>
-                <div className="space-y-1 text-center text-xs text-white/60">
-                    <p>Нужен доступ администратора?</p>
-                    <button
-                        type="button"
-                        className="text-white underline-offset-4 hover:underline"
-                        onClick={onAdminMode}
-                    >
-                        Войти по логину и паролю
-                    </button>
-                </div>
+                <button
+                    type="button"
+                    className="block w-full text-center text-xs text-white/40 hover:text-white/60 transition-colors"
+                    onClick={onAdminMode}
+                >
+                    Войти как администратор
+                </button>
             </Card>
         </div>
     );

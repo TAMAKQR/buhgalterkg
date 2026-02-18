@@ -27,8 +27,8 @@ export const EntryRouter = () => {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-900 px-3 py-6 sm:px-6">
-                <p className="text-white/60">Загрузка...</p>
+            <div className="flex min-h-screen items-center justify-center bg-night">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
             </div>
         );
     }
@@ -36,7 +36,7 @@ export const EntryRouter = () => {
     if (!view) {
         if (mode === 'admin') {
             return (
-                <div className="flex min-h-screen items-center justify-center bg-slate-900 px-3 py-6 sm:px-6">
+                <div className="flex min-h-screen items-center justify-center bg-night px-4">
                     <AdminLoginGate embed onBack={() => setMode('manager')} />
                 </div>
             );

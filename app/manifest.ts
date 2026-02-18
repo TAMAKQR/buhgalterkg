@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
     return {
-        name: 'Hotel Ops Telegram Console',
+        name: 'Hotel Ops',
         short_name: 'Hotel Ops',
-        description: 'Управление отелями, сменами и складами прямо внутри Telegram WebApp.',
+        description: 'Управление отелями, сменами и складами.',
         lang: 'ru',
         start_url: '/',
         scope: '/',

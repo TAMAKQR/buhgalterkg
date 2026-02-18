@@ -60,44 +60,37 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
     };
 
     const card = (
-        <Card className="w-full max-w-md space-y-5 bg-white/5 p-6 text-white">
-            <div className="space-y-2">
+        <Card className="w-full max-w-sm space-y-5 p-5 text-white">
+            <div className="space-y-1">
                 {onBack && (
-                    <button type="button" className="text-xs text-white/60 hover:text-white" onClick={onBack}>
+                    <button type="button" className="text-xs text-white/40 hover:text-white/70 transition-colors" onClick={onBack}>
                         ← Назад
                     </button>
                 )}
-                <p className="text-xs uppercase tracking-[0.4em] text-white/40">Веб-доступ</p>
-                <h1 className="text-2xl font-semibold">Вход для администраторов</h1>
-                <p className="text-sm text-white/60">Введите учётные данные, если запускаете приложение вне Telegram.</p>
+                <h1 className="text-xl font-semibold">Вход</h1>
                 {contextError && <p className="text-xs text-amber-300/90">{contextError}</p>}
             </div>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-                <div className="space-y-2">
-                    <Input
-                        placeholder="Логин"
-                        value={username}
-                        onChange={(event) => setUsername(event.target.value)}
-                        disabled={pending}
-                        autoComplete="username"
-                    />
-                    <Input
-                        type="password"
-                        placeholder="Пароль"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        disabled={pending}
-                        autoComplete="current-password"
-                    />
-                    {error && <p className="text-xs text-rose-300">{error}</p>}
-                </div>
+            <form className="space-y-3" onSubmit={handleSubmit}>
+                <Input
+                    placeholder="Логин"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    disabled={pending}
+                    autoComplete="username"
+                />
+                <Input
+                    type="password"
+                    placeholder="Пароль"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    disabled={pending}
+                    autoComplete="current-password"
+                />
+                {error && <p className="text-xs text-rose-400">{error}</p>}
                 <Button type="submit" className="w-full" disabled={pending || !username || !password}>
-                    {pending ? 'Проверяем…' : 'Войти'}
+                    {pending ? 'Вход…' : 'Войти'}
                 </Button>
             </form>
-            <p className="text-xs text-white/50">
-                Панель администратора
-            </p>
         </Card>
     );
 
@@ -105,5 +98,5 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
         return card;
     }
 
-    return <div className="flex min-h-screen items-center justify-center bg-slate-900 px-3 py-6 sm:px-6">{card}</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-night px-4">{card}</div>;
 }

@@ -1,13 +1,13 @@
 import { PaymentMethod } from "@prisma/client";
 
 import { env } from "@/lib/env";
-import { formatBishkekDateTime } from "@/lib/timezone";
+import { formatDateTime, formatMoney } from "@/lib/timezone";
 
 const TELEGRAM_API_BASE = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
-const formatDate = (value?: string | null) => formatBishkekDateTime(value, undefined, "не указано");
+const formatDate = (value?: string | null, tz?: string) => formatDateTime(value, tz, undefined, "не указано");
 
-const formatAmount = (value: number) => `${(value / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} KGS`;
+const formatAmount = (value: number, currency?: string) => formatMoney(value, currency);
 
 export type CheckInNotificationPayload = {
     hotelName: string;
@@ -20,6 +20,8 @@ export type CheckInNotificationPayload = {
         cashAmount?: number;
         cardAmount?: number;
     };
+    timezone?: string;
+    currency?: string;
 };
 
 export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayload) => {
@@ -27,18 +29,21 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         return;
     }
 
+    const tz = payload.timezone;
+    const cur = payload.currency;
+
     const paymentLines = (() => {
         const cash = payload.paymentDetails?.cashAmount ?? (payload.paymentMethod === PaymentMethod.CASH ? payload.amount : 0);
         const card = payload.paymentDetails?.cardAmount ?? (payload.paymentMethod === PaymentMethod.CARD ? payload.amount : 0);
 
         if (cash && card) {
-            return `Оплата: наличные ${formatAmount(cash)} + безнал ${formatAmount(card)}`;
+            return `Оплата: наличные ${formatAmount(cash, cur)} + безнал ${formatAmount(card, cur)}`;
         }
         if (cash) {
-            return `Оплата: наличные (${formatAmount(cash)})`;
+            return `Оплата: наличные (${formatAmount(cash, cur)})`;
         }
         if (card) {
-            return `Оплата: карта (${formatAmount(card)})`;
+            return `Оплата: карта (${formatAmount(card, cur)})`;
         }
         return payload.paymentMethod ? `Оплата: ${payload.paymentMethod}` : 'Оплата: не указано';
     })();
@@ -47,9 +52,9 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         "🛎 Новое заселение",
         `Отель: ${payload.hotelName}`,
         `Номер: ${payload.roomLabel}`,
-        `Заезд: ${formatDate(payload.checkIn)}`,
-        `Выезд: ${formatDate(payload.checkOut)}`,
-        `Сумма: ${formatAmount(payload.amount)}`,
+        `Заезд: ${formatDate(payload.checkIn, tz)}`,
+        `Выезд: ${formatDate(payload.checkOut, tz)}`,
+        `Сумма: ${formatAmount(payload.amount, cur)}`,
         paymentLines,
     ].join("\n");
 

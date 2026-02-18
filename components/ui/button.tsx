@@ -5,18 +5,19 @@ import { cn } from '@/lib/utils';
 import type { ButtonHTMLAttributes } from 'react';
 
 const buttonStyles = cva(
-    'inline-flex items-center justify-center rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70 disabled:opacity-50 disabled:pointer-events-none',
+    'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/50 focus-visible:ring-offset-1 focus-visible:ring-offset-night disabled:opacity-40 disabled:pointer-events-none active:scale-[0.97]',
     {
         variants: {
             variant: {
-                primary: 'bg-amber text-ink hover:bg-amber/90',
-                secondary: 'bg-white/10 text-white hover:bg-white/20',
-                ghost: 'text-mist hover:bg-white/10'
+                primary: 'bg-amber text-ink hover:bg-amber/85',
+                secondary: 'bg-white/[0.07] text-white/90 hover:bg-white/[0.12]',
+                ghost: 'text-white/60 hover:text-white hover:bg-white/[0.06]',
+                danger: 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
             },
             size: {
-                md: 'h-11 px-6 text-sm',
-                sm: 'h-9 px-4 text-xs',
-                icon: 'h-10 w-10'
+                md: 'h-10 px-5 text-sm',
+                sm: 'h-8 px-3 text-xs',
+                icon: 'h-9 w-9'
             }
         },
         defaultVariants: {

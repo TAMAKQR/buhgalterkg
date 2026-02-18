@@ -129,7 +129,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     paymentDetails: {
                         cashAmount,
                         cardAmount
-                    }
+                    },
+                    timezone: room.hotel.timezone,
+                    currency: room.hotel.currency,
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram notification', notificationError);

@@ -1,15 +1,16 @@
-# Telegram Hotel Ops WebApp
+# Hotel Ops
 
-Operational control panel for hotel administrators and on-duty managers running inside Telegram WebApp. Built with Next.js 14 (App Router), Tailwind CSS, Prisma, and PostgreSQL, targeting deployment on Render.
+Операционная панель управления отелями для администраторов и дежурных менеджеров. Работает в браузере. Построена на Next.js 14 (App Router), Tailwind CSS, Prisma и PostgreSQL, деплой на Render.
 
 ## Features
 
-- Telegram ID-based authentication with signature validation and optional local dev override.
+- Авторизация по логину/паролю (админ) и PIN-коду (менеджер).
+- Telegram-бот для уведомлений (необязательно).
 - Role-aware entry router that sends admins to a desktop dashboard and managers to a mobile-first interface.
 - Admin tooling to create hotels ("точки"), inspect occupancy, and observe current shift cash state.
 - Manager console with shift open/close workflow, room board, stay check-in/check-out actions, and quick expense capture.
 - Prisma data model covering users, hotels, assignments, rooms, stays, shifts, and ledger entries.
-- Server actions/route handlers wired for hotels, manager state, shifts, room stays, expenses, and Telegram session bootstrapping.
+- Server actions/route handlers wired for hotels, manager state, shifts, room stays, expenses, and session management.
 
 ## Getting Started
 
@@ -17,7 +18,6 @@ Operational control panel for hotel administrators and on-duty managers running 
 
 - Node.js 18+
 - PostgreSQL database (Render PostgreSQL works great)
-- Telegram bot token (from BotFather)
 
 ### Installation
 
@@ -31,8 +31,7 @@ Create `.env` by copying `.env.example` and updating the secrets:
 
 ```
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<db>
-TELEGRAM_BOT_TOKEN=123456:ABCDEF
-TELEGRAM_WEBAPP_URL=https://your-app.onrender.com
+TELEGRAM_BOT_TOKEN=123456:ABCDEF     # optional, for notifications
 NEXT_PUBLIC_DEV_TELEGRAM_ID=100000000  # optional for local dev
 NEXT_PUBLIC_DEV_ROLE=ADMIN             # optional for local dev
 ```
@@ -64,7 +63,7 @@ Start the Next.js dev server:
 npm run dev
 ```
 
-Open your Telegram bot, configure the WebApp URL to `http://localhost:3000` (or use the provided dev override) and test flows.
+Open `http://localhost:3000` in a browser and test flows.
 
 ### Linting & Build
 
@@ -80,14 +79,10 @@ npm run build
    - PostgreSQL: Provision a managed PostgreSQL instance and supply its URL via `DATABASE_URL`.
 
 2. **Environment Variables**
-   - Add `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBAPP_URL`, and any other secrets in the Render dashboard.
-   - Remove the local-only `NEXT_PUBLIC_DEV_*` variables in production unless you need a sandbox bot user.
+   - Add `DATABASE_URL`, `TELEGRAM_BOT_TOKEN` (optional), and any other secrets in the Render dashboard.
+   - Remove the local-only `NEXT_PUBLIC_DEV_*` variables in production.
 
-3. **Telegram Bot**
-   - Use BotFather `/setdomain` or `/setmenubutton` to configure your Render domain as the WebApp URL.
-   - Inside bot commands, launch the WebApp using `web_app` keyboard buttons so Telegram injects `initData` automatically.
-
-4. **Prisma Migrations**
+3. **Prisma Migrations**
    - Run `npx prisma migrate deploy` during deployment (Render build command) to apply schema changes.
 
 ## Project Structure Highlights
@@ -96,7 +91,7 @@ npm run build
 - `components/` – UI primitives, providers, and role-specific modules.
 - `lib/` – Prisma client, env validation, Telegram helpers, permissions, and shared utilities.
 - `prisma/` – Prisma schema.
-- `hooks/useApi.ts` – Client-side helper that injects Telegram auth payload into every request.
+- `hooks/useApi.ts` – Client-side helper for authenticated API calls.
 
 ## Scripts
 
@@ -113,7 +108,6 @@ npm run build
 
 ## Next Steps
 
-- Connect Telegram bot commands/keyboards to open the WebApp.
 - Implement remaining CRUD flows (room management, manager assignments, payouts).
 - Harden validation and add audit logging on ledger entries and shift actions.
 - Add automated tests (Playwright or Cypress) for the role-based flows.

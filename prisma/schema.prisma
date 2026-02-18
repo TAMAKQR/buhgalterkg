@@ -20,8 +20,6 @@ model User {
   assignments HotelAssignment[]
   shifts      Shift[]           @relation("ShiftManager")
   receivedHandovers Shift[]     @relation("ShiftHandoverRecipient")
-  productSales ProductSale[]
-  inventoryEntries ProductInventoryEntry[]
 }
 
 model Hotel {
@@ -29,6 +27,8 @@ model Hotel {
   name            String
   address         String
   city            String?
+  timezone        String            @default("Asia/Bishkek")
+  currency        String            @default("KGS")
   managerSharePct Int?              @map("manager_share_pct")
   cleaningChatId  String?           @map("cleaning_chat_id")
   notes           String?
@@ -39,9 +39,6 @@ model Hotel {
   rooms           Room[]
   stays           RoomStay[]
   shifts          Shift[]
-  productCategories ProductCategory[]
-  products        Product[]
-  productSales    ProductSale[]
 }
 
 model HotelAssignment {
@@ -102,7 +99,6 @@ model RoomStay {
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
   shift             Shift?         @relation(fields: [shiftId], references: [id])
-  productSales      ProductSale[]
 }
 
 model Shift {
@@ -127,8 +123,6 @@ model Shift {
   hotel        Hotel       @relation(fields: [hotelId], references: [id])
   manager      User        @relation("ShiftManager", fields: [managerId], references: [id])
   handoverRecipient   User?      @relation("ShiftHandoverRecipient", fields: [handoverRecipientId], references: [id])
-  productSales ProductSale[]
-  inventoryEntries ProductInventoryEntry[]
 
   @@unique([hotelId, number])
   @@index([hotelId, status])
@@ -150,85 +144,6 @@ model CashEntry {
   shift      Shift?          @relation(fields: [shiftId], references: [id])
 }
 
-model ProductCategory {
-  id          String   @id @default(cuid())
-  hotelId     String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  hotel       Hotel    @relation(fields: [hotelId], references: [id])
-  products    Product[]
-
-  @@unique([hotelId, name])
-}
-
-model Product {
-  id               String   @id @default(cuid())
-  hotelId          String
-  categoryId       String?
-  name             String
-  sku              String?
-  description      String?
-  costPrice        Int
-  sellPrice        Int
-  unit             String?
-  stockOnHand      Int      @default(0)
-  reorderThreshold Int?
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  hotel            Hotel    @relation(fields: [hotelId], references: [id])
-  category         ProductCategory? @relation(fields: [categoryId], references: [id])
-  inventoryEntries ProductInventoryEntry[]
-  sales            ProductSale[]
-
-  @@unique([hotelId, name])
-  @@index([categoryId])
-}
-
-model ProductInventoryEntry {
-  id             String                           @id @default(cuid())
-  productId      String
-  shiftId        String?
-  userId         String?
-  adjustmentType ProductInventoryAdjustmentType
-  quantity       Int
-  costTotal      Int?
-  note           String?
-  createdAt      DateTime                         @default(now())
-  product        Product                          @relation(fields: [productId], references: [id])
-  shift          Shift?                           @relation(fields: [shiftId], references: [id])
-  user           User?                            @relation(fields: [userId], references: [id])
-
-  @@index([productId])
-  @@index([shiftId])
-}
-
-model ProductSale {
-  id            String           @id @default(cuid())
-  productId     String
-  hotelId       String
-  shiftId       String?
-  roomStayId    String?
-  soldById      String?
-  saleType      ProductSaleType
-  quantity      Int
-  unitPrice     Int
-  totalAmount   Int
-  paymentMethod PaymentMethod
-  note          String?
-  createdAt     DateTime         @default(now())
-  product       Product          @relation(fields: [productId], references: [id])
-  hotel         Hotel            @relation(fields: [hotelId], references: [id])
-  shift         Shift?           @relation(fields: [shiftId], references: [id])
-  roomStay      RoomStay?        @relation(fields: [roomStayId], references: [id])
-  soldBy        User?            @relation(fields: [soldById], references: [id])
-
-  @@index([hotelId])
-  @@index([shiftId])
-  @@index([roomStayId])
-}
 
 enum UserRole {
   ADMIN
@@ -266,14 +181,3 @@ enum RoomStatus {
   HOLD
 }
 
-enum ProductSaleType {
-  ROOM
-  TAKEAWAY
-  DIRECT
-}
-
-enum ProductInventoryAdjustmentType {
-  RESTOCK
-  ADJUSTMENT
-  WRITE_OFF
-}

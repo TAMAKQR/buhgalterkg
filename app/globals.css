@@ -4,10 +4,61 @@
 
 :root {
     color-scheme: dark;
-    background-color: #05060a;
+    background-color: #0a0a0f;
+    --color-surface: rgba(255, 255, 255, 0.04);
+    --color-border: rgba(255, 255, 255, 0.08);
+}
+
+* {
+    -webkit-tap-highlight-color: transparent;
 }
 
 body {
     margin: 0;
-    font-family: var(--font-sans), 'Space Grotesk', 'Spline Sans', system-ui;
+    font-family: var(--font-sans), 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+/* Remove input autofill bg */
+input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 30px #0a0a0f inset !important;
+    -webkit-text-fill-color: #e2e8f0 !important;
+}
+
+/* Select options dark */
+option {
+    background: #141420;
+    color: #e2e8f0;
+}
+
+/* Toast slide-up */
+@keyframes slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.2s ease-out;
 }

@@ -16,7 +16,6 @@
     "dependencies": {
         "@hookform/resolvers": "^3.5.0",
         "@prisma/client": "^5.16.1",
-        "@twa-dev/sdk": "^7.0.0",
         "class-variance-authority": "^0.7.0",
         "clsx": "^2.1.1",
         "date-fns": "^3.6.0",

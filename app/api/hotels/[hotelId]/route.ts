@@ -19,6 +19,8 @@ const updateHotelSchema = z
     .object({
         name: z.string().min(2).optional(),
         address: z.string().min(4).optional(),
+        timezone: z.string().min(1).max(50).optional(),
+        currency: z.string().min(1).max(10).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         notes: z.string().max(500).optional(),
         cleaningChatId: cleaningChatIdSchema.optional().nullable()
@@ -178,6 +180,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             id: hotel.id,
             name: hotel.name,
             address: hotel.address,
+            timezone: hotel.timezone,
+            currency: hotel.currency,
             managerSharePct: hotel.managerSharePct,
             cleaningChatId: hotel.cleaningChatId,
             notes: hotel.notes,

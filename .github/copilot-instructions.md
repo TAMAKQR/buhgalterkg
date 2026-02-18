@@ -1,6 +1,6 @@
  - [x] Verify that the copilot-instructions.md file in the .github directory is created. (Created file with required checklist.)
 
- - [x] Clarify Project Requirements (Confirmed Telegram WebApp + Next.js + PostgreSQL on Render.)
+ - [x] Clarify Project Requirements (Next.js + PostgreSQL on Render, browser-based UI.)
 
  - [x] Scaffold the Project (Manual Next.js 14/Tailwind skeleton added because create-next-app disallowed the capitalized folder name.)
 

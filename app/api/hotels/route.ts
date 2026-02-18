@@ -18,6 +18,8 @@ const cleaningChatIdSchema = z
 const createHotelSchema = z.object({
     name: z.string().min(2),
     address: z.string().min(4),
+    timezone: z.string().min(1).max(50).optional(),
+    currency: z.string().min(1).max(10).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
     notes: z.string().max(500).optional(),
     cleaningChatId: cleaningChatIdSchema.optional().nullable()
@@ -82,6 +84,8 @@ export async function GET(request: NextRequest) {
             id: hotel.id,
             name: hotel.name,
             address: hotel.address,
+            timezone: hotel.timezone,
+            currency: hotel.currency,
             managerSharePct: hotel.managerSharePct,
             notes: hotel.notes,
             cleaningChatId: hotel.cleaningChatId,

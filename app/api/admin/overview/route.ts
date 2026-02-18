@@ -4,7 +4,7 @@ import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from 
 import { prisma } from "@/lib/db";
 import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
-import { parseBishkekDateOnly } from "@/lib/timezone";
+import { parseDateOnly } from "@/lib/timezone";
 import { handleApiError } from "@/lib/server/errors";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
         const hotelIds = parseIds("hotelId");
         const managerIds = parseIds("managerId");
 
-        const startDate = parseBishkekDateOnly(searchParams.get("startDate"));
-        const endDate = parseBishkekDateOnly(searchParams.get("endDate"), true);
+        const startDate = parseDateOnly(searchParams.get("startDate"));
+        const endDate = parseDateOnly(searchParams.get("endDate"), true);
 
         const hotelFilter: Prisma.HotelWhereInput = hotelIds.length ? { id: { in: hotelIds } } : {};
         const roomHotelFilter: Prisma.RoomWhereInput = hotelIds.length ? { hotelId: { in: hotelIds } } : {};
@@ -119,6 +119,56 @@ export async function GET(request: NextRequest) {
 
         const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0;
 
+        /* ── Daily series for line chart ── */
+        const dailyConditions: string[] = [];
+        const dailyParams: unknown[] = [];
+        let paramIndex = 1;
+
+        if (hotelIds.length) {
+            dailyConditions.push(`"hotelId" IN (${hotelIds.map(() => `$${paramIndex++}`).join(", ")})`);
+            dailyParams.push(...hotelIds);
+        }
+        if (managerIds.length) {
+            dailyConditions.push(`"managerId" IN (${managerIds.map(() => `$${paramIndex++}`).join(", ")})`);
+            dailyParams.push(...managerIds);
+        }
+        if (startDate) {
+            dailyConditions.push(`"recordedAt" >= $${paramIndex++}`);
+            dailyParams.push(startDate);
+        }
+        if (endDate) {
+            dailyConditions.push(`"recordedAt" <= $${paramIndex++}`);
+            dailyParams.push(endDate);
+        }
+
+        const whereClause = dailyConditions.length ? `WHERE ${dailyConditions.join(" AND ")}` : "";
+
+        const dailyRows = await prisma.$queryRawUnsafe<
+            Array<{ day: string; entry_type: string; total: bigint }>
+        >(
+            `SELECT TO_CHAR("recordedAt" AT TIME ZONE 'Asia/Bishkek', 'YYYY-MM-DD') AS day,
+                    "entryType" AS entry_type,
+                    SUM(amount) AS total
+             FROM "CashEntry"
+             ${whereClause}
+             GROUP BY day, "entryType"
+             ORDER BY day`,
+            ...dailyParams,
+        );
+
+        const dayMap = new Map<string, { cashIn: number; cashOut: number }>();
+        for (const row of dailyRows) {
+            const entry = dayMap.get(row.day) ?? { cashIn: 0, cashOut: 0 };
+            const amount = Number(row.total);
+            if (row.entry_type === "CASH_IN") entry.cashIn += amount;
+            if (row.entry_type === "CASH_OUT" || row.entry_type === "MANAGER_PAYOUT") entry.cashOut += amount;
+            dayMap.set(row.day, entry);
+        }
+
+        const dailySeries = Array.from(dayMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, values]) => ({ date, ...values }));
+
         return NextResponse.json({
             totals: {
                 ...totals,
@@ -134,6 +184,7 @@ export async function GET(request: NextRequest) {
                 active: activeShifts,
                 lastOpenedAt: lastShift?.openedAt ?? null,
             },
+            dailySeries,
         });
     } catch (error) {
         return handleApiError(error, "Failed to load overview");

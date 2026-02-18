@@ -5,9 +5,7 @@ const {
     RoomStatus,
     StayStatus,
     PaymentMethod,
-    LedgerEntryType,
-    ProductSaleType,
-    ProductInventoryAdjustmentType
+    LedgerEntryType
 } = pkg;
 
 const prisma = new PrismaClient();
@@ -18,10 +16,6 @@ const checkoutDate = (dateString) => new Date(dateString);
 
 async function resetData() {
     await prisma.$transaction([
-        prisma.productSale.deleteMany(),
-        prisma.productInventoryEntry.deleteMany(),
-        prisma.product.deleteMany(),
-        prisma.productCategory.deleteMany(),
         prisma.cashEntry.deleteMany(),
         prisma.roomStay.deleteMany(),
         prisma.shift.deleteMany(),
@@ -337,135 +331,6 @@ async function main() {
             note: 'Предоплата Sky Lounge'
         }
     });
-
-    const minibarCategory = await prisma.productCategory.create({
-        data: {
-            hotelId: castleHotel.id,
-            name: 'Минибар',
-            description: 'Напитки и снеки в номерах'
-        }
-    });
-
-    const barCategory = await prisma.productCategory.create({
-        data: {
-            hotelId: skyHotel.id,
-            name: 'Room Service',
-            description: 'Доставка в номер'
-        }
-    });
-
-    const waterProduct = await prisma.product.create({
-        data: {
-            hotelId: castleHotel.id,
-            categoryId: minibarCategory.id,
-            name: 'Вода 0.5л',
-            sku: 'TZ-WATER-05',
-            description: 'Питьевая вода без газа',
-            costPrice: minor(12),
-            sellPrice: minor(30),
-            unit: 'бут',
-            stockOnHand: 0,
-            reorderThreshold: 10
-        }
-    });
-
-    const snackProduct = await prisma.product.create({
-        data: {
-            hotelId: castleHotel.id,
-            categoryId: minibarCategory.id,
-            name: 'Орехи 50г',
-            sku: 'TZ-NUTS-50',
-            description: 'Ассорти орехов',
-            costPrice: minor(25),
-            sellPrice: minor(55),
-            unit: 'пак',
-            stockOnHand: 0,
-            reorderThreshold: 8
-        }
-    });
-
-    const latteProduct = await prisma.product.create({
-        data: {
-            hotelId: skyHotel.id,
-            categoryId: barCategory.id,
-            name: 'Латте 300 мл',
-            sku: 'SG-LATTE-300',
-            description: 'Кофе для доставки',
-            costPrice: minor(70),
-            sellPrice: minor(150),
-            unit: 'стакан',
-            stockOnHand: 0,
-            reorderThreshold: 15
-        }
-    });
-
-    await prisma.productInventoryEntry.create({
-        data: {
-            productId: waterProduct.id,
-            adjustmentType: ProductInventoryAdjustmentType.RESTOCK,
-            quantity: 40,
-            costTotal: minor(480),
-            note: 'Поставка FreshSpring'
-        }
-    });
-    await prisma.product.update({ where: { id: waterProduct.id }, data: { stockOnHand: { increment: 40 } } });
-
-    await prisma.productInventoryEntry.create({
-        data: {
-            productId: snackProduct.id,
-            adjustmentType: ProductInventoryAdjustmentType.RESTOCK,
-            quantity: 25,
-            costTotal: minor(625),
-            note: 'Склад орехов'
-        }
-    });
-    await prisma.product.update({ where: { id: snackProduct.id }, data: { stockOnHand: { increment: 25 } } });
-
-    await prisma.productInventoryEntry.create({
-        data: {
-            productId: latteProduct.id,
-            adjustmentType: ProductInventoryAdjustmentType.RESTOCK,
-            quantity: 60,
-            costTotal: minor(4200),
-            note: 'Поставка кофейных зерен'
-        }
-    });
-    await prisma.product.update({ where: { id: latteProduct.id }, data: { stockOnHand: { increment: 60 } } });
-
-    const minibarSale = await prisma.productSale.create({
-        data: {
-            productId: waterProduct.id,
-            hotelId: castleHotel.id,
-            shiftId: castleOpenShift.id,
-            roomStayId: activeStays[0]?.id ?? null,
-            soldById: janara.id,
-            saleType: ProductSaleType.ROOM,
-            quantity: 5,
-            unitPrice: minor(30),
-            totalAmount: minor(150),
-            paymentMethod: PaymentMethod.CASH,
-            note: 'Минибар: вода для номера 1'
-        }
-    });
-
-    await prisma.product.update({ where: { id: waterProduct.id }, data: { stockOnHand: { decrement: minibarSale.quantity } } });
-
-    await prisma.productSale.create({
-        data: {
-            productId: latteProduct.id,
-            hotelId: skyHotel.id,
-            shiftId: skyShift.id,
-            roomStayId: skyStay.id,
-            soldById: aidana.id,
-            saleType: ProductSaleType.ROOM,
-            quantity: 2,
-            unitPrice: minor(150),
-            totalAmount: minor(300),
-            paymentMethod: PaymentMethod.CARD,
-            note: 'Room service кофе'
-        }
-    });
-    await prisma.product.update({ where: { id: latteProduct.id }, data: { stockOnHand: { decrement: 2 } } });
 
     console.info('Demo data generated successfully.');
 }

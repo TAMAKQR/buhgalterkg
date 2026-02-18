@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const [assignment, managerAssignments, categories, products] = await Promise.all([
+        const [assignment, managerAssignments] = await Promise.all([
             prisma.hotelAssignment.findFirst({
                 where: { hotelId, userId: session.id, isActive: true },
                 select: { shiftPayAmount: true, revenueSharePct: true }
@@ -54,25 +54,6 @@ export async function GET(request: NextRequest) {
                         }
                     }
                 }
-            }),
-            prisma.productCategory.findMany({
-                where: { hotelId },
-                include: {
-                    _count: { select: { products: true } }
-                },
-                orderBy: { name: 'asc' }
-            }),
-            prisma.product.findMany({
-                where: { hotelId, isActive: true },
-                include: {
-                    category: {
-                        select: {
-                            id: true,
-                            name: true
-                        }
-                    }
-                },
-                orderBy: [{ name: 'asc' }]
             })
         ]);
 
@@ -238,46 +219,13 @@ export async function GET(request: NextRequest) {
                 username: user.username
             }));
 
-        const inventoryProducts = products.map((product) => ({
-            id: product.id,
-            name: product.name,
-            unit: product.unit,
-            stockOnHand: product.stockOnHand,
-            sellPrice: product.sellPrice,
-            costPrice: product.costPrice,
-            categoryId: product.category?.id ?? null,
-            categoryName: product.category?.name ?? null,
-            reorderThreshold: product.reorderThreshold,
-            isActive: product.isActive
-        }));
-
-        const inventorySummary = inventoryProducts.reduce(
-            (acc, product) => {
-                acc.totalUnits += product.stockOnHand;
-                acc.stockValue += product.costPrice * product.stockOnHand;
-                acc.potentialRevenue += product.sellPrice * product.stockOnHand;
-                if (
-                    typeof product.reorderThreshold === 'number' &&
-                    product.reorderThreshold > 0 &&
-                    product.stockOnHand <= product.reorderThreshold
-                ) {
-                    acc.lowStock += 1;
-                }
-                return acc;
-            },
-            {
-                totalUnits: 0,
-                stockValue: 0,
-                potentialRevenue: 0,
-                lowStock: 0
-            }
-        );
-
         const response = {
             hotel: {
                 id: hotel.id,
                 name: hotel.name,
-                address: hotel.address
+                address: hotel.address,
+                timezone: hotel.timezone,
+                currency: hotel.currency
             },
             shift,
             shiftCash,
@@ -312,23 +260,7 @@ export async function GET(request: NextRequest) {
                     pendingPayout: payoutSummary?.pending ?? null
                 }
                 : null,
-            handoverManagers,
-            inventory: {
-                categories: categories.map((category) => ({
-                    id: category.id,
-                    name: category.name,
-                    description: category.description,
-                    productCount: category._count.products
-                })),
-                products: inventoryProducts,
-                summary: {
-                    totalProducts: inventoryProducts.length,
-                    totalUnits: inventorySummary.totalUnits,
-                    stockValue: inventorySummary.stockValue,
-                    potentialRevenue: inventorySummary.potentialRevenue,
-                    lowStock: inventorySummary.lowStock
-                }
-            }
+            handoverManagers
         };
 
         return NextResponse.json(response);
