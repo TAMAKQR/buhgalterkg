@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus } from '@prisma/client';
+import { getCountryFromSubdomain } from '@/lib/country';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ const cleaningChatIdSchema = z
 const createHotelSchema = z.object({
     name: z.string().min(2),
     address: z.string().min(4),
+    country: z.string().length(2).optional(),
     timezone: z.string().min(1).max(50).optional(),
     currency: z.string().min(1).max(10).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
@@ -30,8 +32,13 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
 
+        // Получаем страну из поддомена
+        const host = request.headers.get('host') || '';
+        const country = getCountryFromSubdomain(host);
+
         const [hotels, ledgerGroups] = await Promise.all([
             prisma.hotel.findMany({
+                where: { country },
                 include: {
                     rooms: true,
                     shifts: {
@@ -50,7 +57,10 @@ export async function GET(request: NextRequest) {
             }),
             prisma.cashEntry.groupBy({
                 by: ['hotelId', 'entryType', 'method'],
-                _sum: { amount: true }
+                _sum: { amount: true },
+                where: {
+                    hotel: { country }
+                }
             })
         ]);
 
@@ -138,7 +148,16 @@ export async function POST(request: NextRequest) {
 
         const payload = createHotelSchema.parse(body);
 
-        const hotel = await prisma.hotel.create({ data: payload });
+        // Получаем страну из поддомена если не указана
+        const host = request.headers.get('host') || '';
+        const country = payload.country || getCountryFromSubdomain(host);
+
+        const hotel = await prisma.hotel.create({
+            data: {
+                ...payload,
+                country
+            }
+        });
 
         return NextResponse.json(hotel, { status: 201 });
     } catch (error) {

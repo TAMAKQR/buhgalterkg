@@ -23,6 +23,7 @@ type AdminHotelSummary = {
     id: string;
     name: string;
     address?: string | null;
+    country?: string | null;
     managerSharePct?: number | null;
     notes?: string | null;
     cleaningChatId?: string | null;
@@ -94,6 +95,7 @@ interface AdminDashboardProps {
 interface CreateHotelPayload {
     name: string;
     address: string;
+    country?: string;
     notes?: string;
     cleaningChatId?: string;
     timezone?: string;
@@ -572,6 +574,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             if (rawCleaningChatId) {
                 payload.cleaningChatId = rawCleaningChatId;
             }
+            const rawCountry = (formData.get("country") as string | null)?.trim();
+            if (rawCountry) payload.country = rawCountry;
             const rawTimezone = (formData.get("timezone") as string | null)?.trim();
             if (rawTimezone) payload.timezone = rawTimezone;
             const rawCurrency = (formData.get("currency") as string | null)?.trim();
@@ -792,8 +796,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
-                                            ? "bg-white dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-sm"
-                                            : "hover:text-slate-800 dark:hover:text-white/70"
+                                        ? "bg-white dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-sm"
+                                        : "hover:text-slate-800 dark:hover:text-white/70"
                                         }`}
                                 >
                                     {tab.label}
@@ -1017,17 +1021,24 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                         <p className="text-xs text-white/50">Используется для уведомлений горничных в Telegram.</p>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-white/40" htmlFor="country">Страна</label>
+                                            <select id="country" name="country" defaultValue="KG" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
+                                                <option value="KG">🇰🇬 Кыргызстан</option>
+                                                <option value="KZ">🇰🇿 Казахстан</option>
+                                            </select>
+                                        </div>
                                         <div className="space-y-1">
                                             <label className="text-xs text-white/40" htmlFor="timezone">Часовой пояс</label>
-                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
+                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
                                                 <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                 <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs text-white/40" htmlFor="currency">Валюта</label>
-                                            <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
+                                            <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
                                                 <option value="KGS">KGS (сом)</option>
                                                 <option value="KZT">KZT (тенге)</option>
                                             </select>

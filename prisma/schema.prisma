@@ -29,6 +29,7 @@ model Hotel {
   name            String
   address         String
   city            String?
+  country         String            @default("KG")
   timezone        String            @default("Asia/Bishkek")
   currency        String            @default("KGS")
   managerSharePct Int?              @map("manager_share_pct")

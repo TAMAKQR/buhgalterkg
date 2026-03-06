@@ -20,6 +20,7 @@ const updateHotelSchema = z
     .object({
         name: z.string().min(2).optional(),
         address: z.string().min(4).optional(),
+        country: z.string().length(2).optional(),
         timezone: z.string().min(1).max(50).optional(),
         currency: z.string().min(1).max(10).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
