@@ -109,3 +109,45 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
         throw new Error(`Failed to notify cleaning crew: ${detail}`);
     }
 };
+
+export type CleaningCheckInNotificationPayload = {
+    chatId?: string | null;
+    hotelName: string;
+    roomLabel: string;
+    guestName?: string | null;
+    checkOut?: string | null;
+    timezone?: string;
+};
+
+export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNotificationPayload) => {
+    if (!payload.chatId) {
+        return;
+    }
+
+    const tz = payload.timezone;
+
+    const text = [
+        "🛎 Гость заселился",
+        `Отель: ${payload.hotelName}`,
+        `Номер: ${payload.roomLabel}`,
+        payload.guestName ? `Гость: ${payload.guestName}` : null,
+        `Планируемый выезд: ${formatDate(payload.checkOut, tz)}`,
+        "Пожалуйста, уберите номер перед выездом гостя."
+    ]
+        .filter(Boolean)
+        .join("\n");
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: payload.chatId,
+            text
+        })
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to notify cleaning crew about check-in: ${detail}`);
+    }
+};

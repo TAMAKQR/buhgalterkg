@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { notifyAdminAboutCheckIn, notifyCleaningCrew } from '@/lib/server/telegram-notify';
+import { notifyAdminAboutCheckIn, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 
@@ -135,6 +135,19 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram notification', notificationError);
+            }
+
+            try {
+                await notifyCleaningCrewAboutCheckIn({
+                    chatId: room.hotel.cleaningChatId,
+                    hotelName: room.hotel.name,
+                    roomLabel: room.label,
+                    guestName: stay.guestName,
+                    checkOut: scheduledCheckOutIso,
+                    timezone: room.hotel.timezone,
+                });
+            } catch (notificationError) {
+                console.error('Failed to notify cleaning crew about check-in', notificationError);
             }
 
             return NextResponse.json(stay);

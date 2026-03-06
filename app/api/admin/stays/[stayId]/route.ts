@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const payload = updateStaySchema.parse(body);
         const stay = await prisma.roomStay.findUnique({
             where: { id: params.stayId },
-            include: { room: true }
+            include: {
+                room: {
+                    include: {
+                        hotel: true
+                    }
+                }
+            }
         });
 
         if (!stay) {
@@ -180,6 +187,45 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
 
             return result;
         });
+
+        // Отправка уведомлений горничным
+        const hotel = stay.room.hotel;
+        const wasCheckedIn = stay.actualCheckIn !== null;
+        const wasCheckedOut = stay.actualCheckOut !== null;
+        const nowCheckedIn = (payload.actualCheckIn !== undefined && updateData.actualCheckIn !== null) ||
+            (payload.status === StayStatus.CHECKED_IN);
+        const nowCheckedOut = (payload.actualCheckOut !== undefined && updateData.actualCheckOut !== null) ||
+            (payload.status === StayStatus.CHECKED_OUT);
+
+        // Уведомление при заселении
+        if (!wasCheckedIn && nowCheckedIn) {
+            try {
+                await notifyCleaningCrewAboutCheckIn({
+                    chatId: hotel.cleaningChatId,
+                    hotelName: hotel.name,
+                    roomLabel: stay.room.label,
+                    guestName: updatedStay.guestName || stay.guestName,
+                    checkOut: updatedStay.scheduledCheckOut?.toISOString() || stay.scheduledCheckOut?.toISOString(),
+                    timezone: hotel.timezone,
+                });
+            } catch (notificationError) {
+                console.error('Failed to notify cleaning crew about check-in', notificationError);
+            }
+        }
+
+        // Уведомление при выселении
+        if (!wasCheckedOut && nowCheckedOut) {
+            try {
+                await notifyCleaningCrew({
+                    chatId: hotel.cleaningChatId,
+                    hotelName: hotel.name,
+                    roomLabel: stay.room.label,
+                    managerName: session.displayName || session.username || null,
+                });
+            } catch (notificationError) {
+                console.error('Failed to notify cleaning crew about check-out', notificationError);
+            }
+        }
 
         return NextResponse.json({ success: true, stay: updatedStay });
     } catch (error) {
