@@ -853,7 +853,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </Button>
                                 </div>
                             )}
-                            <section className="grid gap-2 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                            <section className="grid grid-cols-1 gap-2 xs:grid-cols-2 lg:grid-cols-4">
                                 {overview ? (
                                     <>
                                         <Card className="overflow-hidden p-3 text-light-text dark:text-white lg:p-4">
