@@ -574,8 +574,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-2 py-4 text-center sm:px-6">
-                    <p className="text-white/80">Администратор ещё не назначил вас на точку.</p>
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
+                    <Card className="max-w-md text-center">
+                        <p className="text-light-text dark:text-white/80">Администратор ещё не назначил вас на точку.</p>
+                    </Card>
                 </div>
             </>
         );
@@ -585,8 +587,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-2 py-4 text-center sm:px-6">
-                    <p className="text-white/70">Загружаем данные точки…</p>
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
+                    <Card className="max-w-md text-center">
+                        <p className="text-slate-600 dark:text-white/70">Загружаем данные точки…</p>
+                    </Card>
                 </div>
             </>
         );
@@ -596,9 +600,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-2 py-4 text-center text-rose-300 sm:px-6">
-                    <p>Не удалось загрузить состояние менеджера</p>
-                    <p className="text-sm text-white/60">{String(error)}</p>
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center sm:px-6">
+                    <Card className="max-w-md text-center">
+                        <p className="text-rose-600 dark:text-rose-300">Не удалось загрузить состояние менеджера</p>
+                        <p className="text-sm text-slate-500 dark:text-white/60">{String(error)}</p>
+                    </Card>
                 </div>
             </>
         );
@@ -682,11 +688,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="flex gap-3 text-xs">
-                                        <span className="text-white/50">Касса <span className="font-semibold text-white">{formatKgs(shiftCashValue)}</span></span>
-                                        <span className="text-white/50">Б/н <span className="font-semibold text-white">{formatKgs(shiftCardValue)}</span></span>
-                                        <span className="text-white/50">Расход <span className="font-semibold text-white">{formatKgs(shiftExpensesTotal)}</span></span>
-                                        <span className="text-white/50">Занято <span className="font-semibold text-white">{occupiedCount}/{sortedRooms.length}</span></span>
+                                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Касса <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCardValue)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Расход <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftExpensesTotal)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Занято <span className="font-semibold text-light-text dark:text-white">{occupiedCount}/{sortedRooms.length}</span></span>
                                     </div>
                                 </div>
                             ) : (
@@ -696,14 +702,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 </>
                             )}
                         </header>
-                        <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5">
-                            <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
+                        <div className="sticky top-0 z-10 -mx-3 bg-light-bg/95 px-3 py-2 backdrop-blur-md dark:bg-night/95 sm:-mx-5 sm:px-5">
+                            <div className="flex gap-1 rounded-xl bg-slate-200/60 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.05] dark:text-white/50">
                                 {panelTabs.map((tab) => (
                                     <button
                                         key={tab.id}
                                         type="button"
                                         onClick={() => setActivePanel(tab.id)}
-                                        className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activePanel === tab.id ? 'bg-white/[0.12] text-white shadow-sm' : 'hover:text-white/70'
+                                        className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activePanel === tab.id ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:text-slate-800 dark:hover:text-white/70'
                                             }`}
                                     >
                                         {tab.label}
@@ -715,7 +721,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {activePanel === 'rooms' && (
                             <section className="space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <h2 className="text-lg font-semibold text-white">Номера</h2>
+                                    <h2 className="text-lg font-semibold text-light-text dark:text-white">Номера</h2>
                                     <Badge label={`${sortedRooms.length} в учёте`} />
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -735,10 +741,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         })();
 
                                         return (
-                                            <article key={room.id} className="rounded-lg bg-white/[0.04] px-3 py-2.5">
+                                            <article key={room.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:shadow dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <span className="text-sm font-semibold text-white">№ {room.label}</span>
+                                                        <span className="text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
                                                         <Badge
                                                             label={isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
                                                             tone={isOccupied ? 'warning' : 'success'}
@@ -749,7 +755,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             type="button"
                                                             size="sm"
                                                             variant="ghost"
-                                                            className="text-[11px] text-rose-300/70 hover:text-rose-300"
+                                                            className="text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                             disabled={!hasOpenShift}
                                                             onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
                                                         >
@@ -769,8 +775,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     )}
                                                 </div>
                                                 {room.stay && (
-                                                    <div className="mt-1 text-[11px] text-white/40">
-                                                        <span className="font-medium text-white/60">{guestLabel}</span>
+                                                    <div className="mt-1 text-[11px] text-slate-500 dark:text-white/40">
+                                                        <span className="font-medium text-slate-700 dark:text-white/60">{guestLabel}</span>
                                                         {' · '}
                                                         {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
                                                         {room.stay.amountPaid != null && (
@@ -788,31 +794,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {activePanel === 'shift' && (
                             <Card>
                                 <CardHeader title="Сдача смены" />
-                                {isLoading && <p className="text-sm text-white/60">Загружаем...</p>}
+                                {isLoading && <p className="text-sm text-slate-500 dark:text-white/60">Загружаем...</p>}
                                 {error && <p className="text-sm text-rose-300">{String(error)}</p>}
                                 {data?.shift && (
                                     <div className="mb-4 space-y-3">
-                                        <div className="flex items-center justify-between text-xs text-white/50">
+                                        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/50">
                                             <span>{managerName} · {primaryHotel?.name}</span>
                                             <span>{formatDateTime(data.shift.openedAt, hotelTz)}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 text-sm">
-                                            <div className="rounded-lg bg-white/[0.04] px-3 py-2">
-                                                <p className="text-[11px] text-white/40">Выручка</p>
-                                                <p className="font-semibold text-emerald-300">{formatKgs(shiftRevenueTotal)}</p>
-                                                <p className="text-[11px] text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
+                                            <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-white/[0.04]">
+                                                <p className="text-[11px] text-slate-500 dark:text-white/40">Выручка</p>
+                                                <p className="font-semibold text-emerald-600 dark:text-emerald-300">{formatKgs(shiftRevenueTotal)}</p>
+                                                <p className="text-[11px] text-slate-500 dark:text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
                                             </div>
-                                            <div className="rounded-lg bg-white/[0.04] px-3 py-2">
-                                                <p className="text-[11px] text-white/40">Расход</p>
-                                                <p className="font-semibold text-rose-300">{formatKgs(shiftExpensesTotal)}</p>
-                                                <p className="text-[11px] text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
+                                            <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-white/[0.04]">
+                                                <p className="text-[11px] text-slate-500 dark:text-white/40">Расход</p>
+                                                <p className="font-semibold text-rose-600 dark:text-rose-300">{formatKgs(shiftExpensesTotal)}</p>
+                                                <p className="text-[11px] text-slate-500 dark:text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between rounded-lg bg-white/[0.06] px-3 py-2 text-sm">
-                                            <span className="text-white/60">К передаче (нал)</span>
-                                            <span className="text-lg font-bold text-white">{formatKgs(shiftCashValue)}</span>
+                                        <div className="flex items-center justify-between rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-white/[0.06]">
+                                            <span className="text-slate-600 dark:text-white/60">К передаче (нал)</span>
+                                            <span className="text-lg font-bold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span>
                                         </div>
-                                        <div className="flex items-center justify-between text-xs text-white/40 px-1">
+                                        <div className="flex items-center justify-between px-1 text-xs text-slate-500 dark:text-white/40">
                                             <span>Открытие: {formatKgs(data.shift.openingCash)}</span>
                                             <span>Безнал: {formatKgs(shiftCardValue)}</span>
                                         </div>
@@ -824,7 +830,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
                                 )}
                                 {data?.shift ? (
-                                    <form className="space-y-3 border-t border-white/[0.06] pt-4" onSubmit={handleCloseShift}>
+                                    <form className="space-y-3 border-t border-slate-200 pt-4 dark:border-white/[0.06]" onSubmit={handleCloseShift}>
                                         <div className="grid grid-cols-2 gap-2">
                                             <Input
                                                 type="password"
@@ -848,7 +854,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </Button>
                                     </form>
                                 ) : (
-                                    <p className="text-sm text-white/60">Смена ещё не открыта.</p>
+                                    <p className="text-sm text-slate-500 dark:text-white/60">Смена ещё не открыта.</p>
                                 )}
                             </Card>
                         )}
@@ -858,11 +864,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 <CardHeader title="Касса" />
                                 <form className="grid gap-3 md:grid-cols-3" onSubmit={handleExpense}>
                                     <Input type="number" step="0.01" placeholder="Сумма" {...expenseForm.register('amount', { valueAsNumber: true })} />
-                                    <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('method')}>
+                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
                                         <option value="CARD">Безнал</option>
                                     </Select>
-                                    <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('entryType')}>
+                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('entryType')}>
                                         <option value="CASH_OUT">Расход</option>
                                         <option value="CASH_IN">Поступление</option>
                                         <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
@@ -877,21 +883,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <div className="mt-6 space-y-3">
                                         <button
                                             type="button"
-                                            className="flex w-full items-center justify-between rounded-xl bg-white/[0.04] px-4 py-3 text-left text-white transition hover:border-white/30"
+                                            className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-left text-light-text transition hover:border-slate-300 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white dark:hover:border-white/30"
                                             aria-expanded={isCashLedgerOpen}
                                             aria-controls="cash-ledger-panel"
                                             onClick={() => setIsCashLedgerOpen((prev) => !prev)}
                                         >
                                             <div>
                                                 <h3 className="text-sm font-semibold">Последние операции</h3>
-                                                <p className="text-xs text-white/60">{shiftLedger.length} записей</p>
+                                                <p className="text-xs text-slate-500 dark:text-white/60">{shiftLedger.length} записей</p>
                                             </div>
-                                            <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80">
+                                            <span className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 dark:border-white/20 dark:text-white/80">
                                                 {isCashLedgerOpen ? 'Скрыть' : 'Показать'}
                                             </span>
                                         </button>
                                         {isCashLedgerOpen && (
-                                            <div id="cash-ledger-panel" className="divide-y divide-white/[0.06]">
+                                            <div id="cash-ledger-panel" className="divide-y divide-slate-200 dark:divide-white/[0.06]">
                                                 {shiftLedger.length ? (
                                                     shiftLedger.map((entry) => {
                                                         const timestamp = formatDateTime(entry.recordedAt, hotelTz);
@@ -912,16 +918,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         return (
                                                             <div key={entry.id} className="flex items-center justify-between py-2 text-xs">
                                                                 <div className="min-w-0">
-                                                                    <span className="text-white/50">{timestamp}</span>
-                                                                    <span className="ml-2 text-white/40">{entryLabel} · {methodLabel}</span>
-                                                                    {entry.note && <span className="ml-2 text-white/60">{entry.note}</span>}
+                                                                    <span className="text-slate-500 dark:text-white/50">{timestamp}</span>
+                                                                    <span className="ml-2 text-slate-500 dark:text-white/40">{entryLabel} · {methodLabel}</span>
+                                                                    {entry.note && <span className="ml-2 text-slate-600 dark:text-white/60">{entry.note}</span>}
                                                                 </div>
                                                                 <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{formatKgs(signedAmount)}</span>
                                                             </div>
                                                         );
                                                     })
                                                 ) : (
-                                                    <p className="py-2 text-xs text-white/40">Нет операций.</p>
+                                                    <p className="py-2 text-xs text-slate-500 dark:text-white/40">Нет операций.</p>
                                                 )}
                                             </div>
                                         )}
@@ -1243,9 +1249,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     {/* Checkout confirmation modal */}
                     {checkoutConfirm && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-light-text dark:text-white">
                                 <p className="text-base font-semibold">Выселить гостя?</p>
-                                <p className="text-sm text-white/50">
+                                <p className="text-sm text-slate-500 dark:text-white/50">
                                     № {checkoutConfirm.roomLabel} · {checkoutConfirm.guestName}
                                 </p>
                                 <div className="flex gap-2">

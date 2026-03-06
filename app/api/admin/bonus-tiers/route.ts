@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const hotelId = new URL(request.url).searchParams.get('hotelId');
         if (!hotelId) {
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
         }
 
         const tiers = await prisma.bonusTier.findMany({
-            where: { hotelId },
+            where: { hotelId, hotel: { country } },
             orderBy: { threshold: 'asc' },
         });
 
@@ -45,8 +47,17 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = createTierSchema.parse(body);
+
+        const hotel = await prisma.hotel.findFirst({
+            where: { id: payload.hotelId, country },
+            select: { id: true },
+        });
+        if (!hotel) {
+            return new NextResponse('Отель не найден', { status: 404 });
+        }
 
         const tier = await prisma.bonusTier.create({
             data: {

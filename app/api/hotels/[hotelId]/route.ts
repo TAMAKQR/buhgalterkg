@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,10 +36,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
     try {
         const session = await getSessionUser(_request);
         assertAdmin(session);
+        const country = getCountryFromRequest(_request);
 
         const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
-            prisma.hotel.findUnique({
-                where: { id: params.hotelId },
+            prisma.hotel.findFirst({
+                where: { id: params.hotelId, country },
                 include: {
                     rooms: {
                         orderBy: { label: 'asc' },
@@ -313,8 +315,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = updateHotelSchema.parse(body);
+
+        const targetHotel = await prisma.hotel.findFirst({
+            where: { id: params.hotelId, country },
+            select: { id: true },
+        });
+        if (!targetHotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
+        }
 
         const hotel = await prisma.hotel.update({
             where: { id: params.hotelId },
@@ -337,6 +348,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { hotel
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
+
+        const targetHotel = await prisma.hotel.findFirst({
+            where: { id: params.hotelId, country },
+            select: { id: true },
+        });
+        if (!targetHotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
+        }
 
         const deleted = await prisma.$transaction(async (tx) => {
             await tx.room.updateMany({ where: { hotelId: params.hotelId }, data: { currentStayId: null } });

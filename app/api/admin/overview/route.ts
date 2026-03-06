@@ -6,6 +6,7 @@ import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
 import { parseDateOnly } from "@/lib/timezone";
 import { handleApiError } from "@/lib/server/errors";
+import { getCountryFromRequest } from "@/lib/server/request-country";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const { searchParams } = new URL(request.url);
 
@@ -30,10 +32,18 @@ export async function GET(request: NextRequest) {
         const startDate = parseDateOnly(searchParams.get("startDate"));
         const endDate = parseDateOnly(searchParams.get("endDate"), true);
 
-        const hotelFilter: Prisma.HotelWhereInput = hotelIds.length ? { id: { in: hotelIds } } : {};
-        const roomHotelFilter: Prisma.RoomWhereInput = hotelIds.length ? { hotelId: { in: hotelIds } } : {};
+        const hotelFilter: Prisma.HotelWhereInput = {
+            country,
+            ...(hotelIds.length ? { id: { in: hotelIds } } : {}),
+        };
+        const roomHotelFilter: Prisma.RoomWhereInput = {
+            ...(hotelIds.length ? { hotelId: { in: hotelIds } } : {}),
+            hotel: { country },
+        };
 
-        const shiftWhere: Prisma.ShiftWhereInput = {};
+        const shiftWhere: Prisma.ShiftWhereInput = {
+            hotel: { country },
+        };
         if (hotelIds.length) {
             shiftWhere.hotelId = { in: hotelIds };
         }
@@ -47,7 +57,9 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        const ledgerWhere: Prisma.CashEntryWhereInput = {};
+        const ledgerWhere: Prisma.CashEntryWhereInput = {
+            hotel: { country },
+        };
         if (hotelIds.length) {
             ledgerWhere.hotelId = { in: hotelIds };
         }
@@ -123,6 +135,9 @@ export async function GET(request: NextRequest) {
         const dailyConditions: string[] = [];
         const dailyParams: unknown[] = [];
         let paramIndex = 1;
+
+        dailyConditions.push(`"hotelId" IN (SELECT "id" FROM "Hotel" WHERE "country" = $${paramIndex++})`);
+        dailyParams.push(country);
 
         if (hotelIds.length) {
             dailyConditions.push(`"hotelId" IN (${hotelIds.map(() => `$${paramIndex++}`).join(", ")})`);

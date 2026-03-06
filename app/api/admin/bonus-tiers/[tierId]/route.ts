@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +20,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { tierId
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = updateTierSchema.parse(body);
 
-        const tier = await prisma.bonusTier.findUnique({ where: { id: params.tierId } });
+        const tier = await prisma.bonusTier.findFirst({ where: { id: params.tierId, hotel: { country } } });
         if (!tier) {
             return new NextResponse('Tier not found', { status: 404 });
         }
@@ -50,6 +52,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { tierI
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
+
+        const tier = await prisma.bonusTier.findFirst({ where: { id: params.tierId, hotel: { country } } });
+        if (!tier) {
+            return new NextResponse('Tier not found', { status: 404 });
+        }
 
         await prisma.bonusTier.delete({ where: { id: params.tierId } });
 

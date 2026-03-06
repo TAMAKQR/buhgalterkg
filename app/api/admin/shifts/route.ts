@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = createShiftSchema.parse(body);
 
@@ -38,6 +40,9 @@ export async function POST(request: NextRequest) {
 
         if (!hotel) {
             return new NextResponse('Отель не найден', { status: 404 });
+        }
+        if (hotel.country !== country) {
+            return new NextResponse('Нет доступа к отелю другой страны', { status: 403 });
         }
 
         // Проверяем, что менеджер существует и имеет доступ к отелю

@@ -8,6 +8,7 @@ import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
 import { hashPassword } from '@/lib/password';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 const createObserverSchema = z.object({
     displayName: z.string().min(1).max(100),
@@ -22,17 +23,24 @@ export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const { searchParams } = new URL(request.url);
         const hotelId = searchParams.get('hotelId');
 
         const where: Record<string, unknown> = {
             role: UserRole.OBSERVER,
+            assignments: {
+                some: {
+                    isActive: true,
+                    hotel: { country },
+                },
+            },
         };
 
         if (hotelId) {
             where.assignments = {
-                some: { hotelId, isActive: true },
+                some: { hotelId, isActive: true, hotel: { country } },
             };
         }
 
@@ -71,6 +79,7 @@ export async function POST(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const body = await request.json();
         const { displayName, loginName, password, hotelId } = createObserverSchema.parse(body);
@@ -82,7 +91,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check hotel exists
-        const hotel = await prisma.hotel.findUnique({ where: { id: hotelId } });
+        const hotel = await prisma.hotel.findFirst({ where: { id: hotelId, country } });
         if (!hotel) {
             return new NextResponse('Отель не найден', { status: 404 });
         }

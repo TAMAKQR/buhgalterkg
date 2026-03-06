@@ -7,6 +7,7 @@ import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,10 +45,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = updateStaySchema.parse(body);
-        const stay = await prisma.roomStay.findUnique({
-            where: { id: params.stayId },
+        const stay = await prisma.roomStay.findFirst({
+            where: {
+                id: params.stayId,
+                hotel: { country },
+            },
             include: {
                 room: {
                     include: {

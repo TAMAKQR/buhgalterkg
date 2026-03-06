@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 const updateShiftSchema = z
     .object({
@@ -48,10 +49,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = updateShiftSchema.parse(body);
 
-        const shift = await prisma.shift.findUnique({ where: { id: params.shiftId } });
+        const shift = await prisma.shift.findFirst({
+            where: { id: params.shiftId, hotel: { country } },
+        });
         if (!shift) {
             return new NextResponse('Shift not found', { status: 404 });
         }
@@ -158,8 +162,12 @@ export async function DELETE(_request: NextRequest, { params }: { params: { shif
     try {
         const session = await getSessionUser(_request);
         assertAdmin(session);
+        const country = getCountryFromRequest(_request);
 
-        const shift = await prisma.shift.findUnique({ where: { id: params.shiftId } });
+        const shift = await prisma.shift.findFirst({
+            where: { id: params.shiftId, hotel: { country } },
+            select: { id: true },
+        });
         if (!shift) {
             return new NextResponse('Shift not found', { status: 404 });
         }

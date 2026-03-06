@@ -6,6 +6,7 @@ import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
 import { hashPassword } from '@/lib/password';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 const updateSchema = z.object({
     displayName: z.string().min(1).max(100).optional(),
@@ -17,12 +18,24 @@ export async function PATCH(request: NextRequest, { params }: { params: { observ
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const body = await request.json();
         const payload = updateSchema.parse(body);
 
-        const observer = await prisma.user.findUnique({ where: { id: params.observerId } });
-        if (!observer || observer.role !== 'OBSERVER') {
+        const observer = await prisma.user.findFirst({
+            where: {
+                id: params.observerId,
+                role: 'OBSERVER',
+                assignments: {
+                    some: {
+                        isActive: true,
+                        hotel: { country },
+                    },
+                },
+            },
+        });
+        if (!observer) {
             return new NextResponse('Наблюдатель не найден', { status: 404 });
         }
 
@@ -54,17 +67,48 @@ export async function DELETE(request: NextRequest, { params }: { params: { obser
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
-        const observer = await prisma.user.findUnique({ where: { id: params.observerId } });
-        if (!observer || observer.role !== 'OBSERVER') {
+        const observer = await prisma.user.findFirst({
+            where: {
+                id: params.observerId,
+                role: 'OBSERVER',
+                assignments: {
+                    some: {
+                        isActive: true,
+                        hotel: { country },
+                    },
+                },
+            },
+            select: {
+                id: true,
+                assignments: {
+                    where: { isActive: true, hotel: { country } },
+                    select: { id: true },
+                },
+            },
+        });
+        if (!observer) {
             return new NextResponse('Наблюдатель не найден', { status: 404 });
         }
 
-        // Delete assignments first, then user
-        await prisma.$transaction([
-            prisma.hotelAssignment.deleteMany({ where: { userId: params.observerId } }),
-            prisma.user.delete({ where: { id: params.observerId } }),
-        ]);
+        await prisma.$transaction(async (tx) => {
+            await tx.hotelAssignment.deleteMany({
+                where: {
+                    userId: params.observerId,
+                    hotel: { country },
+                },
+            });
+
+            const activeAssignmentsCount = await tx.hotelAssignment.count({
+                where: { userId: params.observerId, isActive: true },
+            });
+
+            if (activeAssignmentsCount === 0) {
+                await tx.hotelAssignment.deleteMany({ where: { userId: params.observerId } });
+                await tx.user.delete({ where: { id: params.observerId } });
+            }
+        });
 
         return NextResponse.json({ ok: true });
     } catch (error) {

@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,8 +19,17 @@ export async function POST(request: NextRequest) {
         const body = await request.json().catch(() => ({}));
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const { hotelId } = clearSchema.parse(body);
+
+        const hotel = await prisma.hotel.findFirst({
+            where: { id: hotelId, country },
+            select: { id: true },
+        });
+        if (!hotel) {
+            return new NextResponse('Отель не найден', { status: 404 });
+        }
 
         const closedShifts = await prisma.shift.findMany({
             where: { hotelId, status: ShiftStatus.CLOSED },
