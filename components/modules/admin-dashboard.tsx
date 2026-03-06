@@ -766,525 +766,529 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [overview, filters.startDate, filters.endDate, overviewCurrency]);
 
     return (
-        <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5">
-            <header className="flex items-center justify-between">
-                <h1 className="text-lg font-semibold text-white">{user.displayName}</h1>
-                <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleLogout}
-                >
-                    Выйти
-                </Button>
-            </header>
-            <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5">
-                <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
-                    {adminTabs.map((tab) => (
-                        <button
-                            key={tab.id}
+        <div className="min-h-screen bg-night">
+            <div className="desktop-container">
+                <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
+                    <header className="flex items-center justify-between">
+                        <h1 className="text-lg font-semibold text-white lg:text-2xl">{user.displayName}</h1>
+                        <Button
                             type="button"
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id ? "bg-white/[0.12] text-white shadow-sm" : "hover:text-white/70"
-                                }`}
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleLogout}
                         >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {activeTab === "overview" && (
-                <>
-                    <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:grid-cols-4">
-                        <Input
-                            type="date"
-                            className="min-w-0"
-                            value={filters.startDate}
-                            onChange={(event) => handleFilterInput("startDate", event.target.value)}
-                            placeholder="С даты"
-                        />
-                        <Input
-                            type="date"
-                            className="min-w-0"
-                            value={filters.endDate}
-                            min={filters.startDate || undefined}
-                            onChange={(event) => handleFilterInput("endDate", event.target.value)}
-                            placeholder="По дату"
-                        />
-                        <select
-                            value={filters.hotelId}
-                            onChange={(event) => handleHotelFilterChange(event.target.value)}
-                            className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                        >
-                            <option value="">Все объекты</option>
-                            {hotels.map((hotel) => (
-                                <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={filters.managerId}
-                            onChange={(event) => handleFilterInput("managerId", event.target.value)}
-                            disabled={!managerOptions.length}
-                            className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20"
-                        >
-                            <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
-                            {managerOptions.map((manager) => (
-                                <option key={manager.id} value={manager.id}>{manager.label}</option>
-                            ))}
-                        </select>
-                    </div>
-                    {overview && (
-                        <div className="flex justify-end">
-                            <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handleExportCSV}>
-                                Скачать CSV
-                            </Button>
-                        </div>
-                    )}
-                    <section className="grid gap-2 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
-                        {overview ? (
-                            <>
-                                <Card className="p-3 text-white overflow-hidden">
-                                    <p className="text-[11px] uppercase tracking-widest text-white/35">Баланс</p>
-                                    <p className="mt-1 text-sm sm:text-xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
-                                </Card>
-                                <SummaryCard
-                                    label="Вход"
-                                    value={formatCurrency(overview.totals.cashIn, overviewCurrency)}
-                                    valueColor="text-emerald-400"
-                                    detail={`нал ${formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}`}
-                                />
-                                <SummaryCard
-                                    label="Выход"
-                                    value={formatCurrency(overview.totals.cashOut, overviewCurrency)}
-                                    valueColor="text-rose-400"
-                                    detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
-                                />
-                                <Card className="p-3 text-white overflow-hidden">
-                                    <p className="text-[11px] uppercase tracking-widest text-white/35">Загрузка</p>
-                                    <p className="mt-1 text-sm sm:text-lg font-semibold">
-                                        {formatPercent(overview.occupancy.rate)}
-                                    </p>
-                                    <p className="text-[11px] text-white/40">
-                                        {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
-                                    </p>
-                                </Card>
-                                {overview.dailySeries && overview.dailySeries.length > 0 && (
-                                    <DailyLineChart data={overview.dailySeries} />
-                                )}
-                                <AnalyticsFlowChart
-                                    inflow={overview.totals.cashIn}
-                                    outflow={overview.totals.cashOut}
-                                    net={overview.totals.netCash}
-                                />
-                                <PaymentMethodChart
-                                    cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash}
-                                    cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card}
-                                />
-                                <ExpenseStructureChart
-                                    cashOut={overview.totals.cashOut}
-                                    payouts={overview.totals.payouts}
-                                    adjustments={overview.totals.adjustments}
-                                />
-                            </>
-                        ) : (
-                            <OverviewSkeleton />
-                        )}
-                    </section>
-                </>
-            )}
-
-            {activeTab === "hotels" && (
-                <section className="space-y-2">
-                    {isLoading && <HotelsSkeleton />}
-                    {!isLoading && hotels.length === 0 && (
-                        <p className="text-sm text-white/40 px-1">Нет отелей</p>
-                    )}
-                    {!isLoading &&
-                        hotels.map((hotel) => {
-                            const inflow = hotel.ledger?.cashIn ?? 0;
-                            const outflow = hotel.ledger?.cashOut ?? 0;
-
-                            return (
-                                <Card
-                                    key={hotel.id}
-                                    className="p-4"
+                            Выйти
+                        </Button>
+                    </header>
+                    <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+                        <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
+                            {adminTabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id ? "bg-white/[0.12] text-white shadow-sm" : "hover:text-white/70"
+                                        }`}
                                 >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <h3 className="text-base font-semibold text-white truncate">{hotel.name}</h3>
-                                            <p className="text-xs text-white/40">{hotel.address || "—"}</p>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-lg font-semibold text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
-                                            <p className="text-[11px] text-white/35">номеров</p>
-                                        </div>
-                                    </div>
-                                    {hotel.activeShift && (
-                                        <p className="mt-1.5 text-xs text-white/40">
-                                            №{hotel.activeShift.number} · {hotel.activeShift.manager} · {formatDT(hotel.activeShift.openedAt, hotel.timezone ?? undefined)}
-                                        </p>
-                                    )}
-                                    <div className="mt-3 flex items-center gap-4 text-xs text-white/50">
-                                        <span className="text-emerald-400">+{formatCurrency(inflow, hotel.currency ?? undefined)}</span>
-                                        <span className="text-rose-400">-{formatCurrency(outflow, hotel.currency ?? undefined)}</span>
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                            {hotel.managers.slice(0, 4).map((m) => (
-                                                <span
-                                                    key={m.id}
-                                                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.08] text-[10px] font-semibold text-white/70"
-                                                    title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
-                                                >
-                                                    {m.displayName?.slice(0, 2).toUpperCase() || "??"}
-                                                </span>
-                                            ))}
-                                            {hotel.managers.length > 4 && (
-                                                <span className="text-[10px] text-white/30">+{hotel.managers.length - 4}</span>
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {activeTab === "overview" && (
+                        <>
+                            <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:grid-cols-4">
+                                <Input
+                                    type="date"
+                                    className="min-w-0"
+                                    value={filters.startDate}
+                                    onChange={(event) => handleFilterInput("startDate", event.target.value)}
+                                    placeholder="С даты"
+                                />
+                                <Input
+                                    type="date"
+                                    className="min-w-0"
+                                    value={filters.endDate}
+                                    min={filters.startDate || undefined}
+                                    onChange={(event) => handleFilterInput("endDate", event.target.value)}
+                                    placeholder="По дату"
+                                />
+                                <select
+                                    value={filters.hotelId}
+                                    onChange={(event) => handleHotelFilterChange(event.target.value)}
+                                    className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                >
+                                    <option value="">Все объекты</option>
+                                    {hotels.map((hotel) => (
+                                        <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={filters.managerId}
+                                    onChange={(event) => handleFilterInput("managerId", event.target.value)}
+                                    disabled={!managerOptions.length}
+                                    className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20"
+                                >
+                                    <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
+                                    {managerOptions.map((manager) => (
+                                        <option key={manager.id} value={manager.id}>{manager.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {overview && (
+                                <div className="flex justify-end">
+                                    <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handleExportCSV}>
+                                        Скачать CSV
+                                    </Button>
+                                </div>
+                            )}
+                            <section className="grid gap-2 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                                {overview ? (
+                                    <>
+                                        <Card className="p-3 text-white overflow-hidden lg:p-4">
+                                            <p className="text-[11px] uppercase tracking-widest text-white/35">Баланс</p>
+                                            <p className="mt-1 text-sm sm:text-xl lg:text-2xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                        </Card>
+                                        <SummaryCard
+                                            label="Вход"
+                                            value={formatCurrency(overview.totals.cashIn, overviewCurrency)}
+                                            valueColor="text-emerald-400"
+                                            detail={`нал ${formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}`}
+                                        />
+                                        <SummaryCard
+                                            label="Выход"
+                                            value={formatCurrency(overview.totals.cashOut, overviewCurrency)}
+                                            valueColor="text-rose-400"
+                                            detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
+                                        />
+                                        <Card className="p-3 text-white overflow-hidden">
+                                            <p className="text-[11px] uppercase tracking-widest text-white/35">Загрузка</p>
+                                            <p className="mt-1 text-sm sm:text-lg font-semibold">
+                                                {formatPercent(overview.occupancy.rate)}
+                                            </p>
+                                            <p className="text-[11px] text-white/40">
+                                                {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
+                                            </p>
+                                        </Card>
+                                        {overview.dailySeries && overview.dailySeries.length > 0 && (
+                                            <DailyLineChart data={overview.dailySeries} />
+                                        )}
+                                        <AnalyticsFlowChart
+                                            inflow={overview.totals.cashIn}
+                                            outflow={overview.totals.cashOut}
+                                            net={overview.totals.netCash}
+                                        />
+                                        <PaymentMethodChart
+                                            cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash}
+                                            cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card}
+                                        />
+                                        <ExpenseStructureChart
+                                            cashOut={overview.totals.cashOut}
+                                            payouts={overview.totals.payouts}
+                                            adjustments={overview.totals.adjustments}
+                                        />
+                                    </>
+                                ) : (
+                                    <OverviewSkeleton />
+                                )}
+                            </section>
+                        </>
+                    )}
+
+                    {activeTab === "hotels" && (
+                        <section className="space-y-2 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
+                            {isLoading && <HotelsSkeleton />}
+                            {!isLoading && hotels.length === 0 && (
+                                <p className="text-sm text-white/40 px-1">Нет отелей</p>
+                            )}
+                            {!isLoading &&
+                                hotels.map((hotel) => {
+                                    const inflow = hotel.ledger?.cashIn ?? 0;
+                                    const outflow = hotel.ledger?.cashOut ?? 0;
+
+                                    return (
+                                        <Card
+                                            key={hotel.id}
+                                            className="p-4 lg:h-full lg:flex lg:flex-col"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <h3 className="text-base font-semibold text-white truncate">{hotel.name}</h3>
+                                                    <p className="text-xs text-white/40">{hotel.address || "—"}</p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-lg font-semibold text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
+                                                    <p className="text-[11px] text-white/35">номеров</p>
+                                                </div>
+                                            </div>
+                                            {hotel.activeShift && (
+                                                <p className="mt-1.5 text-xs text-white/40">
+                                                    №{hotel.activeShift.number} · {hotel.activeShift.manager} · {formatDT(hotel.activeShift.openedAt, hotel.timezone ?? undefined)}
+                                                </p>
                                             )}
-                                        </div>
-                                        <Link href={`/admin/hotels/${hotel.id}`}>
-                                            <Button size="sm" variant="secondary">
-                                                Открыть
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                </Card>
-                            );
-                        })}
-                </section>
-            )
-            }
+                                            <div className="mt-3 flex items-center gap-4 text-xs text-white/50">
+                                                <span className="text-emerald-400">+{formatCurrency(inflow, hotel.currency ?? undefined)}</span>
+                                                <span className="text-rose-400">-{formatCurrency(outflow, hotel.currency ?? undefined)}</span>
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5">
+                                                    {hotel.managers.slice(0, 4).map((m) => (
+                                                        <span
+                                                            key={m.id}
+                                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.08] text-[10px] font-semibold text-white/70"
+                                                            title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
+                                                        >
+                                                            {m.displayName?.slice(0, 2).toUpperCase() || "??"}
+                                                        </span>
+                                                    ))}
+                                                    {hotel.managers.length > 4 && (
+                                                        <span className="text-[10px] text-white/30">+{hotel.managers.length - 4}</span>
+                                                    )}
+                                                </div>
+                                                <Link href={`/admin/hotels/${hotel.id}`}>
+                                                    <Button size="sm" variant="secondary">
+                                                        Открыть
+                                                    </Button>
+                                                </Link>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                        </section>
+                    )
+                    }
 
-            {activeTab === "manage" && (
-                <section className="grid gap-3 lg:grid-cols-2">
-                    <Card className="p-3">
-                        <h2 className="mb-3 text-sm font-semibold text-white">Новый отель</h2>
-                        <form action={handleCreateHotel} className="space-y-3">
-                            <div className="space-y-2">
-                                <label className="text-xs text-white/40" htmlFor="name">
-                                    Название
-                                </label>
-                                <Input
-                                    id="name"
-                                    name="name"
-                                    placeholder={"Например, \"Парк Инн\""}
-                                    required
-
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs text-white/40" htmlFor="address">
-                                    Адрес
-                                </label>
-                                <Input
-                                    id="address"
-                                    name="address"
-                                    placeholder="Город, улица, дом"
-                                    required
-
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs text-white/40" htmlFor="notes">
-                                    Заметки
-                                </label>
-                                <Input
-                                    id="notes"
-                                    name="notes"
-                                    placeholder="Особенности"
-
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs text-white/40" htmlFor="cleaningChatId">
-                                    ID чата уборки
-                                </label>
-                                <Input
-                                    id="cleaningChatId"
-                                    name="cleaningChatId"
-                                    placeholder="Например, -1001234567890"
-
-                                />
-                                <p className="text-xs text-white/50">Используется для уведомлений горничных в Telegram.</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-white/40" htmlFor="timezone">Часовой пояс</label>
-                                    <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
-                                        <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
-                                        <option value="Asia/Almaty">Алматы (UTC+5)</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-white/40" htmlFor="currency">Валюта</label>
-                                    <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
-                                        <option value="KGS">KGS (сом)</option>
-                                        <option value="KZT">KZT (тенге)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <Button type="submit" className="w-full">
-                                Сохранить
-                            </Button>
-                        </form>
-                    </Card>
-
-                    <Card className="p-3">
-                        <h2 className="mb-3 text-sm font-semibold text-white">Редактировать</h2>
-                        {hotels.length === 0 ? (
-                            <p className="text-sm text-white/60">Пока нет отелей для изменения</p>
-                        ) : (
-                            <>
-                                <div className="space-y-2">
-                                    <label className="text-xs text-white/40" htmlFor="edit-hotel">
-                                        Выберите отель
-                                    </label>
-                                    <select
-                                        id="edit-hotel"
-                                        className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                                        value={selectedHotelId}
-                                        onChange={(event) => setSelectedHotelId(event.target.value)}
-                                    >
-                                        <option value="" >
-                                            Не выбрано
-                                        </option>
-                                        {hotels.map((hotel) => (
-                                            <option key={hotel.id} value={hotel.id} >
-                                                {hotel.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <form className="mt-4 space-y-3" onSubmit={handleUpdateHotel}>
+                    {activeTab === "manage" && (
+                        <section className="grid gap-3 lg:grid-cols-2">
+                            <Card className="p-3">
+                                <h2 className="mb-3 text-sm font-semibold text-white">Новый отель</h2>
+                                <form action={handleCreateHotel} className="space-y-3">
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="edit-name">
+                                        <label className="text-xs text-white/40" htmlFor="name">
                                             Название
                                         </label>
                                         <Input
-                                            id="edit-name"
+                                            id="name"
                                             name="name"
-                                            value={editForm.name}
-                                            onChange={handleEditFieldChange}
-                                            placeholder="Название"
-                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                            placeholder={"Например, \"Парк Инн\""}
+                                            required
 
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="edit-address">
+                                        <label className="text-xs text-white/40" htmlFor="address">
                                             Адрес
                                         </label>
                                         <Input
-                                            id="edit-address"
+                                            id="address"
                                             name="address"
-                                            value={editForm.address}
-                                            onChange={handleEditFieldChange}
                                             placeholder="Город, улица, дом"
-                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                            required
 
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="edit-notes">
+                                        <label className="text-xs text-white/40" htmlFor="notes">
                                             Заметки
                                         </label>
                                         <Input
-                                            id="edit-notes"
+                                            id="notes"
                                             name="notes"
-                                            value={editForm.notes}
-                                            onChange={handleEditFieldChange}
                                             placeholder="Особенности"
-                                            disabled={!selectedHotelId || isUpdatingHotel}
 
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-white/40" htmlFor="edit-cleaningChatId">
+                                        <label className="text-xs text-white/40" htmlFor="cleaningChatId">
                                             ID чата уборки
                                         </label>
                                         <Input
-                                            id="edit-cleaningChatId"
+                                            id="cleaningChatId"
                                             name="cleaningChatId"
-                                            value={editForm.cleaningChatId}
-                                            onChange={handleEditFieldChange}
                                             placeholder="Например, -1001234567890"
-                                            disabled={!selectedHotelId || isUpdatingHotel}
 
                                         />
-                                        <p className="text-xs text-white/50">
-                                            Укажите Telegram-группу, куда отправлять задачи уборки.
-                                        </p>
+                                        <p className="text-xs text-white/50">Используется для уведомлений горничных в Telegram.</p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div className="space-y-1">
-                                            <label className="text-xs text-white/40" htmlFor="edit-timezone">Часовой пояс</label>
-                                            <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                            <label className="text-xs text-white/40" htmlFor="timezone">Часовой пояс</label>
+                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
                                                 <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                 <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs text-white/40" htmlFor="edit-currency">Валюта</label>
-                                            <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                            <label className="text-xs text-white/40" htmlFor="currency">Валюта</label>
+                                            <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20">
                                                 <option value="KGS">KGS (сом)</option>
                                                 <option value="KZT">KZT (тенге)</option>
                                             </select>
                                         </div>
                                     </div>
-                                    <Button type="submit" className="w-full" disabled={!selectedHotelId || isUpdatingHotel}>
-                                        {isUpdatingHotel ? "Сохраняем..." : "Обновить отель"}
+                                    <Button type="submit" className="w-full">
+                                        Сохранить
                                     </Button>
                                 </form>
-                                <Button
-                                    type="button"
-                                    variant="danger"
-                                    disabled={!selectedHotelId || isDeletingHotel}
-                                    onClick={() => setConfirmDelete(true)}
-                                    className="mt-2 w-full"
-                                >
-                                    {isDeletingHotel ? "Удаляем..." : "Удалить отель"}
-                                </Button>
-                            </>
-                        )}
-                    </Card>
+                            </Card>
 
-                    {/* Observer management */}
-                    <Card className="p-3 lg:col-span-2">
-                        <h2 className="mb-3 text-sm font-semibold text-white">Наблюдатели</h2>
-
-                        {/* Existing observers list */}
-                        {observers && observers.length > 0 && (
-                            <div className="mb-4 space-y-2">
-                                {observers.map((obs) => (
-                                    <div key={obs.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">{obs.displayName}</p>
-                                            <p className="text-xs text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
+                            <Card className="p-3">
+                                <h2 className="mb-3 text-sm font-semibold text-white">Редактировать</h2>
+                                {hotels.length === 0 ? (
+                                    <p className="text-sm text-white/60">Пока нет отелей для изменения</p>
+                                ) : (
+                                    <>
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-white/40" htmlFor="edit-hotel">
+                                                Выберите отель
+                                            </label>
+                                            <select
+                                                id="edit-hotel"
+                                                className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                                value={selectedHotelId}
+                                                onChange={(event) => setSelectedHotelId(event.target.value)}
+                                            >
+                                                <option value="" >
+                                                    Не выбрано
+                                                </option>
+                                                {hotels.map((hotel) => (
+                                                    <option key={hotel.id} value={hotel.id} >
+                                                        {hotel.name}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <button
+                                        <form className="mt-4 space-y-3" onSubmit={handleUpdateHotel}>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/40" htmlFor="edit-name">
+                                                    Название
+                                                </label>
+                                                <Input
+                                                    id="edit-name"
+                                                    name="name"
+                                                    value={editForm.name}
+                                                    onChange={handleEditFieldChange}
+                                                    placeholder="Название"
+                                                    disabled={!selectedHotelId || isUpdatingHotel}
+
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/40" htmlFor="edit-address">
+                                                    Адрес
+                                                </label>
+                                                <Input
+                                                    id="edit-address"
+                                                    name="address"
+                                                    value={editForm.address}
+                                                    onChange={handleEditFieldChange}
+                                                    placeholder="Город, улица, дом"
+                                                    disabled={!selectedHotelId || isUpdatingHotel}
+
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/40" htmlFor="edit-notes">
+                                                    Заметки
+                                                </label>
+                                                <Input
+                                                    id="edit-notes"
+                                                    name="notes"
+                                                    value={editForm.notes}
+                                                    onChange={handleEditFieldChange}
+                                                    placeholder="Особенности"
+                                                    disabled={!selectedHotelId || isUpdatingHotel}
+
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-white/40" htmlFor="edit-cleaningChatId">
+                                                    ID чата уборки
+                                                </label>
+                                                <Input
+                                                    id="edit-cleaningChatId"
+                                                    name="cleaningChatId"
+                                                    value={editForm.cleaningChatId}
+                                                    onChange={handleEditFieldChange}
+                                                    placeholder="Например, -1001234567890"
+                                                    disabled={!selectedHotelId || isUpdatingHotel}
+
+                                                />
+                                                <p className="text-xs text-white/50">
+                                                    Укажите Telegram-группу, куда отправлять задачи уборки.
+                                                </p>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-white/40" htmlFor="edit-timezone">Часовой пояс</label>
+                                                    <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                                        <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
+                                                        <option value="Asia/Almaty">Алматы (UTC+5)</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-white/40" htmlFor="edit-currency">Валюта</label>
+                                                    <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                                        <option value="KGS">KGS (сом)</option>
+                                                        <option value="KZT">KZT (тенге)</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <Button type="submit" className="w-full" disabled={!selectedHotelId || isUpdatingHotel}>
+                                                {isUpdatingHotel ? "Сохраняем..." : "Обновить отель"}
+                                            </Button>
+                                        </form>
+                                        <Button
+                                            type="button"
+                                            variant="danger"
+                                            disabled={!selectedHotelId || isDeletingHotel}
+                                            onClick={() => setConfirmDelete(true)}
+                                            className="mt-2 w-full"
+                                        >
+                                            {isDeletingHotel ? "Удаляем..." : "Удалить отель"}
+                                        </Button>
+                                    </>
+                                )}
+                            </Card>
+
+                            {/* Observer management */}
+                            <Card className="p-3 lg:col-span-2">
+                                <h2 className="mb-3 text-sm font-semibold text-white">Наблюдатели</h2>
+
+                                {/* Existing observers list */}
+                                {observers && observers.length > 0 && (
+                                    <div className="mb-4 space-y-2">
+                                        {observers.map((obs) => (
+                                            <div key={obs.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-white truncate">{obs.displayName}</p>
+                                                    <p className="text-xs text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs text-amber-300 hover:text-amber-200 transition"
+                                                        onClick={() => { setResetPasswordId(obs.id); setResetPasswordValue(''); }}
+                                                    >
+                                                        Пароль
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs text-rose-400 hover:text-rose-300 transition"
+                                                        disabled={deletingObserverId === obs.id}
+                                                        onClick={() => handleDeleteObserver(obs.id)}
+                                                    >
+                                                        {deletingObserverId === obs.id ? '…' : 'Удалить'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Reset password inline */}
+                                {resetPasswordId && (
+                                    <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 space-y-2">
+                                        <p className="text-xs text-white/60">Новый пароль (мин. 6 символов)</p>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                type="text"
+                                                placeholder="Новый пароль"
+                                                value={resetPasswordValue}
+                                                onChange={(e) => setResetPasswordValue(e.target.value)}
+                                            />
+                                            <Button
                                                 type="button"
-                                                className="text-xs text-amber-300 hover:text-amber-200 transition"
-                                                onClick={() => { setResetPasswordId(obs.id); setResetPasswordValue(''); }}
+                                                size="sm"
+                                                disabled={resetPasswordValue.length < 6 || resettingPassword}
+                                                onClick={handleResetObserverPassword}
                                             >
-                                                Пароль
-                                            </button>
-                                            <button
+                                                {resettingPassword ? '…' : 'OK'}
+                                            </Button>
+                                            <Button
                                                 type="button"
-                                                className="text-xs text-rose-400 hover:text-rose-300 transition"
-                                                disabled={deletingObserverId === obs.id}
-                                                onClick={() => handleDeleteObserver(obs.id)}
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => setResetPasswordId(null)}
                                             >
-                                                {deletingObserverId === obs.id ? '…' : 'Удалить'}
-                                            </button>
+                                                ✕
+                                            </Button>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                )}
 
-                        {/* Reset password inline */}
-                        {resetPasswordId && (
-                            <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 space-y-2">
-                                <p className="text-xs text-white/60">Новый пароль (мин. 6 символов)</p>
+                                {/* Create observer form */}
+                                <form className="space-y-3" onSubmit={handleCreateObserver}>
+                                    <p className="text-xs text-white/40">Новый наблюдатель</p>
+                                    <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
+                                        <Input
+                                            placeholder="Имя"
+                                            value={newObserver.displayName}
+                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, displayName: e.target.value }))}
+                                            required
+                                        />
+                                        <Input
+                                            placeholder="Логин (латиница)"
+                                            value={newObserver.loginName}
+                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, loginName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') }))}
+                                            required
+                                        />
+                                        <Input
+                                            placeholder="Пароль (мин. 6)"
+                                            type="password"
+                                            value={newObserver.password}
+                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, password: e.target.value }))}
+                                            required
+                                            minLength={6}
+                                        />
+                                        <select
+                                            value={newObserver.hotelId}
+                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
+                                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                            required
+                                        >
+                                            <option value="">Выберите объект</option>
+                                            {hotels.map((hotel) => (
+                                                <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <Button type="submit" className="w-full" disabled={creatingObserver}>
+                                        {creatingObserver ? 'Создаём…' : 'Создать наблюдателя'}
+                                    </Button>
+                                </form>
+                            </Card>
+                        </section>
+                    )
+                    }
+
+                    {/* Delete hotel confirm modal */}
+                    {confirmDelete && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
+                                <p className="text-base font-semibold">Удалить отель?</p>
+                                <p className="text-sm text-white/50">Действие необратимо. Все данные отеля будут удалены.</p>
                                 <div className="flex gap-2">
-                                    <Input
-                                        type="text"
-                                        placeholder="Новый пароль"
-                                        value={resetPasswordValue}
-                                        onChange={(e) => setResetPasswordValue(e.target.value)}
-                                    />
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        disabled={resetPasswordValue.length < 6 || resettingPassword}
-                                        onClick={handleResetObserverPassword}
-                                    >
-                                        {resettingPassword ? '…' : 'OK'}
+                                    <Button type="button" variant="secondary" className="flex-1" onClick={() => setConfirmDelete(false)}>
+                                        Отмена
                                     </Button>
                                     <Button
                                         type="button"
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => setResetPasswordId(null)}
+                                        variant="danger"
+                                        className="flex-1"
+                                        disabled={isDeletingHotel}
+                                        onClick={() => { setConfirmDelete(false); handleDeleteHotel(); }}
                                     >
-                                        ✕
+                                        Удалить
                                     </Button>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Create observer form */}
-                        <form className="space-y-3" onSubmit={handleCreateObserver}>
-                            <p className="text-xs text-white/40">Новый наблюдатель</p>
-                            <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
-                                <Input
-                                    placeholder="Имя"
-                                    value={newObserver.displayName}
-                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, displayName: e.target.value }))}
-                                    required
-                                />
-                                <Input
-                                    placeholder="Логин (латиница)"
-                                    value={newObserver.loginName}
-                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, loginName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') }))}
-                                    required
-                                />
-                                <Input
-                                    placeholder="Пароль (мин. 6)"
-                                    type="password"
-                                    value={newObserver.password}
-                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, password: e.target.value }))}
-                                    required
-                                    minLength={6}
-                                />
-                                <select
-                                    value={newObserver.hotelId}
-                                    onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
-                                    className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                                    required
-                                >
-                                    <option value="">Выберите объект</option>
-                                    {hotels.map((hotel) => (
-                                        <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <Button type="submit" className="w-full" disabled={creatingObserver}>
-                                {creatingObserver ? 'Создаём…' : 'Создать наблюдателя'}
-                            </Button>
-                        </form>
-                    </Card>
-                </section>
-            )
-            }
-
-            {/* Delete hotel confirm modal */}
-            {confirmDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-                    <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
-                        <p className="text-base font-semibold">Удалить отель?</p>
-                        <p className="text-sm text-white/50">Действие необратимо. Все данные отеля будут удалены.</p>
-                        <div className="flex gap-2">
-                            <Button type="button" variant="secondary" className="flex-1" onClick={() => setConfirmDelete(false)}>
-                                Отмена
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="danger"
-                                className="flex-1"
-                                disabled={isDeletingHotel}
-                                onClick={() => { setConfirmDelete(false); handleDeleteHotel(); }}
-                            >
-                                Удалить
-                            </Button>
+                            </Card>
                         </div>
-                    </Card>
-                </div>
-            )}
+                    )}
 
+                </div>
+            </div>
         </div>
     );
 }

@@ -655,612 +655,617 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     return (
         <>
             <ExitButton />
-            <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5">
-                <header>
-                    {data?.shift ? (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-base font-semibold text-white">Смена №{data.shift.number}</h1>
-                                    <p className="text-[11px] text-white/40">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => mutate()}
-                                        className={`rounded-full p-1.5 text-white/40 transition hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
-                                        aria-label="Обновить"
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
-                                    </button>
-                                    <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-200/70" onClick={() => setActivePanel('shift')}>
-                                        Сдать смену
-                                    </Button>
-                                </div>
-                            </div>
-                            <div className="flex gap-3 text-xs">
-                                <span className="text-white/50">Касса <span className="font-semibold text-white">{formatKgs(shiftCashValue)}</span></span>
-                                <span className="text-white/50">Б/н <span className="font-semibold text-white">{formatKgs(shiftCardValue)}</span></span>
-                                <span className="text-white/50">Расход <span className="font-semibold text-white">{formatKgs(shiftExpensesTotal)}</span></span>
-                                <span className="text-white/50">Занято <span className="font-semibold text-white">{occupiedCount}/{sortedRooms.length}</span></span>
-                            </div>
-                        </div>
-                    ) : (
-                        <>
-                            <p className="mt-3 text-sm text-amber-200/80">Смена не открыта</p>
-                            {managerInfoBlock}
-                        </>
-                    )}
-                </header>
-                <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5">
-                    <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
-                        {panelTabs.map((tab) => (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setActivePanel(tab.id)}
-                                className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activePanel === tab.id ? 'bg-white/[0.12] text-white shadow-sm' : 'hover:text-white/70'
-                                    }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {activePanel === 'rooms' && (
-                    <section className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-semibold text-white">Номера</h2>
-                            <Badge label={`${sortedRooms.length} в учёте`} />
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                            {sortedRooms.map((room) => {
-                                const isOccupied = room.status === 'OCCUPIED';
-                                const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
-                                const cashPortion = room.stay?.cashPaid ?? 0;
-                                const cardPortion = room.stay?.cardPaid ?? 0;
-                                const paymentLabel = (() => {
-                                    const segments = [] as string[];
-                                    if (cashPortion) segments.push(`нал ${formatKgs(cashPortion)}`);
-                                    if (cardPortion) segments.push(`безнал ${formatKgs(cardPortion)}`);
-                                    if (!segments.length && room.stay?.paymentMethod) {
-                                        return room.stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
-                                    }
-                                    return segments.join(' · ') || null;
-                                })();
-
-                                return (
-                                    <article key={room.id} className="rounded-lg bg-white/[0.04] px-3 py-2.5">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <span className="text-sm font-semibold text-white">№ {room.label}</span>
-                                                <Badge
-                                                    label={isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
-                                                    tone={isOccupied ? 'warning' : 'success'}
-                                                />
-                                            </div>
-                                            {isOccupied ? (
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="text-[11px] text-rose-300/70 hover:text-rose-300"
-                                                    disabled={!hasOpenShift}
-                                                    onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
-                                                >
-                                                    Выселить
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    className="text-[11px]"
-                                                    disabled={!hasOpenShift}
-                                                    onClick={() => showCheckInModal(room)}
-                                                >
-                                                    Заселить
-                                                </Button>
-                                            )}
+            <div className="min-h-screen bg-night">
+                <div className="desktop-container">
+                    <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
+                        <header>
+                            {data?.shift ? (
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h1 className="text-base font-semibold text-white lg:text-xl">Смена №{data.shift.number}</h1>
+                                            <p className="text-[11px] text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
                                         </div>
-                                        {room.stay && (
-                                            <div className="mt-1 text-[11px] text-white/40">
-                                                <span className="font-medium text-white/60">{guestLabel}</span>
-                                                {' · '}
-                                                {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
-                                                {room.stay.amountPaid != null && (
-                                                    <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}</>
-                                                )}
-                                            </div>
-                                        )}
-                                    </article>
-                                );
-                            })}
-                        </div>
-                    </section>
-                )}
-
-                {activePanel === 'shift' && (
-                    <Card>
-                        <CardHeader title="Сдача смены" />
-                        {isLoading && <p className="text-sm text-white/60">Загружаем...</p>}
-                        {error && <p className="text-sm text-rose-300">{String(error)}</p>}
-                        {data?.shift && (
-                            <div className="mb-4 space-y-3">
-                                <div className="flex items-center justify-between text-xs text-white/50">
-                                    <span>{managerName} · {primaryHotel?.name}</span>
-                                    <span>{formatDateTime(data.shift.openedAt, hotelTz)}</span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div className="rounded-lg bg-white/[0.04] px-3 py-2">
-                                        <p className="text-[11px] text-white/40">Выручка</p>
-                                        <p className="font-semibold text-emerald-300">{formatKgs(shiftRevenueTotal)}</p>
-                                        <p className="text-[11px] text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
-                                    </div>
-                                    <div className="rounded-lg bg-white/[0.04] px-3 py-2">
-                                        <p className="text-[11px] text-white/40">Расход</p>
-                                        <p className="font-semibold text-rose-300">{formatKgs(shiftExpensesTotal)}</p>
-                                        <p className="text-[11px] text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between rounded-lg bg-white/[0.06] px-3 py-2 text-sm">
-                                    <span className="text-white/60">К передаче (нал)</span>
-                                    <span className="text-lg font-bold text-white">{formatKgs(shiftCashValue)}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-xs text-white/40 px-1">
-                                    <span>Открытие: {formatKgs(data.shift.openingCash)}</span>
-                                    <span>Безнал: {formatKgs(shiftCardValue)}</span>
-                                </div>
-                                <div className="flex justify-end">
-                                    <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handlePrintShiftReceipt}>
-                                        Печать
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-                        {data?.shift ? (
-                            <form className="space-y-3 border-t border-white/[0.06] pt-4" onSubmit={handleCloseShift}>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <Input
-                                        type="password"
-                                        placeholder="PIN"
-                                        maxLength={6}
-                                        inputMode="numeric"
-                                        {...handoverForm.register('pinCode', {
-                                            required: 'Введите PIN',
-                                            minLength: { value: 6, message: '6 цифр' },
-                                            maxLength: { value: 6, message: '6 цифр' },
-                                            pattern: { value: /^\d{6}$/, message: 'Только цифры' }
-                                        })}
-                                    />
-                                    <TextArea rows={1} placeholder="Комментарий" {...handoverForm.register('note')} />
-                                </div>
-                                {handoverForm.formState.errors.pinCode && (
-                                    <p className="text-xs text-rose-300">{handoverForm.formState.errors.pinCode.message}</p>
-                                )}
-                                <Button type="submit" className="w-full" variant="secondary">
-                                    Сдать смену
-                                </Button>
-                            </form>
-                        ) : (
-                            <p className="text-sm text-white/60">Смена ещё не открыта.</p>
-                        )}
-                    </Card>
-                )}
-
-                {activePanel === 'cash' && (
-                    <Card>
-                        <CardHeader title="Касса" />
-                        <form className="grid gap-3 md:grid-cols-3" onSubmit={handleExpense}>
-                            <Input type="number" step="0.01" placeholder="Сумма" {...expenseForm.register('amount', { valueAsNumber: true })} />
-                            <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('method')}>
-                                <option value="CASH">Наличные</option>
-                                <option value="CARD">Безнал</option>
-                            </Select>
-                            <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('entryType')}>
-                                <option value="CASH_OUT">Расход</option>
-                                <option value="CASH_IN">Поступление</option>
-                                <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
-                                <option value="ADJUSTMENT">Корректировка</option>
-                            </Select>
-                            <TextArea rows={1} className="md:col-span-3" placeholder="Комментарий" {...expenseForm.register('note')} />
-                            <Button type="submit" className="md:col-span-3">
-                                Записать операцию
-                            </Button>
-                        </form>
-                        {data?.shift && (
-                            <div className="mt-6 space-y-3">
-                                <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between rounded-xl bg-white/[0.04] px-4 py-3 text-left text-white transition hover:border-white/30"
-                                    aria-expanded={isCashLedgerOpen}
-                                    aria-controls="cash-ledger-panel"
-                                    onClick={() => setIsCashLedgerOpen((prev) => !prev)}
-                                >
-                                    <div>
-                                        <h3 className="text-sm font-semibold">Последние операции</h3>
-                                        <p className="text-xs text-white/60">{shiftLedger.length} записей</p>
-                                    </div>
-                                    <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80">
-                                        {isCashLedgerOpen ? 'Скрыть' : 'Показать'}
-                                    </span>
-                                </button>
-                                {isCashLedgerOpen && (
-                                    <div id="cash-ledger-panel" className="divide-y divide-white/[0.06]">
-                                        {shiftLedger.length ? (
-                                            shiftLedger.map((entry) => {
-                                                const timestamp = formatDateTime(entry.recordedAt, hotelTz);
-                                                const signedAmount = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType)
-                                                    ? entry.amount
-                                                    : -entry.amount;
-                                                const methodLabel = entry.method === 'CARD' ? 'б/н' : 'нал';
-                                                const entryLabel =
-                                                    entry.entryType === 'CASH_IN'
-                                                        ? 'Приход'
-                                                        : entry.entryType === 'CASH_OUT'
-                                                            ? 'Расход'
-                                                            : entry.entryType === 'MANAGER_PAYOUT'
-                                                                ? 'Выплата'
-                                                                : 'Корр.';
-                                                const amountClass = signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300';
-
-                                                return (
-                                                    <div key={entry.id} className="flex items-center justify-between py-2 text-xs">
-                                                        <div className="min-w-0">
-                                                            <span className="text-white/50">{timestamp}</span>
-                                                            <span className="ml-2 text-white/40">{entryLabel} · {methodLabel}</span>
-                                                            {entry.note && <span className="ml-2 text-white/60">{entry.note}</span>}
-                                                        </div>
-                                                        <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{formatKgs(signedAmount)}</span>
-                                                    </div>
-                                                );
-                                            })
-                                        ) : (
-                                            <p className="py-2 text-xs text-white/40">Нет операций.</p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </Card>
-                )}
-            </div>
-
-            {isProfileOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-2 sm:p-4">
-                    <div className="relative w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
-                        <button
-                            type="button"
-                            onClick={handleCloseProfile}
-                            className="absolute right-4 top-4 text-2xl text-white/60 transition hover:text-white focus:outline-none"
-                            aria-label="Закрыть профиль"
-                        >
-                            ×
-                        </button>
-                        <div className="pr-10">
-                            <h2 className="text-base font-semibold text-white">{managerName}</h2>
-                            <p className="text-xs text-white/40">{primaryHotel.name}</p>
-                        </div>
-                        <div className="mt-4 space-y-4">
-                            {profileError && (
-                                <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200">
-                                    Не удалось загрузить профиль.
-                                </div>
-                            )}
-                            {isProfileLoading && !profileData && (
-                                <p className="text-sm text-white/60">Загружаем профиль…</p>
-                            )}
-                            {profileData && (
-                                <>
-                                    <div className="rounded-xl bg-white/[0.04] p-4">
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                            <div>
-                                                <p className="text-xs uppercase tracking-widest text-white/40">Назначение</p>
-                                                <p className="text-base font-semibold text-white">{primaryHotel.name}</p>
-                                            </div>
-                                            {profileData.assignment?.createdAt && (
-                                                <p className="text-xs text-white/60">
-                                                    С {formatDateTime(profileData.assignment.createdAt, hotelTz)}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="mt-4 grid gap-3 text-sm text-white/80 sm:grid-cols-3">
-                                            <div className="rounded-xl bg-white/[0.04] p-3">
-                                                <p className="text-xs uppercase tracking-widest text-white/40">Ставка</p>
-                                                <p className="text-base font-semibold text-white">
-                                                    {profileData.assignment?.shiftPayAmount != null
-                                                        ? formatKgs(profileData.assignment.shiftPayAmount)
-                                                        : '—'}
-                                                </p>
-                                            </div>
-                                            <div className="rounded-xl bg-white/[0.04] p-3">
-                                                <p className="text-xs uppercase tracking-widest text-white/40">Процент</p>
-                                                <p className="text-base font-semibold text-white">
-                                                    {profileData.assignment?.revenueSharePct != null
-                                                        ? `${profileData.assignment.revenueSharePct}%`
-                                                        : '—'}
-                                                </p>
-                                            </div>
-                                            <div className="rounded-xl bg-white/[0.04] p-3">
-                                                <p className="text-xs uppercase tracking-widest text-white/40">PIN</p>
-                                                <p className="text-base font-semibold text-white">
-                                                    {profileData.assignment?.pinCode ?? '—'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                            <h3 className="text-sm font-semibold uppercase tracking-widest text-white/60">
-                                                История смен
-                                            </h3>
-                                            <div className="flex gap-2">
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => refreshProfile()}
-                                                    disabled={isProfileLoading}
-                                                >
-                                                    Обновить
-                                                </Button>
-                                                {data?.shift && (
-                                                    <Button type="button" size="sm" variant="secondary" onClick={() => handleProfileCloseShift()}>
-                                                        Закрыть смену
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="grid gap-3 md:grid-cols-3">
-                                            <div className="space-y-1">
-                                                <label className="text-xs uppercase tracking-widest text-white/40">Статус</label>
-                                                <Select
-                                                    className="bg-ink text-white"
-                                                    value={historyStatus}
-                                                    onChange={(event) => setHistoryStatus(event.target.value as 'ALL' | 'OPEN' | 'CLOSED')}
-                                                >
-                                                    <option value="ALL">Все смены</option>
-                                                    <option value="OPEN">Активные</option>
-                                                    <option value="CLOSED">Архив</option>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs uppercase tracking-widest text-white/40">С даты</label>
-                                                <Input
-                                                    type="date"
-                                                    value={historyFromDate}
-                                                    onChange={(event) => setHistoryFromDate(event.target.value)}
-                                                    className=" text-white"
-                                                />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs uppercase tracking-widest text-white/40">До даты</label>
-                                                <Input
-                                                    type="date"
-                                                    value={historyToDate}
-                                                    onChange={(event) => setHistoryToDate(event.target.value)}
-                                                    className=" text-white"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-xs uppercase tracking-widest text-white/40">Выберите смену</label>
-                                            <Select
-                                                className="bg-ink text-white"
-                                                value={selectedShiftId}
-                                                onChange={(event) => setSelectedShiftId(event.target.value)}
-                                                disabled={!filteredProfileShifts.length}
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => mutate()}
+                                                className={`rounded-full p-1.5 text-white/40 transition hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
+                                                aria-label="Обновить"
                                             >
-                                                <option value="">
-                                                    {filteredProfileShifts.length ? 'Выберите смену' : 'Нет смен под выбранные фильтры'}
-                                                </option>
-                                                {filteredProfileShifts.map((shift) => (
-                                                    <option key={shift.id} value={shift.id}>
-                                                        {shift.status === 'OPEN' ? 'Активная' : 'Архив'} №{shift.number} • {formatDateTime(shift.openedAt, hotelTz)}
-                                                    </option>
-                                                ))}
-                                            </Select>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+                                            </button>
+                                            <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-200/70" onClick={() => setActivePanel('shift')}>
+                                                Сдать смену
+                                            </Button>
                                         </div>
-                                        {selectedShift ? (
-                                            <div className="rounded-xl bg-white/[0.04] p-4 text-sm text-white/80">
-                                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-xs uppercase tracking-widest text-white/40">
-                                                            Смена №{selectedShift.number}
-                                                        </p>
-                                                        <p>{formatDateTime(selectedShift.openedAt, hotelTz)}</p>
-                                                        {selectedShift.closedAt && (
-                                                            <p className="text-xs text-white/50">
-                                                                Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <span
-                                                        className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedShift.status === 'OPEN'
-                                                            ? 'bg-amber-400/20 text-amber-200'
-                                                            : 'bg-emerald-400/10 text-emerald-200'
-                                                            }`}
-                                                    >
-                                                        {selectedShift.status === 'OPEN' ? 'Активная' : 'Архив'}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-3 grid gap-2 text-xs text-white/60 sm:grid-cols-3">
-                                                    <span>Старт: {formatKgs(selectedShift.openingCash)}</span>
-                                                    <span>Факт: {selectedShift.closingCash != null ? formatKgs(selectedShift.closingCash) : '—'}</span>
-                                                    <span>Передано: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
-                                                </div>
-                                                <p className="mt-2 text-xs text-white/70">
-                                                    Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-white/60">Нет смен, подходящих под фильтр.</p>
-                                        )}
-                                        {filteredProfileShifts.length > 1 && (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between text-xs uppercase tracking-widest text-white/40">
-                                                    <span>Список смен</span>
-                                                    <span className="text-white/60">{filteredProfileShifts.length}</span>
-                                                </div>
-                                                <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
-                                                    {filteredProfileShifts.map((shift) => (
-                                                        <button
-                                                            key={shift.id}
-                                                            type="button"
-                                                            onClick={() => setSelectedShiftId(shift.id)}
-                                                            className={`w-full rounded-2xl border p-3 text-left text-sm transition ${selectedShiftId === shift.id
-                                                                ? 'border-amber-300/80 bg-amber-400/10 text-amber-50'
-                                                                : 'border-white/10 text-white/70 hover:border-white/30'
-                                                                }`}
-                                                        >
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="font-semibold">№{shift.number}</span>
-                                                                <span className="text-xs uppercase tracking-widest">
-                                                                    {shift.status === 'OPEN' ? 'Активная' : 'Архив'}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-xs text-white/60">{formatDateTime(shift.openedAt, hotelTz)}</p>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
                                     </div>
+                                    <div className="flex gap-3 text-xs">
+                                        <span className="text-white/50">Касса <span className="font-semibold text-white">{formatKgs(shiftCashValue)}</span></span>
+                                        <span className="text-white/50">Б/н <span className="font-semibold text-white">{formatKgs(shiftCardValue)}</span></span>
+                                        <span className="text-white/50">Расход <span className="font-semibold text-white">{formatKgs(shiftExpensesTotal)}</span></span>
+                                        <span className="text-white/50">Занято <span className="font-semibold text-white">{occupiedCount}/{sortedRooms.length}</span></span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <p className="mt-3 text-sm text-amber-200/80">Смена не открыта</p>
+                                    {managerInfoBlock}
                                 </>
                             )}
+                        </header>
+                        <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5">
+                            <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
+                                {panelTabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setActivePanel(tab.id)}
+                                        className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activePanel === tab.id ? 'bg-white/[0.12] text-white shadow-sm' : 'hover:text-white/70'
+                                            }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
+
+                        {activePanel === 'rooms' && (
+                            <section className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold text-white">Номера</h2>
+                                    <Badge label={`${sortedRooms.length} в учёте`} />
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                    {sortedRooms.map((room) => {
+                                        const isOccupied = room.status === 'OCCUPIED';
+                                        const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
+                                        const cashPortion = room.stay?.cashPaid ?? 0;
+                                        const cardPortion = room.stay?.cardPaid ?? 0;
+                                        const paymentLabel = (() => {
+                                            const segments = [] as string[];
+                                            if (cashPortion) segments.push(`нал ${formatKgs(cashPortion)}`);
+                                            if (cardPortion) segments.push(`безнал ${formatKgs(cardPortion)}`);
+                                            if (!segments.length && room.stay?.paymentMethod) {
+                                                return room.stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
+                                            }
+                                            return segments.join(' · ') || null;
+                                        })();
+
+                                        return (
+                                            <article key={room.id} className="rounded-lg bg-white/[0.04] px-3 py-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="text-sm font-semibold text-white">№ {room.label}</span>
+                                                        <Badge
+                                                            label={isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
+                                                            tone={isOccupied ? 'warning' : 'success'}
+                                                        />
+                                                    </div>
+                                                    {isOccupied ? (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="text-[11px] text-rose-300/70 hover:text-rose-300"
+                                                            disabled={!hasOpenShift}
+                                                            onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
+                                                        >
+                                                            Выселить
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="secondary"
+                                                            className="text-[11px]"
+                                                            disabled={!hasOpenShift}
+                                                            onClick={() => showCheckInModal(room)}
+                                                        >
+                                                            Заселить
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                {room.stay && (
+                                                    <div className="mt-1 text-[11px] text-white/40">
+                                                        <span className="font-medium text-white/60">{guestLabel}</span>
+                                                        {' · '}
+                                                        {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
+                                                        {room.stay.amountPaid != null && (
+                                                            <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}</>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        )}
+
+                        {activePanel === 'shift' && (
+                            <Card>
+                                <CardHeader title="Сдача смены" />
+                                {isLoading && <p className="text-sm text-white/60">Загружаем...</p>}
+                                {error && <p className="text-sm text-rose-300">{String(error)}</p>}
+                                {data?.shift && (
+                                    <div className="mb-4 space-y-3">
+                                        <div className="flex items-center justify-between text-xs text-white/50">
+                                            <span>{managerName} · {primaryHotel?.name}</span>
+                                            <span>{formatDateTime(data.shift.openedAt, hotelTz)}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                            <div className="rounded-lg bg-white/[0.04] px-3 py-2">
+                                                <p className="text-[11px] text-white/40">Выручка</p>
+                                                <p className="font-semibold text-emerald-300">{formatKgs(shiftRevenueTotal)}</p>
+                                                <p className="text-[11px] text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
+                                            </div>
+                                            <div className="rounded-lg bg-white/[0.04] px-3 py-2">
+                                                <p className="text-[11px] text-white/40">Расход</p>
+                                                <p className="font-semibold text-rose-300">{formatKgs(shiftExpensesTotal)}</p>
+                                                <p className="text-[11px] text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between rounded-lg bg-white/[0.06] px-3 py-2 text-sm">
+                                            <span className="text-white/60">К передаче (нал)</span>
+                                            <span className="text-lg font-bold text-white">{formatKgs(shiftCashValue)}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs text-white/40 px-1">
+                                            <span>Открытие: {formatKgs(data.shift.openingCash)}</span>
+                                            <span>Безнал: {formatKgs(shiftCardValue)}</span>
+                                        </div>
+                                        <div className="flex justify-end">
+                                            <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handlePrintShiftReceipt}>
+                                                Печать
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                                {data?.shift ? (
+                                    <form className="space-y-3 border-t border-white/[0.06] pt-4" onSubmit={handleCloseShift}>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Input
+                                                type="password"
+                                                placeholder="PIN"
+                                                maxLength={6}
+                                                inputMode="numeric"
+                                                {...handoverForm.register('pinCode', {
+                                                    required: 'Введите PIN',
+                                                    minLength: { value: 6, message: '6 цифр' },
+                                                    maxLength: { value: 6, message: '6 цифр' },
+                                                    pattern: { value: /^\d{6}$/, message: 'Только цифры' }
+                                                })}
+                                            />
+                                            <TextArea rows={1} placeholder="Комментарий" {...handoverForm.register('note')} />
+                                        </div>
+                                        {handoverForm.formState.errors.pinCode && (
+                                            <p className="text-xs text-rose-300">{handoverForm.formState.errors.pinCode.message}</p>
+                                        )}
+                                        <Button type="submit" className="w-full" variant="secondary">
+                                            Сдать смену
+                                        </Button>
+                                    </form>
+                                ) : (
+                                    <p className="text-sm text-white/60">Смена ещё не открыта.</p>
+                                )}
+                            </Card>
+                        )}
+
+                        {activePanel === 'cash' && (
+                            <Card>
+                                <CardHeader title="Касса" />
+                                <form className="grid gap-3 md:grid-cols-3" onSubmit={handleExpense}>
+                                    <Input type="number" step="0.01" placeholder="Сумма" {...expenseForm.register('amount', { valueAsNumber: true })} />
+                                    <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('method')}>
+                                        <option value="CASH">Наличные</option>
+                                        <option value="CARD">Безнал</option>
+                                    </Select>
+                                    <Select className="bg-ink text-white min-w-0 max-w-full" {...expenseForm.register('entryType')}>
+                                        <option value="CASH_OUT">Расход</option>
+                                        <option value="CASH_IN">Поступление</option>
+                                        <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
+                                        <option value="ADJUSTMENT">Корректировка</option>
+                                    </Select>
+                                    <TextArea rows={1} className="md:col-span-3" placeholder="Комментарий" {...expenseForm.register('note')} />
+                                    <Button type="submit" className="md:col-span-3">
+                                        Записать операцию
+                                    </Button>
+                                </form>
+                                {data?.shift && (
+                                    <div className="mt-6 space-y-3">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between rounded-xl bg-white/[0.04] px-4 py-3 text-left text-white transition hover:border-white/30"
+                                            aria-expanded={isCashLedgerOpen}
+                                            aria-controls="cash-ledger-panel"
+                                            onClick={() => setIsCashLedgerOpen((prev) => !prev)}
+                                        >
+                                            <div>
+                                                <h3 className="text-sm font-semibold">Последние операции</h3>
+                                                <p className="text-xs text-white/60">{shiftLedger.length} записей</p>
+                                            </div>
+                                            <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80">
+                                                {isCashLedgerOpen ? 'Скрыть' : 'Показать'}
+                                            </span>
+                                        </button>
+                                        {isCashLedgerOpen && (
+                                            <div id="cash-ledger-panel" className="divide-y divide-white/[0.06]">
+                                                {shiftLedger.length ? (
+                                                    shiftLedger.map((entry) => {
+                                                        const timestamp = formatDateTime(entry.recordedAt, hotelTz);
+                                                        const signedAmount = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType)
+                                                            ? entry.amount
+                                                            : -entry.amount;
+                                                        const methodLabel = entry.method === 'CARD' ? 'б/н' : 'нал';
+                                                        const entryLabel =
+                                                            entry.entryType === 'CASH_IN'
+                                                                ? 'Приход'
+                                                                : entry.entryType === 'CASH_OUT'
+                                                                    ? 'Расход'
+                                                                    : entry.entryType === 'MANAGER_PAYOUT'
+                                                                        ? 'Выплата'
+                                                                        : 'Корр.';
+                                                        const amountClass = signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300';
+
+                                                        return (
+                                                            <div key={entry.id} className="flex items-center justify-between py-2 text-xs">
+                                                                <div className="min-w-0">
+                                                                    <span className="text-white/50">{timestamp}</span>
+                                                                    <span className="ml-2 text-white/40">{entryLabel} · {methodLabel}</span>
+                                                                    {entry.note && <span className="ml-2 text-white/60">{entry.note}</span>}
+                                                                </div>
+                                                                <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{formatKgs(signedAmount)}</span>
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="py-2 text-xs text-white/40">Нет операций.</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </Card>
+                        )}
                     </div>
-                </div>
-            )}
 
-            {checkInModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
-                    <div className="w-full max-w-sm rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-base font-semibold">Заселение № {checkInModal.label}</h3>
-                            <Button type="button" variant="ghost" size="sm" disabled={isSubmittingCheckIn} onClick={handleCloseModal}>
-                                ×
-                            </Button>
-                        </div>
-                        <div className="space-y-2.5">
-                            <div>
-                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-guest">Имя гостя</label>
-                                <Input
-                                    id="modal-guest"
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Имя гостя"
-                                    value={checkInModal.guestName}
-                                    onChange={(event) =>
-                                        setCheckInModal((prev) => (prev ? { ...prev, guestName: event.target.value } : prev))
-                                    }
-                                    className="text-white"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
-                                    <Input
-                                        id="modal-checkin"
-                                        type="datetime-local"
-                                        value={checkInModal.checkIn}
-                                        onChange={(event) =>
-                                            setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
-                                        }
-                                        className="text-white"
-                                    />
+                    {isProfileOpen && (
+                        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-2 sm:p-4">
+                            <div className="relative w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
+                                <button
+                                    type="button"
+                                    onClick={handleCloseProfile}
+                                    className="absolute right-4 top-4 text-2xl text-white/60 transition hover:text-white focus:outline-none"
+                                    aria-label="Закрыть профиль"
+                                >
+                                    ×
+                                </button>
+                                <div className="pr-10">
+                                    <h2 className="text-base font-semibold text-white">{managerName}</h2>
+                                    <p className="text-xs text-white/40">{primaryHotel.name}</p>
                                 </div>
-                                <div>
-                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
-                                    <Input
-                                        id="modal-checkout"
-                                        type="datetime-local"
-                                        value={checkInModal.checkOut}
-                                        onChange={(event) =>
-                                            setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
-                                        }
-                                        className="text-white"
-                                    />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">Наличные</label>
-                                    <Input
-                                        id="modal-cash"
-                                        type="number"
-                                        step="0.01"
-                                        inputMode="decimal"
-                                        value={checkInModal.cashAmount}
-                                        onChange={(event) =>
-                                            setCheckInModal((prev) =>
-                                                prev ? { ...prev, cashAmount: event.target.value } : prev
-                                            )
-                                        }
-                                        placeholder="0"
-                                        className="text-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">Безнал</label>
-                                    <Input
-                                        id="modal-card"
-                                        type="number"
-                                        step="0.01"
-                                        inputMode="decimal"
-                                        value={checkInModal.cardAmount}
-                                        onChange={(event) =>
-                                            setCheckInModal((prev) =>
-                                                prev ? { ...prev, cardAmount: event.target.value } : prev
-                                            )
-                                        }
-                                        placeholder="0"
-                                        className="text-white"
-                                    />
-                                </div>
-                            </div>
-                            {checkInError && <p className="text-xs text-rose-300">{checkInError}</p>}
-                            <Button
-                                type="button"
-                                className="w-full py-3 mt-1"
-                                disabled={isSubmittingCheckIn}
-                                onClick={handleConfirmCheckIn}
-                            >
-                                {isSubmittingCheckIn ? 'Сохраняем...' : 'Заселить'}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )
-            }
+                                <div className="mt-4 space-y-4">
+                                    {profileError && (
+                                        <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200">
+                                            Не удалось загрузить профиль.
+                                        </div>
+                                    )}
+                                    {isProfileLoading && !profileData && (
+                                        <p className="text-sm text-white/60">Загружаем профиль…</p>
+                                    )}
+                                    {profileData && (
+                                        <>
+                                            <div className="rounded-xl bg-white/[0.04] p-4">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-xs uppercase tracking-widest text-white/40">Назначение</p>
+                                                        <p className="text-base font-semibold text-white">{primaryHotel.name}</p>
+                                                    </div>
+                                                    {profileData.assignment?.createdAt && (
+                                                        <p className="text-xs text-white/60">
+                                                            С {formatDateTime(profileData.assignment.createdAt, hotelTz)}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="mt-4 grid gap-3 text-sm text-white/80 sm:grid-cols-3">
+                                                    <div className="rounded-xl bg-white/[0.04] p-3">
+                                                        <p className="text-xs uppercase tracking-widest text-white/40">Ставка</p>
+                                                        <p className="text-base font-semibold text-white">
+                                                            {profileData.assignment?.shiftPayAmount != null
+                                                                ? formatKgs(profileData.assignment.shiftPayAmount)
+                                                                : '—'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="rounded-xl bg-white/[0.04] p-3">
+                                                        <p className="text-xs uppercase tracking-widest text-white/40">Процент</p>
+                                                        <p className="text-base font-semibold text-white">
+                                                            {profileData.assignment?.revenueSharePct != null
+                                                                ? `${profileData.assignment.revenueSharePct}%`
+                                                                : '—'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="rounded-xl bg-white/[0.04] p-3">
+                                                        <p className="text-xs uppercase tracking-widest text-white/40">PIN</p>
+                                                        <p className="text-base font-semibold text-white">
+                                                            {profileData.assignment?.pinCode ?? '—'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-            {/* Checkout confirmation modal */}
-            {checkoutConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-                    <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
-                        <p className="text-base font-semibold">Выселить гостя?</p>
-                        <p className="text-sm text-white/50">
-                            № {checkoutConfirm.roomLabel} · {checkoutConfirm.guestName}
-                        </p>
-                        <div className="flex gap-2">
-                            <Button type="button" variant="secondary" className="flex-1" onClick={() => setCheckoutConfirm(null)}>
-                                Отмена
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="danger"
-                                className="flex-1"
-                                onClick={() => { const id = checkoutConfirm.roomId; setCheckoutConfirm(null); handleCheckout(id); }}
-                            >
-                                Выселить
-                            </Button>
+                                            <div className="space-y-4">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <h3 className="text-sm font-semibold uppercase tracking-widest text-white/60">
+                                                        История смен
+                                                    </h3>
+                                                    <div className="flex gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => refreshProfile()}
+                                                            disabled={isProfileLoading}
+                                                        >
+                                                            Обновить
+                                                        </Button>
+                                                        {data?.shift && (
+                                                            <Button type="button" size="sm" variant="secondary" onClick={() => handleProfileCloseShift()}>
+                                                                Закрыть смену
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="grid gap-3 md:grid-cols-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs uppercase tracking-widest text-white/40">Статус</label>
+                                                        <Select
+                                                            className="bg-ink text-white"
+                                                            value={historyStatus}
+                                                            onChange={(event) => setHistoryStatus(event.target.value as 'ALL' | 'OPEN' | 'CLOSED')}
+                                                        >
+                                                            <option value="ALL">Все смены</option>
+                                                            <option value="OPEN">Активные</option>
+                                                            <option value="CLOSED">Архив</option>
+                                                        </Select>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs uppercase tracking-widest text-white/40">С даты</label>
+                                                        <Input
+                                                            type="date"
+                                                            value={historyFromDate}
+                                                            onChange={(event) => setHistoryFromDate(event.target.value)}
+                                                            className=" text-white"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs uppercase tracking-widest text-white/40">До даты</label>
+                                                        <Input
+                                                            type="date"
+                                                            value={historyToDate}
+                                                            onChange={(event) => setHistoryToDate(event.target.value)}
+                                                            className=" text-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs uppercase tracking-widest text-white/40">Выберите смену</label>
+                                                    <Select
+                                                        className="bg-ink text-white"
+                                                        value={selectedShiftId}
+                                                        onChange={(event) => setSelectedShiftId(event.target.value)}
+                                                        disabled={!filteredProfileShifts.length}
+                                                    >
+                                                        <option value="">
+                                                            {filteredProfileShifts.length ? 'Выберите смену' : 'Нет смен под выбранные фильтры'}
+                                                        </option>
+                                                        {filteredProfileShifts.map((shift) => (
+                                                            <option key={shift.id} value={shift.id}>
+                                                                {shift.status === 'OPEN' ? 'Активная' : 'Архив'} №{shift.number} • {formatDateTime(shift.openedAt, hotelTz)}
+                                                            </option>
+                                                        ))}
+                                                    </Select>
+                                                </div>
+                                                {selectedShift ? (
+                                                    <div className="rounded-xl bg-white/[0.04] p-4 text-sm text-white/80">
+                                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                                            <div>
+                                                                <p className="text-xs uppercase tracking-widest text-white/40">
+                                                                    Смена №{selectedShift.number}
+                                                                </p>
+                                                                <p>{formatDateTime(selectedShift.openedAt, hotelTz)}</p>
+                                                                {selectedShift.closedAt && (
+                                                                    <p className="text-xs text-white/50">
+                                                                        Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                            <span
+                                                                className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedShift.status === 'OPEN'
+                                                                    ? 'bg-amber-400/20 text-amber-200'
+                                                                    : 'bg-emerald-400/10 text-emerald-200'
+                                                                    }`}
+                                                            >
+                                                                {selectedShift.status === 'OPEN' ? 'Активная' : 'Архив'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="mt-3 grid gap-2 text-xs text-white/60 sm:grid-cols-3">
+                                                            <span>Старт: {formatKgs(selectedShift.openingCash)}</span>
+                                                            <span>Факт: {selectedShift.closingCash != null ? formatKgs(selectedShift.closingCash) : '—'}</span>
+                                                            <span>Передано: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
+                                                        </div>
+                                                        <p className="mt-2 text-xs text-white/70">
+                                                            Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-sm text-white/60">Нет смен, подходящих под фильтр.</p>
+                                                )}
+                                                {filteredProfileShifts.length > 1 && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center justify-between text-xs uppercase tracking-widest text-white/40">
+                                                            <span>Список смен</span>
+                                                            <span className="text-white/60">{filteredProfileShifts.length}</span>
+                                                        </div>
+                                                        <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
+                                                            {filteredProfileShifts.map((shift) => (
+                                                                <button
+                                                                    key={shift.id}
+                                                                    type="button"
+                                                                    onClick={() => setSelectedShiftId(shift.id)}
+                                                                    className={`w-full rounded-2xl border p-3 text-left text-sm transition ${selectedShiftId === shift.id
+                                                                        ? 'border-amber-300/80 bg-amber-400/10 text-amber-50'
+                                                                        : 'border-white/10 text-white/70 hover:border-white/30'
+                                                                        }`}
+                                                                >
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="font-semibold">№{shift.number}</span>
+                                                                        <span className="text-xs uppercase tracking-widest">
+                                                                            {shift.status === 'OPEN' ? 'Активная' : 'Архив'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-xs text-white/60">{formatDateTime(shift.openedAt, hotelTz)}</p>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    </Card>
-                </div>
-            )}
+                    )}
 
+                    {checkInModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
+                            <div className="w-full max-w-sm rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-base font-semibold">Заселение № {checkInModal.label}</h3>
+                                    <Button type="button" variant="ghost" size="sm" disabled={isSubmittingCheckIn} onClick={handleCloseModal}>
+                                        ×
+                                    </Button>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <div>
+                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-guest">Имя гостя</label>
+                                        <Input
+                                            id="modal-guest"
+                                            type="text"
+                                            autoFocus
+                                            placeholder="Имя гостя"
+                                            value={checkInModal.guestName}
+                                            onChange={(event) =>
+                                                setCheckInModal((prev) => (prev ? { ...prev, guestName: event.target.value } : prev))
+                                            }
+                                            className="text-white"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
+                                            <Input
+                                                id="modal-checkin"
+                                                type="datetime-local"
+                                                value={checkInModal.checkIn}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
+                                                }
+                                                className="text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
+                                            <Input
+                                                id="modal-checkout"
+                                                type="datetime-local"
+                                                value={checkInModal.checkOut}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
+                                                }
+                                                className="text-white"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">Наличные</label>
+                                            <Input
+                                                id="modal-cash"
+                                                type="number"
+                                                step="0.01"
+                                                inputMode="decimal"
+                                                value={checkInModal.cashAmount}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) =>
+                                                        prev ? { ...prev, cashAmount: event.target.value } : prev
+                                                    )
+                                                }
+                                                placeholder="0"
+                                                className="text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">Безнал</label>
+                                            <Input
+                                                id="modal-card"
+                                                type="number"
+                                                step="0.01"
+                                                inputMode="decimal"
+                                                value={checkInModal.cardAmount}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) =>
+                                                        prev ? { ...prev, cardAmount: event.target.value } : prev
+                                                    )
+                                                }
+                                                placeholder="0"
+                                                className="text-white"
+                                            />
+                                        </div>
+                                    </div>
+                                    {checkInError && <p className="text-xs text-rose-300">{checkInError}</p>}
+                                    <Button
+                                        type="button"
+                                        className="w-full py-3 mt-1"
+                                        disabled={isSubmittingCheckIn}
+                                        onClick={handleConfirmCheckIn}
+                                    >
+                                        {isSubmittingCheckIn ? 'Сохраняем...' : 'Заселить'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                    }
+
+                    {/* Checkout confirmation modal */}
+                    {checkoutConfirm && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
+                                <p className="text-base font-semibold">Выселить гостя?</p>
+                                <p className="text-sm text-white/50">
+                                    № {checkoutConfirm.roomLabel} · {checkoutConfirm.guestName}
+                                </p>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="secondary" className="flex-1" onClick={() => setCheckoutConfirm(null)}>
+                                        Отмена
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="danger"
+                                        className="flex-1"
+                                        onClick={() => { const id = checkoutConfirm.roomId; setCheckoutConfirm(null); handleCheckout(id); }}
+                                    >
+                                        Выселить
+                                    </Button>
+                                </div>
+                            </Card>
+                        </div>
+                    )}
+
+                </div>
+            </div>
+        </div >
         </>
     );
 };
