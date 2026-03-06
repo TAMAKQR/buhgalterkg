@@ -7,7 +7,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
         ref={ref}
         className={cn(
-            'h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3.5 text-sm text-light-text dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/35 transition-colors focus:bg-slate-200 dark:focus:bg-white/[0.1] focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent',
+            'h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/35 shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06]',
             className
         )}
         {...props}
@@ -20,7 +20,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
         ref={ref}
         rows={rows}
         className={cn(
-            'w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3.5 py-2.5 text-sm text-light-text dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/35 transition-colors focus:bg-slate-200 dark:focus:bg-white/[0.1] focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 resize-none border border-slate-200 dark:border-transparent',
+            'w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 py-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/35 shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] resize-none',
             className
         )}
         {...props}

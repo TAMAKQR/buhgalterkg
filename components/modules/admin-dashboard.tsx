@@ -10,7 +10,7 @@ import { formatDateTime as fdt, formatMoney } from "@/lib/timezone";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input, TextArea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -119,6 +119,46 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 
+const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
+
+function SectionCard({ title, subtitle, actions, className, children }: { title: string; subtitle?: string; actions?: React.ReactNode; className?: string; children: React.ReactNode }) {
+    return (
+        <Card className={`p-4 sm:p-5 ${className ?? ""}`}>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">{subtitle}</p> : null}
+                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">{title}</h2>
+                </div>
+                {actions}
+            </div>
+            {children}
+        </Card>
+    );
+}
+
+function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-white/35" htmlFor={htmlFor}>
+                    {label}
+                </label>
+                {hint ? <span className="text-[11px] text-slate-400 dark:text-white/28">{hint}</span> : null}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function StatPill({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/28">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
+        </div>
+    );
+}
+
 function HotelsSkeleton() {
     return (
         <>
@@ -157,19 +197,19 @@ function SummaryCard({ label, value, valueColor, detail }: {
 }) {
     const [open, setOpen] = useState(false);
     return (
-        <Card className="overflow-hidden p-3 text-light-text dark:text-white">
+        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
             <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">{label}</p>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">{label}</p>
                 <button
                     onClick={() => setOpen((v) => !v)}
-                    className="sm:hidden flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-500 text-[11px] font-bold leading-none dark:bg-white/[0.08] dark:text-white/40"
+                    className="sm:hidden flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 text-[11px] font-bold leading-none dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-white/40"
                     aria-label="Подробнее"
                 >
                     {open ? '✕' : 'ⓘ'}
                 </button>
             </div>
-            <p className={`mt-1 text-sm sm:text-lg font-semibold ${valueColor} truncate`}>{value}</p>
-            <p className={`text-[11px] text-slate-500 dark:text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
+            <p className={`mt-2 text-base sm:text-xl font-semibold ${valueColor} truncate`}>{value}</p>
+            <p className={`mt-1 text-[12px] text-slate-500 dark:text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
         </Card>
     );
 }
@@ -196,14 +236,14 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
     const chartStyle: CSSProperties = { backgroundImage: `conic-gradient(${stops.join(", ")})` };
 
     return (
-        <Card className={`p-3 ${colSpan ?? "col-span-2 lg:col-span-4"}`}>
+        <Card className={`p-4 ${colSpan ?? "col-span-2 lg:col-span-4"}`}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                 <div
-                    className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full"
+                    className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full shadow-[0_20px_45px_-26px_rgba(15,23,42,0.35)]"
                     style={chartStyle}
                 >
-                    <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-slate-100 dark:bg-night text-center">
-                        <span className="text-[9px] uppercase tracking-widest text-slate-500 dark:text-white/35">{centerLabel}</span>
+                    <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full border border-slate-200/80 bg-white/95 dark:border-white/[0.06] dark:bg-night text-center">
+                        <span className="text-[9px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">{centerLabel}</span>
                         <span className={`text-sm font-semibold leading-tight ${centerColor}`}>{centerValue}</span>
                     </div>
                 </div>
@@ -322,11 +362,35 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
     const toX = (i: number) => PX + (data.length > 1 ? i * xStep : chartW / 2);
     const toY = (v: number) => PY + chartH - ((v - minVal) / range) * chartH;
 
-    const makePath = (key: 'cashIn' | 'cashOut') =>
-        data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(d[key]).toFixed(1)}`).join(' ');
+    const pointsIn = data.map((d, i) => ({ x: toX(i), y: toY(d.cashIn) }));
+    const pointsOut = data.map((d, i) => ({ x: toX(i), y: toY(d.cashOut) }));
 
-    const pathIn = makePath('cashIn');
-    const pathOut = makePath('cashOut');
+    const makeSmoothPath = (points: { x: number; y: number }[]) => {
+        if (!points.length) return '';
+        if (points.length === 1) return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+
+        const tension = 0.18;
+        let path = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+
+        for (let i = 0; i < points.length - 1; i += 1) {
+            const prev = points[i - 1] ?? points[i];
+            const current = points[i];
+            const next = points[i + 1];
+            const after = points[i + 2] ?? next;
+
+            const cp1x = current.x + (next.x - prev.x) * tension;
+            const cp1y = current.y + (next.y - prev.y) * tension;
+            const cp2x = next.x - (after.x - current.x) * tension;
+            const cp2y = next.y - (after.y - current.y) * tension;
+
+            path += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${next.x.toFixed(1)},${next.y.toFixed(1)}`;
+        }
+
+        return path;
+    };
+
+    const pathIn = makeSmoothPath(pointsIn);
+    const pathOut = makeSmoothPath(pointsOut);
 
     const gridLines = 4;
     const gridSteps = Array.from({ length: gridLines + 1 }, (_, i) => minVal + (range / gridLines) * i);
@@ -338,7 +402,7 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
         return abs.toFixed(0);
     };
 
-    const labelEvery = Math.max(1, Math.ceil(data.length / 7));
+    const labelEvery = Math.max(1, Math.ceil(data.length / 6));
 
     return (
         <Card className="col-span-2 lg:col-span-4 p-4">
@@ -347,33 +411,33 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
                 {/* grid */}
                 {gridSteps.map((v) => (
                     <g key={v}>
-                        <line x1={PX} y1={toY(v)} x2={W - PX} y2={toY(v)} stroke="var(--border-color)" />
-                        <text x={PX - 6} y={toY(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">{formatShort(v)}</text>
+                        <line x1={PX} y1={toY(v)} x2={W - PX} y2={toY(v)} stroke="var(--border-color)" strokeDasharray="2 5" opacity="0.7" />
+                        <text x={PX - 6} y={toY(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="8.5" opacity="0.9">{formatShort(v)}</text>
                     </g>
                 ))}
                 {/* area fills */}
                 <path
                     d={`${pathIn} L${toX(data.length - 1).toFixed(1)},${toY(0).toFixed(1)} L${toX(0).toFixed(1)},${toY(0).toFixed(1)} Z`}
-                    fill="rgba(52,211,153,0.10)"
+                    fill="rgba(52,211,153,0.08)"
                 />
                 <path
                     d={`${pathOut} L${toX(data.length - 1).toFixed(1)},${toY(0).toFixed(1)} L${toX(0).toFixed(1)},${toY(0).toFixed(1)} Z`}
-                    fill="rgba(248,113,113,0.08)"
+                    fill="rgba(248,113,113,0.05)"
                 />
                 {/* lines */}
-                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" />
-                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
+                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1.15" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1.05" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4 4" />
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
-                        <circle cx={toX(i)} cy={toY(d.cashIn)} r="2.5" fill="#34d399" />
-                        <circle cx={toX(i)} cy={toY(d.cashOut)} r="2.5" fill="#f87171" />
+                        <circle cx={toX(i)} cy={toY(d.cashIn)} r="1.9" fill="#34d399" stroke="rgba(15,23,42,0.35)" strokeWidth="0.45" />
+                        <circle cx={toX(i)} cy={toY(d.cashOut)} r="1.9" fill="#f87171" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />
                     </g>
                 ))}
                 {/* x labels */}
                 {data.map((d, i) =>
                     i % labelEvery === 0 ? (
-                        <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
+                        <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="8.5" opacity="0.9">
                             {d.date.slice(5)}
                         </text>
                     ) : null,
@@ -557,7 +621,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         }
     }, [data, selectedHotelId]);
 
-    const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = event.target;
         setEditForm((prev) => ({ ...prev, [name]: value }));
     }, []);
@@ -610,7 +674,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 notify("Ошибка создания", 'error');
             }
         },
-        [mutate],
+        [mutate, notify],
     );
 
     const handleUpdateHotel = useCallback(
@@ -664,7 +728,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 setIsUpdatingHotel(false);
             }
         },
-        [editForm, mutate, selectedHotelId],
+        [editForm, mutate, notify, selectedHotelId],
     );
 
     const handleDeleteHotel = useCallback(async () => {
@@ -696,7 +760,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         } finally {
             setIsDeletingHotel(false);
         }
-    }, [mutate, selectedHotelId]);
+    }, [mutate, notify, selectedHotelId]);
 
     const hotels = useMemo(() => data ?? [], [data]);
 
@@ -773,10 +837,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     return (
         <div className="min-h-screen bg-light-bg dark:bg-night">
             <div className="desktop-container">
-                <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
-                    <header className="flex items-center justify-between">
-                        <h1 className="text-lg font-semibold text-light-text dark:text-white lg:text-2xl">{user.displayName}</h1>
-                        <div className="flex items-center gap-2">
+                <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-4 sm:px-5 lg:gap-5 lg:px-8 lg:pt-6">
+                    <header className="flex flex-col gap-4 rounded-[28px] border border-slate-200/80 bg-white/88 p-4 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.35)] backdrop-blur-sm dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none lg:flex-row lg:items-center lg:justify-between lg:p-5">
+                        <div>
+                            <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400 dark:text-white/30">Администрирование</p>
+                            <h1 className="mt-1 text-xl font-semibold text-light-text dark:text-white lg:text-2xl">{user.displayName}</h1>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Чистая сводка по объектам, финансам и настройкам без перегруженных форм.</p>
+                        </div>
+                        <div className="flex items-center gap-2 self-start lg:self-auto">
                             <ThemeToggle />
                             <Button
                                 type="button"
@@ -788,77 +856,99 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </Button>
                         </div>
                     </header>
-                    <div className="sticky top-0 z-10 -mx-3 bg-light-bg/95 dark:bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-                        <div className="flex gap-1 rounded-xl bg-slate-200/60 dark:bg-white/[0.05] p-1 text-sm font-medium text-slate-600 dark:text-white/50">
-                            {adminTabs.map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    type="button"
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
-                                        ? "bg-white dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-sm"
-                                        : "hover:text-slate-800 dark:hover:text-white/70"
-                                        }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
+                    <div className="sticky top-0 z-10 -mx-3 px-3 py-1 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+                        <div className="rounded-[24px] border border-slate-200/80 bg-white/82 p-1.5 shadow-[0_14px_38px_-28px_rgba(15,23,42,0.3)] backdrop-blur-md dark:border-white/[0.06] dark:bg-night/82 dark:shadow-none">
+                            <div className="flex gap-1 rounded-[18px] bg-slate-100/80 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.04] dark:text-white/50">
+                                {adminTabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
+                                            ? "bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white"
+                                            : "hover:text-slate-800 dark:hover:text-white/70"
+                                            }`}
+                                    >
+                                        <span>{tab.label}</span>
+                                        {tab.hint ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/[0.06] dark:text-white/40">{tab.hint}</span> : null}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
                     {activeTab === "overview" && (
                         <>
-                            <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:grid-cols-4">
-                                <Input
-                                    type="date"
-                                    className="min-w-0"
-                                    value={filters.startDate}
-                                    onChange={(event) => handleFilterInput("startDate", event.target.value)}
-                                    placeholder="С даты"
-                                />
-                                <Input
-                                    type="date"
-                                    className="min-w-0"
-                                    value={filters.endDate}
-                                    min={filters.startDate || undefined}
-                                    onChange={(event) => handleFilterInput("endDate", event.target.value)}
-                                    placeholder="По дату"
-                                />
-                                <select
-                                    value={filters.hotelId}
-                                    onChange={(event) => handleHotelFilterChange(event.target.value)}
-                                    className="h-10 w-full min-w-0 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
-                                >
-                                    <option value="">Все объекты</option>
-                                    {hotels.map((hotel) => (
-                                        <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={filters.managerId}
-                                    onChange={(event) => handleFilterInput("managerId", event.target.value)}
-                                    disabled={!managerOptions.length}
-                                    className="h-10 w-full min-w-0 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
-                                >
-                                    <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
-                                    {managerOptions.map((manager) => (
-                                        <option key={manager.id} value={manager.id}>{manager.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {overview && (
-                                <div className="flex justify-end">
-                                    <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handleExportCSV}>
+                            <SectionCard
+                                title="Фильтры обзора"
+                                subtitle="Overview"
+                                actions={overview ? (
+                                    <Button type="button" size="sm" variant="secondary" className="w-full sm:w-auto" onClick={handleExportCSV}>
                                         Скачать CSV
                                     </Button>
+                                ) : undefined}
+                            >
+                                <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 xl:grid-cols-4">
+                                    <Field label="Период от" htmlFor="overview-start">
+                                        <Input
+                                            id="overview-start"
+                                            type="date"
+                                            className="min-w-0"
+                                            value={filters.startDate}
+                                            onChange={(event) => handleFilterInput("startDate", event.target.value)}
+                                            placeholder="С даты"
+                                        />
+                                    </Field>
+                                    <Field label="Период до" htmlFor="overview-end">
+                                        <Input
+                                            id="overview-end"
+                                            type="date"
+                                            className="min-w-0"
+                                            value={filters.endDate}
+                                            min={filters.startDate || undefined}
+                                            onChange={(event) => handleFilterInput("endDate", event.target.value)}
+                                            placeholder="По дату"
+                                        />
+                                    </Field>
+                                    <Field label="Объект" htmlFor="overview-hotel">
+                                        <select
+                                            id="overview-hotel"
+                                            value={filters.hotelId}
+                                            onChange={(event) => handleHotelFilterChange(event.target.value)}
+                                            className={selectClassName}
+                                        >
+                                            <option value="">Все объекты</option>
+                                            {hotels.map((hotel) => (
+                                                <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                            ))}
+                                        </select>
+                                    </Field>
+                                    <Field label="Менеджер" htmlFor="overview-manager" hint={managerOptions.length ? `${managerOptions.length} доступно` : undefined}>
+                                        <select
+                                            id="overview-manager"
+                                            value={filters.managerId}
+                                            onChange={(event) => handleFilterInput("managerId", event.target.value)}
+                                            disabled={!managerOptions.length}
+                                            className={selectClassName}
+                                        >
+                                            <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
+                                            {managerOptions.map((manager) => (
+                                                <option key={manager.id} value={manager.id}>{manager.label}</option>
+                                            ))}
+                                        </select>
+                                    </Field>
                                 </div>
-                            )}
+                            </SectionCard>
                             <section className="grid grid-cols-1 gap-2 xs:grid-cols-2 lg:grid-cols-4">
                                 {overview ? (
                                     <>
-                                        <Card className="overflow-hidden p-3 text-light-text dark:text-white lg:p-4">
-                                            <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Баланс</p>
-                                            <p className="mt-1 text-sm sm:text-xl lg:text-2xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Баланс</p>
+                                            <p className="mt-2 text-lg sm:text-2xl lg:text-[1.75rem] font-semibold tracking-tight truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                            <div className="mt-4 grid grid-cols-2 gap-2">
+                                                <StatPill label="Загрузка" value={formatPercent(overview.occupancy.rate)} />
+                                                <StatPill label="Смены" value={String(overview.shifts.active)} />
+                                            </div>
                                         </Card>
                                         <SummaryCard
                                             label="Вход"
@@ -872,12 +962,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             valueColor="text-rose-400"
                                             detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
                                         />
-                                        <Card className="overflow-hidden p-3 text-light-text dark:text-white">
-                                            <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Загрузка</p>
-                                            <p className="mt-1 text-sm sm:text-lg font-semibold">
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Загрузка</p>
+                                            <p className="mt-2 text-base sm:text-lg font-semibold">
                                                 {formatPercent(overview.occupancy.rate)}
                                             </p>
-                                            <p className="text-[11px] text-slate-500 dark:text-white/40">
+                                            <p className="mt-1 text-[12px] text-slate-500 dark:text-white/40">
                                                 {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
                                             </p>
                                         </Card>
@@ -907,7 +997,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     )}
 
                     {activeTab === "hotels" && (
-                        <section className="space-y-2 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
+                        <section className="space-y-3 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
                             {isLoading && <HotelsSkeleton />}
                             {!isLoading && hotels.length === 0 && (
                                 <p className="px-1 text-sm text-slate-500 dark:text-white/40">Нет отелей</p>
@@ -920,16 +1010,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     return (
                                         <Card
                                             key={hotel.id}
-                                            className="p-4 lg:h-full lg:flex lg:flex-col"
+                                            className="p-4 lg:flex lg:h-full lg:flex-col lg:p-5"
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <h3 className="text-base font-semibold text-light-text dark:text-white truncate">{hotel.name}</h3>
-                                                    <p className="text-xs text-slate-500 dark:text-white/40">{hotel.address || "—"}</p>
+                                                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">{hotel.address || "—"}</p>
                                                 </div>
-                                                <div className="text-right shrink-0">
+                                                <div className="shrink-0 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                     <p className="text-lg font-semibold text-light-text dark:text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
-                                                    <p className="text-[11px] text-slate-500 dark:text-white/35">номеров</p>
+                                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-white/30">занято</p>
                                                 </div>
                                             </div>
                                             {hotel.activeShift && (
@@ -937,16 +1027,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     №{hotel.activeShift.number} · {hotel.activeShift.manager} · {formatDT(hotel.activeShift.openedAt, hotel.timezone ?? undefined)}
                                                 </p>
                                             )}
-                                            <div className="mt-3 flex items-center gap-4 text-xs text-slate-600 dark:text-white/50">
-                                                <span className="text-emerald-400">+{formatCurrency(inflow, hotel.currency ?? undefined)}</span>
-                                                <span className="text-rose-400">-{formatCurrency(outflow, hotel.currency ?? undefined)}</span>
+                                            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                                                <StatPill label="Доход" value={`+${formatCurrency(inflow, hotel.currency ?? undefined)}`} />
+                                                <StatPill label="Расход" value={`-${formatCurrency(outflow, hotel.currency ?? undefined)}`} />
                                             </div>
-                                            <div className="mt-3 flex items-center justify-between">
+                                            <div className="mt-4 flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5">
                                                     {hotel.managers.slice(0, 4).map((m) => (
                                                         <span
                                                             key={m.id}
-                                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200 dark:bg-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-white/70"
+                                                            className="flex h-8 w-8 items-center justify-center rounded-2xl border border-slate-200/80 bg-white text-[10px] font-semibold text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.08] dark:text-white/70"
                                                             title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
                                                         >
                                                             {m.displayName?.slice(0, 2).toUpperCase() || "??"}
@@ -971,13 +1061,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                     {activeTab === "manage" && (
                         <section className="grid gap-3 lg:grid-cols-2">
-                            <Card className="p-3">
-                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Новый отель</h2>
+                            <SectionCard title="Новый объект" subtitle="Create hotel">
                                 <form action={handleCreateHotel} className="space-y-3">
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="name">
-                                            Название
-                                        </label>
+                                    <Field label="Название" htmlFor="name">
                                         <Input
                                             id="name"
                                             name="name"
@@ -985,11 +1071,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             required
 
                                         />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="address">
-                                            Адрес
-                                        </label>
+                                    </Field>
+                                    <Field label="Адрес" htmlFor="address">
                                         <Input
                                             id="address"
                                             name="address"
@@ -997,22 +1080,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             required
 
                                         />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="notes">
-                                            Заметки
-                                        </label>
-                                        <Input
+                                    </Field>
+                                    <Field label="Заметки" htmlFor="notes" hint="необязательно">
+                                        <TextArea
                                             id="notes"
                                             name="notes"
                                             placeholder="Особенности"
-
+                                            rows={4}
                                         />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="cleaningChatId">
-                                            ID чата уборки
-                                        </label>
+                                    </Field>
+                                    <Field label="ID чата уборки" htmlFor="cleaningChatId" hint="Telegram">
                                         <Input
                                             id="cleaningChatId"
                                             name="cleaningChatId"
@@ -1020,49 +1097,42 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                         />
                                         <p className="text-xs text-slate-500 dark:text-white/50">Используется для уведомлений горничных в Telegram.</p>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="space-y-1">
-                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="country">Страна</label>
-                                            <select id="country" name="country" defaultValue="KG" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
+                                    </Field>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        <Field label="Страна" htmlFor="country">
+                                            <select id="country" name="country" defaultValue="KG" className={selectClassName}>
                                                 <option value="KG">🇰🇬 Кыргызстан</option>
                                                 <option value="KZ">🇰🇿 Казахстан</option>
                                             </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="timezone">Часовой пояс</label>
-                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
+                                        </Field>
+                                        <Field label="Часовой пояс" htmlFor="timezone">
+                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className={selectClassName}>
                                                 <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                 <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                             </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="currency">Валюта</label>
-                                            <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
+                                        </Field>
+                                        <Field label="Валюта" htmlFor="currency">
+                                            <select id="currency" name="currency" defaultValue="KGS" className={selectClassName}>
                                                 <option value="KGS">KGS (сом)</option>
                                                 <option value="KZT">KZT (тенге)</option>
                                             </select>
-                                        </div>
+                                        </Field>
                                     </div>
                                     <Button type="submit" className="w-full">
                                         Сохранить
                                     </Button>
                                 </form>
-                            </Card>
+                            </SectionCard>
 
-                            <Card className="p-3">
-                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Редактировать</h2>
+                            <SectionCard title="Редактировать объект" subtitle="Update hotel">
                                 {hotels.length === 0 ? (
                                     <p className="text-sm text-slate-500 dark:text-white/60">Пока нет отелей для изменения</p>
                                 ) : (
                                     <>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-hotel">
-                                                Выберите отель
-                                            </label>
+                                        <Field label="Выберите объект" htmlFor="edit-hotel">
                                             <select
                                                 id="edit-hotel"
-                                                className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
+                                                className={selectClassName}
                                                 value={selectedHotelId}
                                                 onChange={(event) => setSelectedHotelId(event.target.value)}
                                             >
@@ -1075,12 +1145,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     </option>
                                                 ))}
                                             </select>
-                                        </div>
+                                        </Field>
                                         <form className="mt-4 space-y-3" onSubmit={handleUpdateHotel}>
-                                            <div className="space-y-2">
-                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-name">
-                                                    Название
-                                                </label>
+                                            <Field label="Название" htmlFor="edit-name">
                                                 <Input
                                                     id="edit-name"
                                                     name="name"
@@ -1090,11 +1157,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     disabled={!selectedHotelId || isUpdatingHotel}
 
                                                 />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-address">
-                                                    Адрес
-                                                </label>
+                                            </Field>
+                                            <Field label="Адрес" htmlFor="edit-address">
                                                 <Input
                                                     id="edit-address"
                                                     name="address"
@@ -1104,25 +1168,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     disabled={!selectedHotelId || isUpdatingHotel}
 
                                                 />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-notes">
-                                                    Заметки
-                                                </label>
-                                                <Input
+                                            </Field>
+                                            <Field label="Заметки" htmlFor="edit-notes" hint="необязательно">
+                                                <TextArea
                                                     id="edit-notes"
                                                     name="notes"
                                                     value={editForm.notes}
                                                     onChange={handleEditFieldChange}
                                                     placeholder="Особенности"
                                                     disabled={!selectedHotelId || isUpdatingHotel}
-
+                                                    rows={4}
                                                 />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-cleaningChatId">
-                                                    ID чата уборки
-                                                </label>
+                                            </Field>
+                                            <Field label="ID чата уборки" htmlFor="edit-cleaningChatId" hint="Telegram">
                                                 <Input
                                                     id="edit-cleaningChatId"
                                                     name="cleaningChatId"
@@ -1135,64 +1193,63 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <p className="text-xs text-slate-500 dark:text-white/50">
                                                     Укажите Telegram-группу, куда отправлять задачи уборки.
                                                 </p>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="space-y-1">
-                                                    <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-timezone">Часовой пояс</label>
-                                                    <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20">
+                                            </Field>
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <Field label="Часовой пояс" htmlFor="edit-timezone">
+                                                    <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className={selectClassName}>
                                                         <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                         <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                                     </select>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-currency">Валюта</label>
-                                                    <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20">
+                                                </Field>
+                                                <Field label="Валюта" htmlFor="edit-currency">
+                                                    <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className={selectClassName}>
                                                         <option value="KGS">KGS (сом)</option>
                                                         <option value="KZT">KZT (тенге)</option>
                                                     </select>
-                                                </div>
+                                                </Field>
                                             </div>
-                                            <Button type="submit" className="w-full" disabled={!selectedHotelId || isUpdatingHotel}>
-                                                {isUpdatingHotel ? "Сохраняем..." : "Обновить отель"}
-                                            </Button>
+                                            <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+                                                <Button type="submit" className="w-full" disabled={!selectedHotelId || isUpdatingHotel}>
+                                                    {isUpdatingHotel ? "Сохраняем..." : "Обновить отель"}
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="danger"
+                                                    disabled={!selectedHotelId || isDeletingHotel}
+                                                    onClick={() => setConfirmDelete(true)}
+                                                    className="w-full sm:w-auto"
+                                                >
+                                                    {isDeletingHotel ? "Удаляем..." : "Удалить"}
+                                                </Button>
+                                            </div>
                                         </form>
-                                        <Button
-                                            type="button"
-                                            variant="danger"
-                                            disabled={!selectedHotelId || isDeletingHotel}
-                                            onClick={() => setConfirmDelete(true)}
-                                            className="mt-2 w-full"
-                                        >
-                                            {isDeletingHotel ? "Удаляем..." : "Удалить отель"}
-                                        </Button>
                                     </>
                                 )}
-                            </Card>
+                            </SectionCard>
 
                             {/* Observer management */}
-                            <Card className="p-3 lg:col-span-2">
-                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Наблюдатели</h2>
+                            <SectionCard title="Наблюдатели" subtitle="Observer access" className="lg:col-span-2">
 
                                 {/* Existing observers list */}
                                 {observers && observers.length > 0 && (
-                                    <div className="mb-4 space-y-2">
+                                    <div className="mb-5 space-y-2">
                                         {observers.map((obs) => (
-                                            <div key={obs.id} className="flex items-center justify-between rounded-xl bg-slate-100 dark:bg-white/[0.04] px-3 py-2">
+                                            <div key={obs.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-medium text-light-text dark:text-white truncate">{obs.displayName}</p>
-                                                    <p className="text-xs text-slate-500 dark:text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
+                                                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button
                                                         type="button"
-                                                        className="text-xs text-amber-300 hover:text-amber-200 transition"
+                                                        className="rounded-xl px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-200 hover:text-slate-800 dark:text-white/60 dark:hover:bg-white/[0.06] dark:hover:text-white"
                                                         onClick={() => { setResetPasswordId(obs.id); setResetPasswordValue(''); }}
                                                     >
                                                         Пароль
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        className="text-xs text-rose-400 hover:text-rose-300 transition"
+                                                        className="rounded-xl px-2.5 py-1.5 text-xs text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/12"
                                                         disabled={deletingObserverId === obs.id}
                                                         onClick={() => handleDeleteObserver(obs.id)}
                                                     >
@@ -1206,9 +1263,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Reset password inline */}
                                 {resetPasswordId && (
-                                    <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 space-y-2">
+                                    <div className="mb-5 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <p className="text-xs text-slate-600 dark:text-white/60">Новый пароль (мин. 6 символов)</p>
-                                        <div className="flex gap-2">
+                                        <div className="flex flex-col gap-2 sm:flex-row">
                                             <Input
                                                 type="text"
                                                 placeholder="Новый пароль"
@@ -1237,45 +1294,53 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Create observer form */}
                                 <form className="space-y-3" onSubmit={handleCreateObserver}>
-                                    <p className="text-xs text-slate-500 dark:text-white/40">Новый наблюдатель</p>
-                                    <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
-                                        <Input
-                                            placeholder="Имя"
-                                            value={newObserver.displayName}
-                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, displayName: e.target.value }))}
-                                            required
-                                        />
-                                        <Input
-                                            placeholder="Логин (латиница)"
-                                            value={newObserver.loginName}
-                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, loginName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') }))}
-                                            required
-                                        />
-                                        <Input
-                                            placeholder="Пароль (мин. 6)"
-                                            type="password"
-                                            value={newObserver.password}
-                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, password: e.target.value }))}
-                                            required
-                                            minLength={6}
-                                        />
-                                        <select
-                                            value={newObserver.hotelId}
-                                            onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
-                                            className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
-                                            required
-                                        >
-                                            <option value="">Выберите объект</option>
-                                            {hotels.map((hotel) => (
-                                                <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                                            ))}
-                                        </select>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Новый доступ</p>
+                                    <div className="grid grid-cols-1 gap-3 xs:grid-cols-2">
+                                        <Field label="Имя">
+                                            <Input
+                                                placeholder="Имя"
+                                                value={newObserver.displayName}
+                                                onChange={(e) => setNewObserver((prev) => ({ ...prev, displayName: e.target.value }))}
+                                                required
+                                            />
+                                        </Field>
+                                        <Field label="Логин">
+                                            <Input
+                                                placeholder="Логин (латиница)"
+                                                value={newObserver.loginName}
+                                                onChange={(e) => setNewObserver((prev) => ({ ...prev, loginName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') }))}
+                                                required
+                                            />
+                                        </Field>
+                                        <Field label="Пароль" hint="мин. 6 символов">
+                                            <Input
+                                                placeholder="Пароль"
+                                                type="password"
+                                                value={newObserver.password}
+                                                onChange={(e) => setNewObserver((prev) => ({ ...prev, password: e.target.value }))}
+                                                required
+                                                minLength={6}
+                                            />
+                                        </Field>
+                                        <Field label="Объект">
+                                            <select
+                                                value={newObserver.hotelId}
+                                                onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
+                                                className={selectClassName}
+                                                required
+                                            >
+                                                <option value="">Выберите объект</option>
+                                                {hotels.map((hotel) => (
+                                                    <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                                ))}
+                                            </select>
+                                        </Field>
                                     </div>
-                                    <Button type="submit" className="w-full" disabled={creatingObserver}>
+                                    <Button type="submit" className="w-full sm:w-auto" disabled={creatingObserver}>
                                         {creatingObserver ? 'Создаём…' : 'Создать наблюдателя'}
                                     </Button>
                                 </form>
-                            </Card>
+                            </SectionCard>
                         </section>
                     )
                     }

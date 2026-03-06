@@ -37,8 +37,17 @@ body {
     font-family: var(--font-sans), 'Space Grotesk', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     background-color: var(--bg-secondary);
+    background-image:
+        radial-gradient(circle at top left, rgba(148, 163, 184, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(226, 232, 240, 0.28), transparent 24%);
     color: var(--text-primary);
     transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body {
+    background-image:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.06), transparent 24%),
+        radial-gradient(circle at top right, rgba(168, 85, 247, 0.05), transparent 20%);
 }
 
 /* Desktop layout - на всю ширину */

@@ -4,7 +4,7 @@
 
  - [x] Scaffold the Project (Manual Next.js 14/Tailwind skeleton added because create-next-app disallowed the capitalized folder name.)
 
- - [x] Customize the Project (Added Prisma schema, Telegram auth flow, admin & manager UI, and API routes.)
+ - [x] Customize the Project (Added Prisma schema, manual auth flow, admin & manager UI, and API routes.)
 
  - [x] Install Required Extensions (No additional VS Code extensions were necessary.)
 

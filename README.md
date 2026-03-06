@@ -5,7 +5,7 @@
 ## Features
 
 - Авторизация по логину/паролю (админ) и PIN-коду (менеджер).
-- Telegram-бот для уведомлений (необязательно).
+- Telegram-бот для уведомлений (необязательно, только уведомления и служебные команды).
 - Role-aware entry router that sends admins to a desktop dashboard and managers to a mobile-first interface.
 - Admin tooling to create hotels ("точки"), inspect occupancy, and observe current shift cash state.
 - Manager console with shift open/close workflow, room board, stay check-in/check-out actions, and quick expense capture.
@@ -32,11 +32,7 @@ Create `.env` by copying `.env.example` and updating the secrets:
 ```
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<db>
 TELEGRAM_BOT_TOKEN=123456:ABCDEF     # optional, for notifications
-NEXT_PUBLIC_DEV_TELEGRAM_ID=100000000  # optional for local dev
-NEXT_PUBLIC_DEV_ROLE=ADMIN             # optional for local dev
 ```
-
-> The dev override IDs should never be configured in production.
 
 ### Database
 
@@ -80,7 +76,6 @@ npm run build
 
 2. **Environment Variables**
    - Add `DATABASE_URL`, `TELEGRAM_BOT_TOKEN` (optional), and any other secrets in the Render dashboard.
-   - Remove the local-only `NEXT_PUBLIC_DEV_*` variables in production.
 
 3. **Prisma Migrations**
    - Run `npx prisma migrate deploy` during deployment (Render build command) to apply schema changes.

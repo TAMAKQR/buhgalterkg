@@ -1118,32 +1118,122 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         );
     }
 
+    const occupancyRate = data.roomCount ? Math.round((data.occupiedRooms / data.roomCount) * 100) : 0;
+    const managerCount = data.managers.length;
+    const activeShiftLabel = data.activeShift ? `Смена №${data.activeShift.number}` : 'Нет активной смены';
+    const summaryCards = [
+        {
+            label: 'Загрузка',
+            value: `${data.occupiedRooms}/${data.roomCount}`,
+            caption: `${occupancyRate}% занято сейчас`
+        },
+        {
+            label: 'Касса',
+            value: formatCurrency(data.financials.netCash),
+            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано`
+        },
+        {
+            label: 'Команда',
+            value: String(managerCount),
+            caption: managerCount === 1 ? '1 менеджер подключен' : `${managerCount} менеджеров подключено`
+        },
+        {
+            label: 'Текущий статус',
+            value: activeShiftLabel,
+            caption: data.activeShift ? `Открыта ${formatDateTime(data.activeShift.openedAt, hotelTz)}` : 'Можно открыть новую смену'
+        }
+    ];
+    const shiftQuickStats = selectedShift && selectedShiftCash
+        ? [
+            {
+                label: 'Касса сейчас',
+                value: formatCurrency(selectedShiftCash.currentCash),
+                valueClass: 'text-emerald-300'
+            },
+            {
+                label: 'На старте',
+                value: formatCurrency(selectedShiftCash.openingCash),
+                valueClass: 'text-amber-200'
+            },
+            {
+                label: 'Поступления',
+                value: formatCurrency(selectedShiftCash.cashIn),
+                valueClass: 'text-emerald-300'
+            },
+            {
+                label: 'Списания',
+                value: formatCurrency(selectedShiftCash.cashOut),
+                valueClass: 'text-rose-300'
+            }
+        ]
+        : [];
+    const shiftNoteItems = selectedShift
+        ? [
+            selectedShift.openingNote ? `Старт: ${selectedShift.openingNote}` : null,
+            selectedShift.handoverNote ? `Передача: ${selectedShift.handoverNote}` : null,
+            selectedShift.closingNote ? `Закрытие: ${selectedShift.closingNote}` : null
+        ].filter((item): item is string => Boolean(item))
+        : [];
+    const formLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/40';
+    const formPanelClass = 'mt-5 rounded-[26px] border p-4 sm:p-5';
+    const modalLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/35';
+
     return (
         <>
-            <div className="flex min-h-screen flex-col gap-4 sm:gap-6 px-3 pb-24 pt-4 sm:px-6 sm:pt-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                        <h1 className="text-3xl font-semibold text-white">{data.name}</h1>
-                        <p className="text-white/60">{data.address}</p>
-                    </div>
-                    <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setIsManagementPanelOpen(true)}
-                        >
-                            Панель
-                        </Button>
-                        <Link href="/">
-                            <Button variant="ghost" size="sm">Назад</Button>
-                        </Link>
-                    </div>
-                </div>
+            <div className="flex min-h-screen flex-col gap-4 px-3 pb-24 pt-4 sm:gap-6 sm:px-6 sm:pt-6">
+                <Card className="overflow-hidden border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.14),_rgba(255,255,255,0.05)_42%,_rgba(7,10,18,0.88)_100%)] p-0 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_rgba(255,255,255,0.04)_42%,_rgba(7,10,18,0.92)_100%)]">
+                    <div className="flex flex-col gap-6 px-4 py-5 sm:px-6 sm:py-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0 space-y-3">
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/45">
+                                    <span>Объект</span>
+                                    {data.timezone && <span>{data.timezone}</span>}
+                                    {hotelCur && <span>{hotelCur}</span>}
+                                </div>
+                                <div className="space-y-2">
+                                    <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">{data.name}</h1>
+                                    <p className="max-w-2xl text-sm text-white/65 sm:text-base">{data.address}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2 text-xs text-white/70">
+                                    <Badge label={activeShiftLabel} tone={data.activeShift ? 'warning' : 'default'} />
+                                    <Badge label={`${data.roomCount} номеров`} />
+                                    <Badge label={`${managerCount} менеджеров`} />
+                                </div>
+                            </div>
+                            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setIsManagementPanelOpen(true)}
+                                >
+                                    Панель управления
+                                </Button>
+                                <Link href="/">
+                                    <Button variant="ghost" size="sm">Назад</Button>
+                                </Link>
+                            </div>
+                        </div>
 
-                <Card>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            {summaryCards.map((item) => (
+                                <div
+                                    key={item.label}
+                                    className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-4 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.9)] backdrop-blur"
+                                >
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">{item.label}</p>
+                                    <p className="mt-3 text-xl font-semibold tracking-tight text-white">{item.value}</p>
+                                    <p className="mt-1 text-sm text-white/55">{item.caption}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="space-y-4">
                     <CardHeader
                         title="Смены"
+                        subtitle="Операционный контур"
                         actions={
                             data.shiftHistory.length ? (
                                 <div className="flex flex-wrap gap-2">
@@ -1170,9 +1260,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     />
                     {shiftList.length ? (
                         <div className="space-y-4">
-                            <div>
+                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <p className="mb-2 text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Выбор смены</p>
                                 <Select
-                                    className="bg-ink text-white"
                                     value={selectedShiftId ?? activeShiftId ?? shiftList[0]?.id ?? ''}
                                     onChange={(event) => setSelectedShiftId(event.target.value)}
                                 >
@@ -1186,62 +1276,73 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             <div className="rounded-xl bg-white/[0.04] p-4">
                                 {selectedShift ? (
                                     <>
-                                        <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
-                                            <Badge label={`Смена №${selectedShift.number}`} />
-                                            <Badge
-                                                label={selectedShift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'}
-                                                tone={selectedShift.status === 'CLOSED' ? 'success' : 'warning'}
-                                            />
-                                            {selectedShift.isCurrent && <Badge label="Текущая" tone="warning" />}
-                                        </div>
-                                        <p className="mt-3 text-sm text-white/70">Менеджер {selectedShift.manager}</p>
-                                        {selectedShiftCash && (
-                                            <div className="mt-4 grid gap-3 text-sm text-white md:grid-cols-2">
-                                                <div className="rounded-xl bg-white/[0.04] p-3">
-                                                    <p className="mt-1 text-lg font-semibold text-emerald-300">Касса сейчас {formatCurrency(selectedShiftCash.currentCash)}</p>
-                                                    <p className="mt-1 text-lg font-semibold text-amber-200">Открытие {formatCurrency(selectedShiftCash.openingCash)}</p>
-                                                    {selectedShift.handoverCash != null && (
-                                                        <p className="text-xs text-white/60">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
-                                                    )}
+                                        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+                                            <div className="space-y-4">
+                                                <div className="flex flex-wrap items-start justify-between gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                    <div>
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+                                                            <Badge label={`Смена №${selectedShift.number}`} />
+                                                            <Badge
+                                                                label={selectedShift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'}
+                                                                tone={selectedShift.status === 'CLOSED' ? 'success' : 'warning'}
+                                                            />
+                                                            {selectedShift.isCurrent && <Badge label="Текущая" tone="warning" />}
+                                                        </div>
+                                                        <p className="mt-3 text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{selectedShift.manager}</p>
+                                                        <div className="mt-2 space-y-1 text-sm text-slate-500 dark:text-white/60">
+                                                            <p>Открыта {formatDateTime(selectedShift.openedAt, hotelTz)}</p>
+                                                            {selectedShift.closedAt && <p>Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}</p>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-right dark:border-white/[0.06] dark:bg-white/[0.04]">
+                                                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Статус кассы</p>
+                                                        <p className="mt-2 text-2xl font-semibold text-emerald-300">{selectedShiftCash ? formatCurrency(selectedShiftCash.currentCash) : '—'}</p>
+                                                        {selectedShift.handoverCash != null && (
+                                                            <p className="mt-1 text-xs text-slate-500 dark:text-white/50">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="rounded-xl bg-white/[0.04] p-3">
-                                                    <p className="text-xs uppercase tracking-widest text-white/40">Движение</p>
-                                                    <div className="mt-2 space-y-3">
+
+                                                {shiftQuickStats.length ? (
+                                                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                                        {shiftQuickStats.map((item) => (
+                                                            <div
+                                                                key={item.label}
+                                                                className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]"
+                                                            >
+                                                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">{item.label}</p>
+                                                                <p className={`mt-2 text-lg font-semibold ${item.valueClass}`}>{item.value}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+
+                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Движение средств</p>
+                                                    <div className="mt-3 space-y-3 text-sm text-slate-700 dark:text-white">
                                                         <div>
-                                                            <p className="flex items-center justify-between">
+                                                            <p className="flex items-center justify-between font-medium">
                                                                 <span>Поступления</span>
-                                                                <span className="text-emerald-300">{formatCurrency(selectedShiftCash.cashIn)}</span>
+                                                                <span className="text-emerald-300">{formatCurrency(selectedShiftCash?.cashIn ?? 0)}</span>
                                                             </p>
                                                             {selectedShiftIncomeBreakdown && (
-                                                                <div className="mt-2 rounded-2xl border border-white/5 bg-white/[0.04] p-2 text-[11px] text-white/60">
-                                                                    <div className="space-y-2">
+                                                                <div className="mt-2 rounded-2xl border border-slate-200/80 bg-white p-3 text-[11px] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/60">
+                                                                    <div className="space-y-3">
                                                                         <div>
-                                                                            <p className="flex items-center justify-between text-xs text-white/70">
+                                                                            <p className="flex items-center justify-between text-xs text-slate-600 dark:text-white/70">
                                                                                 <span>Заселения</span>
-                                                                                <span className="text-white">{formatCurrency(selectedShiftIncomeBreakdown.stays.total)}</span>
+                                                                                <span className="text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.stays.total)}</span>
                                                                             </p>
-                                                                            <p className="flex items-center justify-between">
-                                                                                <span>наличные</span>
-                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.stays.cash)}</span>
-                                                                            </p>
-                                                                            <p className="flex items-center justify-between">
-                                                                                <span>безналично</span>
-                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.stays.card)}</span>
-                                                                            </p>
+                                                                            <p className="mt-1 flex items-center justify-between"><span>наличные</span><span>{formatCurrency(selectedShiftIncomeBreakdown.stays.cash)}</span></p>
+                                                                            <p className="flex items-center justify-between"><span>безналично</span><span>{formatCurrency(selectedShiftIncomeBreakdown.stays.card)}</span></p>
                                                                         </div>
-                                                                        <div className=" pt-2">
-                                                                            <p className="flex items-center justify-between text-xs text-white/70">
+                                                                        <div className="border-t border-slate-200/80 pt-3 dark:border-white/[0.06]">
+                                                                            <p className="flex items-center justify-between text-xs text-slate-600 dark:text-white/70">
                                                                                 <span>Касса</span>
-                                                                                <span className="text-white">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.total)}</span>
+                                                                                <span className="text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.total)}</span>
                                                                             </p>
-                                                                            <p className="flex items-center justify-between">
-                                                                                <span>наличные</span>
-                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.cash)}</span>
-                                                                            </p>
-                                                                            <p className="flex items-center justify-between">
-                                                                                <span>безналично</span>
-                                                                                <span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</span>
-                                                                            </p>
+                                                                            <p className="mt-1 flex items-center justify-between"><span>наличные</span><span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.cash)}</span></p>
+                                                                            <p className="flex items-center justify-between"><span>безналично</span><span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</span></p>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -1249,20 +1350,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         <button
                                                             type="button"
-                                                            className={`flex w-full items-center justify-between text-left transition ${selectedShiftOutflows.length ? 'hover:text-white' : 'text-white/50'}`}
+                                                            className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition ${selectedShiftOutflows.length ? 'border-rose-200/80 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/15 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15' : 'border-slate-200/80 bg-white text-slate-400 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-white/40'}`}
                                                             onClick={() => selectedShiftOutflows.length && setIsOutflowModalOpen(true)}
                                                             disabled={!selectedShiftOutflows.length}
                                                         >
                                                             <span>Списания</span>
-                                                            <span className="text-rose-300">{formatCurrency(selectedShiftCash.cashOut)}</span>
+                                                            <span>{formatCurrency(selectedShiftCash?.cashOut ?? 0)}</span>
                                                         </button>
                                                         <p className="flex items-center justify-between">
                                                             <span>Выплаты</span>
-                                                            <span className="text-amber-200">{formatCurrency(selectedShiftCash.payouts)}</span>
+                                                            <span className="text-amber-200">{formatCurrency(selectedShiftCash?.payouts ?? 0)}</span>
                                                         </p>
                                                         <p className="flex items-center justify-between">
                                                             <span>Корректировки</span>
-                                                            <span>{formatCurrency(selectedShiftCash.adjustments)}</span>
+                                                            <span>{formatCurrency(selectedShiftCash?.adjustments ?? 0)}</span>
                                                         </p>
                                                         {selectedShift.bonus != null && selectedShift.bonus > 0 && (
                                                             <p className="flex items-center justify-between">
@@ -1273,35 +1374,43 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                 </div>
                                             </div>
-                                        )}
-                                        <div className="mt-4 grid gap-3 text-sm text-white/90 md:grid-cols-3">
-                                            <div>
-                                                <p className="text-xs uppercase tracking-widest text-white/40">На начало</p>
-                                                <p className="font-semibold">{formatShiftAmount(selectedShift.openingCash)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs uppercase tracking-widest text-white/40">Передано</p>
-                                                <p className="font-semibold">{formatShiftAmount(selectedShift.handoverCash)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs uppercase tracking-widest text-white/40">Касса факт</p>
-                                                <p className="font-semibold">{formatShiftAmount(selectedShift.closingCash)}</p>
+
+                                            <div className="space-y-4">
+                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Сводка смены</p>
+                                                    <div className="mt-3 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">На начало</p>
+                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.openingCash)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">Передано</p>
+                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.handoverCash)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">Касса факт</p>
+                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.closingCash)}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Комментарии</p>
+                                                    {shiftNoteItems.length ? (
+                                                        <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-white/65">
+                                                            {shiftNoteItems.map((note) => (
+                                                                <p key={note}>{note}</p>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="mt-3 text-sm text-slate-400 dark:text-white/35">По этой смене комментариев нет.</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="mt-4 space-y-1 text-xs text-white/60">
-                                            <p>Открыта {formatDateTime(selectedShift.openedAt, hotelTz)}</p>
-                                            {selectedShift.closedAt && <p>Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}</p>}
-                                        </div>
-                                        {(selectedShift.openingNote || selectedShift.handoverNote || selectedShift.closingNote) && (
-                                            <div className="mt-3 space-y-1 text-xs text-white/70">
-                                                {selectedShift.openingNote && <p>Комментарий (старт): {selectedShift.openingNote}</p>}
-                                                {selectedShift.handoverNote && <p>Комментарий (передача): {selectedShift.handoverNote}</p>}
-                                                {selectedShift.closingNote && <p>Комментарий (конец): {selectedShift.closingNote}</p>}
-                                            </div>
-                                        )}
-                                        <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
-                                            <p className="text-xs uppercase tracking-widest text-white/40">Номера</p>
-                                            <div className="mt-2 grid gap-2 text-sm text-white/80 sm:grid-cols-2">
+                                        <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Номера</p>
+                                            <div className="mt-3 grid gap-2 text-sm text-slate-700 dark:text-white/80 sm:grid-cols-2">
                                                 <div className="flex items-center justify-between">
                                                     <span>Свободно</span>
                                                     <span>{roomStatusBuckets.available.length}</span>
@@ -1319,28 +1428,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <span>{roomStatusBuckets.hold.length}</span>
                                                 </div>
                                             </div>
-                                            <div className="mt-3 grid gap-3 text-xs text-white/60 sm:grid-cols-2">
+                                            <div className="mt-4 grid gap-3 text-xs text-slate-500 dark:text-white/60 sm:grid-cols-2">
                                                 <div>
-                                                    <p className="font-semibold text-white/70">Свободные</p>
+                                                    <p className="font-semibold text-slate-700 dark:text-white/70">Свободные</p>
                                                     <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.available.length ? roomStatusBuckets.available.join(', ') : '—'}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="font-semibold text-white/70">Занятые</p>
+                                                    <p className="font-semibold text-slate-700 dark:text-white/70">Занятые</p>
                                                     <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.occupied.length ? roomStatusBuckets.occupied.join(', ') : '—'}</p>
                                                 </div>
                                             </div>
                                         </div>
                                         {selectedShiftTransactions.length ? (
-                                            <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
+                                            <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="mb-3 flex items-center justify-between">
                                                     <div>
-                                                        <h4 className="text-sm font-semibold text-white">Операции <span className="text-white/40">{selectedShiftTransactions.length}</span></h4>
+                                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Операции <span className="text-slate-400 dark:text-white/40">{selectedShiftTransactions.length}</span></h4>
                                                     </div>
                                                     <Button
                                                         type="button"
                                                         size="sm"
                                                         variant="ghost"
-                                                        className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                        className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                         onClick={() => setIsTransactionsExpanded((prev) => !prev)}
                                                     >
                                                         {isTransactionsExpanded ? 'Свернуть' : 'Развернуть'}
@@ -1351,25 +1460,25 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {selectedShiftTransactions.map((entry) => {
                                                             const note = entry.note?.trim() || null;
                                                             return (
-                                                                <div key={entry.id} className="rounded-xl bg-white/[0.04] p-3">
+                                                                <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                                                         <div>
-                                                                            <p className="text-xs uppercase tracking-widest text-white/40">{formatDateTime(entry.recordedAt, hotelTz)}</p>
-                                                                            <p className="text-sm text-white/70">{entry.managerName ?? 'Система'}</p>
+                                                                            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/40">{formatDateTime(entry.recordedAt, hotelTz)}</p>
+                                                                            <p className="text-sm text-slate-500 dark:text-white/70">{entry.managerName ?? 'Система'}</p>
                                                                         </div>
                                                                         <div className="text-right">
                                                                             <p className={`text-lg font-semibold ${ledgerAmountClass[entry.entryType]}`}>
                                                                                 {ledgerSignSymbol[entry.entryType]}
                                                                                 {formatCurrency(entry.amount)}
                                                                             </p>
-                                                                            <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
+                                                                            <p className="text-xs text-slate-400 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                                         </div>
                                                                     </div>
                                                                     <div className="mt-3 flex flex-wrap gap-2">
                                                                         <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
                                                                         <Badge label={ledgerMethodLabels[entry.method]} />
                                                                     </div>
-                                                                    <p className="mt-2 text-xs text-white/40">{note || ledgerEntryTypeLabels[entry.entryType]}</p>
+                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || ledgerEntryTypeLabels[entry.entryType]}</p>
                                                                 </div>
                                                             );
                                                         })}
@@ -1377,18 +1486,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 ) : null}
                                             </div>
                                         ) : (
-                                            <p className="mt-2 text-xs text-white/30">Нет операций</p>
+                                            <p className="mt-2 text-xs text-slate-400 dark:text-white/30">Нет операций</p>
                                         )}
                                         <div className="mt-6 space-y-6">
-                                            <div className="rounded-xl bg-white/[0.04] p-4">
+                                            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="flex items-center justify-between gap-3">
-                                                    <h3 className="text-sm font-semibold text-white">Номера <span className="text-white/40">{sortedRooms.length}</span></h3>
-                                                    <div className="flex items-center gap-3 text-xs text-white/50">
+                                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Номера <span className="text-slate-400 dark:text-white/40">{sortedRooms.length}</span></h3>
+                                                    <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-white/50">
                                                         <Button
                                                             type="button"
                                                             size="sm"
                                                             variant="ghost"
-                                                            className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                            className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                             onClick={() => setIsRoomHistoryExpanded((prev) => !prev)}
                                                         >
                                                             {isRoomHistoryExpanded ? 'Свернуть' : 'Открыть'}
@@ -1396,7 +1505,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                 </div>
                                                 {isRoomHistoryExpanded ? (
-                                                    <div className="mt-3 divide-y divide-white/[0.06]">
+                                                    <div className="mt-3 divide-y divide-slate-200/80 dark:divide-white/[0.06]">
                                                         {sortedRooms.length ? (
                                                             sortedRooms.map((room) => {
                                                                 const stayHistory = [...(room.stays ?? [])].sort(
@@ -1406,8 +1515,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 return (
                                                                     <div key={`shift-room-history-${room.id}`} className="py-3 first:pt-0 last:pb-0">
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-sm font-semibold text-white">№ {room.label}</span>
-                                                                            {room.floor && <span className="text-[11px] text-white/30">{room.floor}</span>}
+                                                                            <span className="text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</span>
+                                                                            {room.floor && <span className="text-[11px] text-slate-400 dark:text-white/30">{room.floor}</span>}
                                                                             <Badge
                                                                                 label={
                                                                                     room.status === 'OCCUPIED'
@@ -1432,7 +1541,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <span className="flex-1" />
                                                                             <button
                                                                                 type="button"
-                                                                                className="text-[11px] text-rose-300/60 hover:text-rose-300 transition"
+                                                                                className="text-[11px] text-rose-400/70 transition hover:text-rose-500 dark:text-rose-300/60 dark:hover:text-rose-300"
                                                                                 onClick={() => handleDeleteRoom(room.id)}
                                                                                 disabled={removingRoomId === room.id}
                                                                             >
@@ -1459,21 +1568,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     })();
 
                                                                                     return (
-                                                                                        <div key={stayEntry.id} className="rounded-lg bg-white/[0.04] px-2.5 py-2">
+                                                                                        <div key={stayEntry.id} className="rounded-xl border border-slate-200/80 bg-white px-2.5 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                                                             <div className="flex items-center justify-between gap-2">
-                                                                                                <span className="text-xs font-medium text-white">{guestLabel}</span>
+                                                                                                <span className="text-xs font-medium text-slate-900 dark:text-white">{guestLabel}</span>
                                                                                                 <div className="flex items-center gap-1.5">
                                                                                                     <Badge label={stayStatusLabels[stayEntry.status]} tone={stayStatusTone[stayEntry.status]} />
                                                                                                     <button
                                                                                                         type="button"
-                                                                                                        className="text-[11px] text-white/30 hover:text-white transition"
+                                                                                                        className="text-[11px] text-slate-400 transition hover:text-slate-700 dark:text-white/30 dark:hover:text-white"
                                                                                                         onClick={() => handleSelectStayForEdit(room, stayEntry)}
                                                                                                     >
                                                                                                         ✎
                                                                                                     </button>
                                                                                                 </div>
                                                                                             </div>
-                                                                                            <p className="mt-0.5 text-[11px] text-white/40">
+                                                                                            <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                                                                                                 {checkInLabel} — {checkOutLabel}
                                                                                                 {stayEntry.amountPaid != null && (
                                                                                                     <> · {formatCurrency(stayEntry.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}</>
@@ -1488,7 +1597,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 );
                                                             })
                                                         ) : (
-                                                            <p className="py-3 text-xs text-white/40">Номеров пока нет</p>
+                                                            <p className="py-3 text-xs text-slate-400 dark:text-white/40">Номеров пока нет</p>
                                                         )}
                                                     </div>
                                                 ) : null}
@@ -1516,13 +1625,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
 
                     {editingShift && (
-                        <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4">
-                            <p className="text-sm font-semibold text-white">Редактирование смены №{editingShift.number}</p>
-                            <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleUpdateShift}>
+                        <div className={`${formPanelClass} border-amber-200/70 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/8`}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-amber-700/70 dark:text-amber-200/60">Редактирование</p>
+                                    <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">Смена №{editingShift.number}</p>
+                                </div>
+                                <Badge label="Архивная настройка" tone="warning" />
+                            </div>
+                            <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={handleUpdateShift}>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Менеджер</label>
-                                    <select
-                                        className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <label className={formLabelClass}>Менеджер</label>
+                                    <Select
                                         {...shiftEditForm.register('managerId')}
                                     >
                                         <option value="" >
@@ -1533,12 +1647,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 {manager.displayName || manager.username || `PIN ${manager.pinCode}`} (PIN: {manager.pinCode})
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Статус смены</label>
-                                    <select
-                                        className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <label className={formLabelClass}>Статус смены</label>
+                                    <Select
                                         {...shiftEditForm.register('status')}
                                     >
                                         <option value="CLOSED" >
@@ -1547,18 +1660,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         <option value="OPEN" >
                                             Открыта
                                         </option>
-                                    </select>
+                                    </Select>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Время открытия</label>
+                                    <label className={formLabelClass}>Время открытия</label>
                                     <Input type="datetime-local" step="60" {...shiftEditForm.register('openedAt')} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Время закрытия</label>
+                                    <label className={formLabelClass}>Время закрытия</label>
                                     <Input type="datetime-local" step="60" {...shiftEditForm.register('closedAt')} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`На начало (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KGS'})`}</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -1573,21 +1686,30 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`Касса факт (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KGS'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('closingCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`Передано (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KGS'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('handoverCash', { valueAsNumber: true })} />
                                 </div>
-                                <TextArea rows={2} placeholder="Комментарий к открытию" {...shiftEditForm.register('openingNote')} />
-                                <TextArea rows={2} placeholder="Комментарий к закрытию" {...shiftEditForm.register('closingNote')} />
-                                <TextArea rows={2} placeholder="Комментарий к передаче" {...shiftEditForm.register('handoverNote')} />
-                                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row">
+                                <div className="space-y-1 md:col-span-2 lg:col-span-1">
+                                    <label className={formLabelClass}>Комментарий к открытию</label>
+                                    <TextArea rows={3} placeholder="Что важно зафиксировать при открытии" {...shiftEditForm.register('openingNote')} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className={formLabelClass}>Комментарий к закрытию</label>
+                                    <TextArea rows={3} placeholder="Итог или замечания по закрытию" {...shiftEditForm.register('closingNote')} />
+                                </div>
+                                <div className="space-y-1 md:col-span-2">
+                                    <label className={formLabelClass}>Комментарий к передаче</label>
+                                    <TextArea rows={3} placeholder="Что передано следующей смене" {...shiftEditForm.register('handoverNote')} />
+                                </div>
+                                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                                     <Button type="submit" className="flex-1">
                                         Сохранить изменения
                                     </Button>
-                                    <Button type="button" variant="ghost" className="flex-1 border border-white/20" onClick={handleResetShiftEditor}>
+                                    <Button type="button" variant="ghost" className="flex-1 border border-slate-200/80 dark:border-white/20" onClick={handleResetShiftEditor}>
                                         Отменить
                                     </Button>
                                 </div>
@@ -1596,7 +1718,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 <Button
                                     type="button"
                                     variant="danger"
-                                    className="mt-3 w-full"
+                                    className="mt-4 w-full"
                                     onClick={() => setConfirmDeleteShift(true)}
                                 >
                                     Удалить смену
@@ -1615,7 +1737,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <Button
                                         type="button"
                                         variant="ghost"
-                                        className="flex-1 border border-white/20"
+                                        className="flex-1 border border-slate-200/80 dark:border-white/20"
                                         onClick={() => setConfirmDeleteShift(false)}
                                     >
                                         Отмена
@@ -1626,13 +1748,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
 
                     {isCreatingShift && (
-                        <div className="mt-5 rounded-2xl border border-emerald-300/30 bg-emerald-500/5 p-4">
-                            <p className="text-sm font-semibold text-white">Создание новой смены задним числом</p>
-                            <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleCreateShift}>
+                        <div className={`${formPanelClass} border-emerald-200/70 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/8`}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-700/70 dark:text-emerald-300/60">Создание смены</p>
+                                    <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">Новая смена задним числом</p>
+                                </div>
+                                <Badge label="История" tone="success" />
+                            </div>
+                            <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={handleCreateShift}>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Менеджер *</label>
-                                    <select
-                                        className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <label className={formLabelClass}>Менеджер *</label>
+                                    <Select
                                         {...createShiftForm.register('managerId', { required: 'Выберите менеджера' })}
                                     >
                                         <option value="" >
@@ -1643,15 +1770,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 {manager.displayName || manager.username || `PIN ${manager.pinCode}`} (PIN: {manager.pinCode})
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                     {createShiftForm.formState.errors.managerId && (
                                         <p className="text-xs text-rose-300">{createShiftForm.formState.errors.managerId.message}</p>
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Статус смены</label>
-                                    <select
-                                        className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <label className={formLabelClass}>Статус смены</label>
+                                    <Select
                                         {...createShiftForm.register('status')}
                                     >
                                         <option value="CLOSED" >
@@ -1660,10 +1786,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         <option value="OPEN" >
                                             Открыта
                                         </option>
-                                    </select>
+                                    </Select>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Время открытия *</label>
+                                    <label className={formLabelClass}>Время открытия *</label>
                                     <Input
                                         type="datetime-local"
                                         step="60"
@@ -1674,11 +1800,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">Время закрытия</label>
+                                    <label className={formLabelClass}>Время закрытия</label>
                                     <Input type="datetime-local" step="60" {...createShiftForm.register('closedAt')} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`На начало (${hotelCur || 'KGS'}) *`}</label>
+                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KGS'}) *`}</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -1693,21 +1819,30 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`Касса факт (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KGS'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...createShiftForm.register('closingCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold uppercase text-white/60">{`Передано (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KGS'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...createShiftForm.register('handoverCash', { valueAsNumber: true })} />
                                 </div>
-                                <TextArea rows={2} placeholder="Комментарий к открытию" {...createShiftForm.register('openingNote')} />
-                                <TextArea rows={2} placeholder="Комментарий к закрытию" {...createShiftForm.register('closingNote')} />
-                                <TextArea rows={2} placeholder="Комментарий к передаче" {...createShiftForm.register('handoverNote')} />
-                                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row">
+                                <div className="space-y-1 md:col-span-2 lg:col-span-1">
+                                    <label className={formLabelClass}>Комментарий к открытию</label>
+                                    <TextArea rows={3} placeholder="Что важно зафиксировать при открытии" {...createShiftForm.register('openingNote')} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className={formLabelClass}>Комментарий к закрытию</label>
+                                    <TextArea rows={3} placeholder="Итог или замечания по закрытию" {...createShiftForm.register('closingNote')} />
+                                </div>
+                                <div className="space-y-1 md:col-span-2">
+                                    <label className={formLabelClass}>Комментарий к передаче</label>
+                                    <TextArea rows={3} placeholder="Что передано следующей смене" {...createShiftForm.register('handoverNote')} />
+                                </div>
+                                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                                     <Button type="submit" className="flex-1">
                                         Создать смену
                                     </Button>
-                                    <Button type="button" variant="ghost" className="flex-1 border border-white/20" onClick={() => {
+                                    <Button type="button" variant="ghost" className="flex-1 border border-slate-200/80 dark:border-white/20" onClick={() => {
                                         setIsCreatingShift(false);
                                         createShiftForm.reset();
                                     }}>
@@ -1722,15 +1857,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 {isStayEditorOpen && hasStaySelection && (
                     <div className="fixed inset-0 z-50 overflow-y-auto px-2 sm:px-6">
                         <div className="fixed inset-0 bg-black/70" onClick={handleCloseStayEditor} />
-                        <div className="relative z-10 mx-auto mt-4 sm:mt-12 w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 shadow-2xl">
-                            <div className="flex items-center justify-between gap-3">
-                                <h3 className="text-base font-semibold text-white">
-                                    № {stayEditForm.watch('roomLabel')}
-                                </h3>
+                        <div className="relative z-10 mx-auto mt-4 w-full max-w-3xl rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_32px_90px_-38px_rgba(15,23,42,0.65)] backdrop-blur sm:mt-12 sm:p-6 dark:border-white/[0.08] dark:bg-[#090d16]/95 dark:text-white">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/35">Редактирование проживания</p>
+                                    <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                                        № {stayEditForm.watch('roomLabel')}
+                                    </h3>
+                                </div>
                                 <Button
                                     type="button"
                                     size="sm"
                                     variant="ghost"
+                                    className="border border-slate-200/80 dark:border-white/10"
                                     onClick={handleCloseStayEditor}
                                 >
                                     ×
@@ -1739,28 +1878,27 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
                                 <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
                                 <div className="grid gap-3 md:grid-cols-2">
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Планируемый заезд</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Планируемый заезд</label>
                                         <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckIn')} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Планируемый выезд</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Планируемый выезд</label>
                                         <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckOut')} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Фактический заезд</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Фактический заезд</label>
                                         <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckIn')} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Фактический выезд</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Фактический выезд</label>
                                         <Input type="datetime-local" step="60" {...stayEditForm.register('actualCheckOut')} />
                                     </div>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Статус</label>
-                                        <select
-                                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Статус</label>
+                                        <Select
                                             {...stayEditForm.register('status')}
                                         >
                                             {stayStatusOptions.map((option) => (
@@ -1768,12 +1906,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     {option.label}
                                                 </option>
                                             ))}
-                                        </select>
+                                        </Select>
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">Способ оплаты</label>
-                                        <select
-                                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Способ оплаты</label>
+                                        <Select
                                             {...stayEditForm.register('paymentMethod')}
                                         >
                                             {stayPaymentOptions.map((option) => (
@@ -1781,12 +1918,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     {option.label}
                                                 </option>
                                             ))}
-                                        </select>
+                                        </Select>
                                     </div>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">{`Наличные (${hotelCur || 'KGS'})`}</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Наличные (${hotelCur || 'KGS'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -1794,8 +1931,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             {...stayEditForm.register('cashPaid', { valueAsNumber: true })}
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">{`Безнал (${hotelCur || 'KGS'})`}</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Безнал (${hotelCur || 'KGS'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -1803,8 +1940,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-xs uppercase tracking-widest text-white/40">{`Общая оплата (${hotelCur || 'KGS'})`}</label>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Общая оплата (${hotelCur || 'KGS'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -1813,18 +1950,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         />
                                     </div>
                                 </div>
-                                <p className="text-xs text-white/60">
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3 text-xs text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/60">
                                     По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {hotelCur || 'KGS'}
                                     {' • '}Поле «Общая оплата»: {roomPaymentPreview.totalField.toLocaleString('ru-RU', {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2
                                     })}{' '}
                                     {hotelCur || 'KGS'}
-                                </p>
-                                <TextArea rows={3} placeholder="Комментарий для администратора" {...stayEditForm.register('notes')} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className={modalLabelClass}>Комментарий для администратора</label>
+                                    <TextArea rows={3} placeholder="Важные детали по гостю или оплате" {...stayEditForm.register('notes')} />
+                                </div>
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <Button type="submit">Сохранить заселение</Button>
-                                    <Button type="button" variant="ghost" className="border border-white/20" onClick={handleCloseStayEditor}>
+                                    <Button type="button" variant="ghost" className="border border-slate-200/80 dark:border-white/20" onClick={handleCloseStayEditor}>
                                         Отменить
                                     </Button>
                                 </div>
@@ -1836,21 +1976,24 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 {isManagementPanelOpen && (
                     <div className="fixed inset-0 z-50">
                         <div className="absolute inset-0 bg-black/70" onClick={() => setIsManagementPanelOpen(false)} />
-                        <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-ink p-3 shadow-2xl sm:p-5 md:max-w-xl">
+                        <div className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur sm:p-5 dark:border-white/[0.08] dark:bg-[#090d16]/95 md:max-w-xl">
                             <div className="mb-4 flex items-center justify-between gap-3">
-                                <h3 className="text-base font-semibold text-white">Управление</h3>
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/35">Панель управления</p>
+                                    <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">Управление объектом</h3>
+                                </div>
                                 <Button
                                     type="button"
                                     size="sm"
                                     variant="ghost"
-                                    className="border border-white/20 text-white/80 hover:bg-white/[0.06]"
+                                    className="border border-slate-200/80 dark:border-white/20"
                                     onClick={() => setIsManagementPanelOpen(false)}
                                 >
                                     Закрыть
                                 </Button>
                             </div>
                             <div className="flex-1 space-y-5 overflow-y-auto pr-2">
-                                <Card className="border-white/20 bg-white/5">
+                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <CardHeader title="Менеджеры" />
                                     <div className="space-y-4">
                                         <div className="space-y-2">
@@ -1858,15 +2001,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 data.managers.map((manager) => (
                                                     <div
                                                         key={manager.assignmentId}
-                                                        className="flex flex-col gap-3 rounded-xl px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
+                                                        className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[0.06] dark:bg-white/[0.03]"
                                                     >
                                                         <div>
-                                                            <p className="text-sm font-medium text-white">{manager.displayName}</p>
-                                                            <p className="text-xs text-white/50">
+                                                            <p className="text-sm font-medium text-slate-900 dark:text-white">{manager.displayName}</p>
+                                                            <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 {manager.username ? `@${manager.username} • ` : ''}
                                                                 PIN {manager.pinCode ?? 'не задан'}
                                                             </p>
-                                                            <p className="text-xs text-white/50">
+                                                            <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
                                                                 Процент: {manager.revenueSharePct != null ? formatPercentage(manager.revenueSharePct) : '—'}
                                                             </p>
@@ -1877,7 +2020,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 type="button"
                                                                 size="sm"
                                                                 variant="ghost"
-                                                                className="border border-white/10 text-xs text-white/80 hover:bg-white/[0.06]"
+                                                                className="border border-slate-200/80 text-xs text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                                 onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
                                                             >
                                                                 Редактировать
@@ -1896,20 +2039,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                 ))
                                             ) : (
-                                                <p className="text-sm text-white/60">Назначений пока нет</p>
+                                                <p className="text-sm text-slate-500 dark:text-white/60">Назначений пока нет</p>
                                             )}
                                         </div>
-                                        <div className="rounded-xl bg-white/[0.04] p-3">
+                                        <div className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div>
-                                                    <p className="text-sm font-semibold text-white">Добавление менеджера</p>
-                                                    <p className="text-xs text-white/60">Имя, PIN и @username</p>
+                                                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Добавление менеджера</p>
+                                                    <p className="text-xs text-slate-500 dark:text-white/60">Имя, PIN и @username</p>
                                                 </div>
                                                 <Button
                                                     type="button"
                                                     size="sm"
                                                     variant="ghost"
-                                                    className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                    className="border border-slate-200/80 dark:border-white/15"
                                                     onClick={() => setIsAddManagerExpanded((prev) => !prev)}
                                                 >
                                                     {isAddManagerExpanded ? 'Свернуть' : 'Открыть'}
@@ -1960,17 +2103,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             ) : null}
                                         </div>
                                         {data.managers.length > 0 && (
-                                            <div className="rounded-xl bg-white/[0.04] p-3">
+                                            <div className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="mb-3 flex items-center justify-between gap-3">
                                                     <div>
-                                                        <p className="text-sm font-semibold text-white">Редактирование менеджера</p>
+                                                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Редактирование менеджера</p>
 
                                                     </div>
                                                     <Button
                                                         type="button"
                                                         size="sm"
                                                         variant="ghost"
-                                                        className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                        className="border border-slate-200/80 dark:border-white/15"
                                                         onClick={() => setIsUpdateManagerExpanded((prev) => !prev)}
                                                     >
                                                         {isUpdateManagerExpanded ? 'Свернуть' : 'Открыть'}
@@ -1978,8 +2121,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </div>
                                                 {isUpdateManagerExpanded ? (
                                                     <form className="space-y-3" onSubmit={handleUpdateManager}>
-                                                        <select
-                                                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                                        <Select
                                                             defaultValue=""
                                                             {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
                                                         >
@@ -1991,7 +2133,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     {manager.displayName}
                                                                 </option>
                                                             ))}
-                                                        </select>
+                                                        </Select>
                                                         {updateManagerForm.formState.errors.assignmentId && (
                                                             <p className="text-xs text-rose-300">
                                                                 {updateManagerForm.formState.errors.assignmentId.message}
@@ -2056,7 +2198,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </div>
                                 </Card>
 
-                                <Card>
+                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <CardHeader
                                         title="Бонусы за кассу"
                                         actions={
@@ -2064,7 +2206,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 type="button"
                                                 size="sm"
                                                 variant="ghost"
-                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                className="border border-slate-200/80 dark:border-white/15"
                                                 onClick={() => setIsBonusTiersExpanded((prev) => !prev)}
                                             >
                                                 {isBonusTiersExpanded ? 'Свернуть' : 'Открыть'}
@@ -2076,8 +2218,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             {(data?.bonusTiers ?? []).length > 0 && (
                                                 <div className="divide-y divide-white/[0.06]">
                                                     {data!.bonusTiers!.map((tier) => (
-                                                        <div key={tier.id} className="flex items-center gap-3 py-2 px-1">
-                                                            <span className="text-sm text-white">
+                                                        <div key={tier.id} className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                            <span className="text-sm text-slate-900 dark:text-white">
                                                                 {formatCurrency(tier.threshold)} →{' '}
                                                                 <span className="text-emerald-300 font-medium">
                                                                     {tier.bonusPct != null && tier.bonusPct > 0
@@ -2130,7 +2272,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <label className="flex items-center gap-1.5 text-xs text-white/60 cursor-pointer">
+                                                    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 dark:text-white/60">
                                                         <input
                                                             type="checkbox"
                                                             checked={newTier.usePercent}
@@ -2150,7 +2292,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {savingTier ? 'Добавляем…' : 'Добавить порог'}
                                                     </Button>
                                                 </div>
-                                                <p className="text-[11px] text-white/30">
+                                                <p className="text-[11px] text-slate-400 dark:text-white/30">
                                                     При достижении порога кассы за смену менеджер получает бонус. Применяется наивысший достигнутый порог.
                                                 </p>
                                             </div>
@@ -2158,7 +2300,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </Card>
 
-                                <Card>
+                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <CardHeader
                                         title="Номера"
                                         actions={
@@ -2166,7 +2308,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 type="button"
                                                 size="sm"
                                                 variant="ghost"
-                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                className="border border-slate-200/80 dark:border-white/15"
                                                 onClick={() => setIsMassAddRoomsExpanded((prev) => !prev)}
                                             >
                                                 {isMassAddRoomsExpanded ? 'Свернуть' : 'Открыть'}
@@ -2190,16 +2332,16 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <Button type="submit" className="w-full">
                                                 Добавить номера
                                             </Button>
-                                            <p className="text-xs text-white/50">
+                                            <p className="text-xs text-slate-500 dark:text-white/50">
                                                 Поддерживается множественный ввод: один номер в строке или разделённые запятыми.
                                             </p>
                                         </form>
                                     ) : (
-                                        <p className="px-2 pb-4 text-xs text-white/60">Форма массового добавления скрыта.</p>
+                                        <p className="px-2 pb-4 text-xs text-slate-500 dark:text-white/60">Форма массового добавления скрыта.</p>
                                     )}
                                 </Card>
 
-                                <Card>
+                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <CardHeader
                                         title={`Список номеров (${sortedRooms.length})`}
                                         actions={
@@ -2207,7 +2349,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 type="button"
                                                 size="sm"
                                                 variant="ghost"
-                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                className="border border-slate-200/80 dark:border-white/15"
                                                 onClick={() => setIsRoomListExpanded((prev) => !prev)}
                                             >
                                                 {isRoomListExpanded ? 'Свернуть' : 'Показать'}
@@ -2215,14 +2357,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         }
                                     />
                                     {isRoomListExpanded && (
-                                        <div className="divide-y divide-white/[0.06]">
+                                        <div className="divide-y divide-slate-200/80 dark:divide-white/[0.06]">
                                             {sortedRooms.length === 0 && (
-                                                <p className="py-3 px-2 text-xs text-white/40">Номеров пока нет</p>
+                                                <p className="py-3 px-2 text-xs text-slate-400 dark:text-white/40">Номеров пока нет</p>
                                             )}
                                             {sortedRooms.map((room) => (
                                                 <div key={room.id} className="py-2.5 px-1">
                                                     {editingRoomId === room.id ? (
-                                                        <div className="space-y-2">
+                                                        <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                                                 <Input
                                                                     placeholder="Номер"
@@ -2242,7 +2384,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 />
                                                             </div>
                                                             <div className="flex items-center gap-3">
-                                                                <label className="flex items-center gap-1.5 text-xs text-white/60 cursor-pointer">
+                                                                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 dark:text-white/60">
                                                                     <input
                                                                         type="checkbox"
                                                                         checked={editRoomData.isActive}
@@ -2256,7 +2398,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     type="button"
                                                                     size="sm"
                                                                     variant="ghost"
-                                                                    className="text-white/50 hover:text-white"
+                                                                    className="text-slate-400 hover:text-slate-700 dark:text-white/50 dark:hover:text-white"
                                                                     onClick={() => setEditingRoomId(null)}
                                                                 >
                                                                     Отмена
@@ -2273,10 +2415,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-sm font-medium text-white">№ {room.label}</span>
-                                                            {room.floor && <span className="text-[11px] text-white/30">{room.floor}</span>}
-                                                            {room.notes && <span className="text-[11px] text-white/25 truncate max-w-[120px]" title={room.notes}>{room.notes}</span>}
+                                                        <div className="flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                            <span className="text-sm font-medium text-slate-900 dark:text-white">№ {room.label}</span>
+                                                            {room.floor && <span className="text-[11px] text-slate-400 dark:text-white/30">{room.floor}</span>}
+                                                            {room.notes && <span className="max-w-[120px] truncate text-[11px] text-slate-400 dark:text-white/25" title={room.notes}>{room.notes}</span>}
                                                             <Badge
                                                                 label={
                                                                     room.status === 'OCCUPIED' ? 'Занят'
@@ -2295,14 +2437,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <span className="flex-1" />
                                                             <button
                                                                 type="button"
-                                                                className="text-[11px] text-white/30 hover:text-white transition"
+                                                                className="text-[11px] text-slate-400 transition hover:text-slate-700 dark:text-white/30 dark:hover:text-white"
                                                                 onClick={() => handleStartEditRoom(room)}
                                                             >
                                                                 ✎
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="text-[11px] text-rose-300/60 hover:text-rose-300 transition"
+                                                                className="text-[11px] text-rose-400/70 transition hover:text-rose-500 dark:text-rose-300/60 dark:hover:text-rose-300"
                                                                 onClick={() => handleDeleteRoom(room.id)}
                                                                 disabled={removingRoomId === room.id}
                                                             >
@@ -2322,14 +2464,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 )}
                 {isOutflowModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center px-2 py-4 sm:px-6 sm:py-6">
-                        <div className="absolute inset-0 bg-ink" onClick={closeOutflowModal} />
-                        <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
+                        <div className="absolute inset-0 bg-black/70" onClick={closeOutflowModal} />
+                        <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_32px_90px_-38px_rgba(15,23,42,0.65)] backdrop-blur sm:p-5 dark:border-white/[0.08] dark:bg-[#090d16]/95 dark:text-white">
                             <div className="mb-3 flex items-center justify-between gap-3">
                                 <div>
-                                    <h3 className="text-base font-semibold text-white">Списания №{selectedShift?.number ?? '—'}</h3>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Детализация расходов</p>
+                                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">Списания №{selectedShift?.number ?? '—'}</h3>
                                     <p className="text-sm font-semibold text-rose-300">{formatCurrency(selectedShiftCash?.cashOut ?? 0)}</p>
                                 </div>
-                                <Button type="button" variant="ghost" size="sm" onClick={closeOutflowModal}>
+                                <Button type="button" variant="ghost" size="sm" className="border border-slate-200/80 dark:border-white/10" onClick={closeOutflowModal}>
                                     ×
                                 </Button>
                             </div>
@@ -2338,19 +2481,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     selectedShiftOutflows.map((entry) => {
                                         const note = entry.note?.trim() || null;
                                         return (
-                                            <div key={entry.id} className="rounded-xl bg-white/[0.04] p-4">
-                                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/60">
+                                            <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-white/60">
                                                     <span>{formatDateTime(entry.recordedAt, hotelTz)}</span>
                                                     <span>{entry.managerName ?? 'Система'}</span>
                                                 </div>
-                                                <p className="mt-2 text-lg font-semibold text-rose-200">-{formatCurrency(entry.amount)}</p>
-                                                <p className="text-xs text-white/50">{ledgerMethodLabels[entry.method]}</p>
-                                                <p className="mt-1 text-xs text-white/40">{note || 'Расход'}</p>
+                                                <p className="mt-2 text-lg font-semibold text-rose-300">-{formatCurrency(entry.amount)}</p>
+                                                <p className="text-xs text-slate-500 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
+                                                <p className="mt-1 text-xs text-slate-400 dark:text-white/40">{note || 'Расход'}</p>
                                             </div>
                                         );
                                     })
                                 ) : (
-                                    <p className="text-sm text-white/30">Нет записей</p>
+                                    <p className="text-sm text-slate-400 dark:text-white/30">Нет записей</p>
                                 )}
                             </div>
                         </div>

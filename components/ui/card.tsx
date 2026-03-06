@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import type { HTMLAttributes, ReactNode } from 'react';
 
 export const Card = ({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) => (
-    <div className={cn('sm:rounded-2xl bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-transparent p-3 sm:p-4 shadow-sm dark:shadow-none', className)} {...props}>
+    <div className={cn('sm:rounded-3xl bg-white/96 dark:bg-white/[0.04] border border-slate-200/80 dark:border-white/[0.06] p-3 sm:p-4 shadow-[0_14px_38px_-26px_rgba(15,23,42,0.28)] dark:shadow-none backdrop-blur-sm', className)} {...props}>
         {children}
     </div>
 );
