@@ -654,7 +654,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }
 
     return (
-        <>
+        <div>
             <ExitButton />
             <div className="min-h-screen bg-light-bg dark:bg-night">
                 <div className="desktop-container">
@@ -1267,7 +1267,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                 </div>
             </div>
-        </div >
-        </>
+        </div>
     );
 };
