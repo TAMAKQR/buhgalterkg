@@ -3,10 +3,29 @@
 @tailwind utilities;
 
 :root {
-    color-scheme: dark;
-    background-color: #0a0a0f;
-    --color-surface: rgba(255, 255, 255, 0.04);
-    --color-border: rgba(255, 255, 255, 0.08);
+    /* Light theme - мягкие цвета без контраста */
+    --bg-primary: #f8f9fa;
+    --bg-secondary: #ffffff;
+    --bg-surface: #f1f3f5;
+    --bg-hover: #e9ecef;
+    --text-primary: #2d3748;
+    --text-secondary: #4a5568;
+    --text-tertiary: #718096;
+    --border-color: #e2e8f0;
+    --shadow: rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+    /* Dark theme - мягкие цвета без резкого контраста */
+    --bg-primary: #1a1a24;
+    --bg-secondary: #0f0f18;
+    --bg-surface: #252532;
+    --bg-hover: #2d2d3d;
+    --text-primary: #e2e8f0;
+    --text-secondary: #cbd5e0;
+    --text-tertiary: #a0aec0;
+    --border-color: rgba(255, 255, 255, 0.08);
+    --shadow: rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -17,6 +36,9 @@ body {
     margin: 0;
     font-family: var(--font-sans), 'Space Grotesk', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Desktop layout */
@@ -42,20 +64,24 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border-color);
     border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
 }
 
 /* Remove input autofill bg */
 input:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 30px #0a0a0f inset !important;
-    -webkit-text-fill-color: #e2e8f0 !important;
+    -webkit-box-shadow: 0 0 0 30px var(--bg-secondary) inset !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
 }
 
-/* Select options dark */
+/* Select options */
 option {
-    background: #141420;
-    color: #e2e8f0;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 /* Toast slide-up */

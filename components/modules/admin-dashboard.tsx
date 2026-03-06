@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 type PaymentSplit = {
     cash: number;
@@ -770,24 +771,29 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             <div className="desktop-container">
                 <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
                     <header className="flex items-center justify-between">
-                        <h1 className="text-lg font-semibold text-white lg:text-2xl">{user.displayName}</h1>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={handleLogout}
-                        >
-                            Выйти
-                        </Button>
+                        <h1 className="text-lg font-semibold text-light-text dark:text-white lg:text-2xl">{user.displayName}</h1>
+                        <div className="flex items-center gap-2">
+                            <ThemeToggle />
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleLogout}
+                            >
+                                Выйти
+                            </Button>
+                        </div>
                     </header>
-                    <div className="sticky top-0 z-10 -mx-3 bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-                        <div className="flex gap-1 rounded-xl bg-white/[0.05] p-1 text-sm font-medium text-white/50">
+                    <div className="sticky top-0 z-10 -mx-3 bg-light-bg/95 dark:bg-night/95 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+                        <div className="flex gap-1 rounded-xl bg-slate-200/60 dark:bg-white/[0.05] p-1 text-sm font-medium text-slate-600 dark:text-white/50">
                             {adminTabs.map((tab) => (
                                 <button
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
-                                    className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id ? "bg-white/[0.12] text-white shadow-sm" : "hover:text-white/70"
+                                    className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
+                                            ? "bg-white dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-sm"
+                                            : "hover:text-slate-800 dark:hover:text-white/70"
                                         }`}
                                 >
                                     {tab.label}

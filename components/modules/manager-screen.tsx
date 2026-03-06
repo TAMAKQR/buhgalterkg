@@ -9,6 +9,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import type { SessionUser } from '@/lib/types';
 import { useCookieApi } from '@/hooks/useCookieApi';
 import { formatDateTime, formatInputValue, parseInputValue, formatMoney } from '@/lib/timezone';
@@ -655,27 +656,28 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     return (
         <>
             <ExitButton />
-            <div className="min-h-screen bg-night">
+            <div className="min-h-screen bg-light-bg dark:bg-night">
                 <div className="desktop-container">
                     <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
                         <header>
                             {data?.shift ? (
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
-                                        <div>
-                                            <h1 className="text-base font-semibold text-white lg:text-xl">Смена №{data.shift.number}</h1>
-                                            <p className="text-[11px] text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
+                                        <div className="flex-1">
+                                            <h1 className="text-base font-semibold text-light-text dark:text-white lg:text-xl">Смена №{data.shift.number}</h1>
+                                            <p className="text-[11px] text-slate-500 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
                                         </div>
                                         <div className="flex items-center gap-1">
+                                            <ThemeToggle />
                                             <button
                                                 type="button"
                                                 onClick={() => mutate()}
-                                                className={`rounded-full p-1.5 text-white/40 transition hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
+                                                className={`rounded-full p-1.5 text-slate-400 dark:text-white/40 transition hover:text-slate-600 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
                                                 aria-label="Обновить"
                                             >
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
                                             </button>
-                                            <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-200/70" onClick={() => setActivePanel('shift')}>
+                                            <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
                                                 Сдать смену
                                             </Button>
                                         </div>
