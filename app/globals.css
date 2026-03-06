@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-    /* Light theme - мягкие цвета без контраста */
-    --bg-primary: #f8f9fa;
+    /* Light theme - мягкие светлые цвета */
+    --bg-primary: #fafbfc;
     --bg-secondary: #ffffff;
-    --bg-surface: #f1f3f5;
-    --bg-hover: #e9ecef;
-    --text-primary: #2d3748;
+    --bg-surface: #f5f7fa;
+    --bg-hover: #eef1f6;
+    --text-primary: #1a202c;
     --text-secondary: #4a5568;
     --text-tertiary: #718096;
-    --border-color: #e2e8f0;
-    --shadow: rgba(0, 0, 0, 0.05);
+    --border-color: #e8ecf2;
+    --shadow: rgba(0, 0, 0, 0.04);
 }
 
 .dark {
@@ -41,10 +41,9 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Desktop layout */
+/* Desktop layout - на всю ширину */
 .desktop-container {
-    max-width: 1440px;
-    margin: 0 auto;
+    width: 100%;
 }
 
 @media (min-width: 1024px) {

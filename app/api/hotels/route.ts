@@ -32,9 +32,12 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
 
-        // Получаем страну из поддомена
+        // Получаем страну из middleware заголовка или поддомена
+        const headerCountry = request.headers.get('x-country-code');
         const host = request.headers.get('host') || '';
-        const country = getCountryFromSubdomain(host);
+        const country = headerCountry === 'KZ' || headerCountry === 'KG'
+            ? headerCountry
+            : getCountryFromSubdomain(host);
 
         const [hotels, ledgerGroups] = await Promise.all([
             prisma.hotel.findMany({
@@ -148,9 +151,12 @@ export async function POST(request: NextRequest) {
 
         const payload = createHotelSchema.parse(body);
 
-        // Получаем страну из поддомена если не указана
+        // Получаем страну из middleware заголовка или поддомена, если не указана явно
+        const headerCountry = request.headers.get('x-country-code');
         const host = request.headers.get('host') || '';
-        const country = payload.country || getCountryFromSubdomain(host);
+        const country = payload.country || (headerCountry === 'KZ' || headerCountry === 'KG'
+            ? headerCountry
+            : getCountryFromSubdomain(host));
 
         const hotel = await prisma.hotel.create({
             data: {

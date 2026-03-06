@@ -2,24 +2,58 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
+    const pathname = request.nextUrl.pathname;
     const host = request.headers.get('host') || '';
     const subdomain = host.split('.')[0];
+    const pathMatch = pathname.match(/^\/(kg|kz)(?=\/|$)/i);
+    const pathCountry = pathMatch?.[1]?.toUpperCase();
+    const queryCountry = request.nextUrl.searchParams.get('country')?.toUpperCase();
+    const cookieCountry = request.cookies.get('country')?.value?.toUpperCase();
 
-    // Определяем страну по поддомену
+    // Определяем страну (приоритет: путь -> query -> поддомен -> cookie)
     let country = 'KG';
-    if (subdomain === 'kz') {
+    if (pathCountry === 'KZ' || pathCountry === 'KG') {
+        country = pathCountry;
+    } else if (queryCountry === 'KZ' || queryCountry === 'KG') {
+        country = queryCountry;
+    } else if (subdomain === 'kz') {
         country = 'KZ';
+    } else if (subdomain === 'kg') {
+        country = 'KG';
+    } else if (cookieCountry === 'KZ' || cookieCountry === 'KG') {
+        country = cookieCountry;
     }
 
     // Добавляем заголовок с кодом страны для использования в API
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-country-code', country);
 
-    return NextResponse.next({
-        request: {
-            headers: requestHeaders,
-        },
+    let response: NextResponse;
+
+    if (pathMatch) {
+        const rewrittenUrl = request.nextUrl.clone();
+        rewrittenUrl.pathname = pathname.replace(/^\/(kg|kz)(?=\/|$)/i, '') || '/';
+
+        response = NextResponse.rewrite(rewrittenUrl, {
+            request: {
+                headers: requestHeaders,
+            },
+        });
+    } else {
+        response = NextResponse.next({
+            request: {
+                headers: requestHeaders,
+            },
+        });
+    }
+
+    response.cookies.set('country', country, {
+        path: '/',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 365,
     });
+
+    return response;
 }
 
 export const config = {

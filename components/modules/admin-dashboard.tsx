@@ -361,8 +361,8 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
                     fill="rgba(248,113,113,0.08)"
                 />
                 {/* lines */}
-                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
+                <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
