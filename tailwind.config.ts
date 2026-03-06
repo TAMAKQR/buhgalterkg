@@ -29,7 +29,7 @@ const config: Config = {
                 'light-bg': '#f8f9fa',
                 'light-surface': '#ffffff',
                 'light-border': '#e2e8f0',
-                'light-text': '#2d3748'
+                'light-text': '#334155'
             },
             borderRadius: {
                 xl: '1rem',

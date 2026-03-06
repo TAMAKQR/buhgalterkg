@@ -197,7 +197,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         <button
             type="button"
             onClick={handleLogout}
-            className="fixed right-4 top-4 z-30 rounded-full border border-white/20 bg-ink p-2 text-white/70 shadow-lg backdrop-blur transition hover:border-white hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-sm backdrop-blur transition hover:border-slate-300 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/20 dark:bg-ink dark:text-white/70 dark:shadow-lg dark:hover:border-white dark:hover:text-white"
             aria-label="Выйти к экрану PIN"
         >
             <span className="text-lg leading-none">×</span>
@@ -585,95 +585,94 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     if (!data && isLoading) {
         return (
-            <>
-                <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
-                    <Card className="max-w-md text-center">
-                        <p className="text-slate-600 dark:text-white/70">Загружаем данные точки…</p>
-                    </Card>
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
+                <div className="flex w-full max-w-md justify-end">
+                    <ExitButton />
                 </div>
-            </>
+                <Card className="max-w-md text-center">
+                    <p className="text-slate-600 dark:text-white/70">Загружаем данные точки…</p>
+                </Card>
+            </div>
         );
     }
 
     if (!data && error) {
         return (
-            <>
-                <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center sm:px-6">
-                    <Card className="max-w-md text-center">
-                        <p className="text-rose-600 dark:text-rose-300">Не удалось загрузить состояние менеджера</p>
-                        <p className="text-sm text-slate-500 dark:text-white/60">{String(error)}</p>
-                    </Card>
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center sm:px-6">
+                <div className="flex w-full max-w-md justify-end">
+                    <ExitButton />
                 </div>
-            </>
+                <Card className="max-w-md text-center">
+                    <p className="text-rose-600 dark:text-rose-300">Не удалось загрузить состояние менеджера</p>
+                    <p className="text-sm text-slate-500 dark:text-white/60">{String(error)}</p>
+                </Card>
+            </div>
         );
     }
 
     if (data && !data.shift) {
         return (
-            <>
-                <ExitButton />
-                <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-4 sm:px-5">
-                    <Card>
-                        <CardHeader title="Принять смену" />
-                        <form className="space-y-3" onSubmit={handleOpenShift}>
-                            <Input
-                                type="password"
-                                placeholder="PIN (6 цифр)"
-                                maxLength={6}
-                                inputMode="numeric"
-                                {...openShiftForm.register('pinCode', {
-                                    required: 'Введите PIN менеджера',
-                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                    pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
-                                })}
-                            />
-                            {openShiftForm.formState.errors.pinCode && (
-                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
-                            )}
-                            <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="Наличные в кассе"
-                                inputMode="decimal"
-                                min={0}
-                                {...openShiftForm.register('openingCash', {
-                                    valueAsNumber: true,
-                                    required: 'Введите фактический остаток наличных',
-                                    min: { value: 0, message: 'Сумма не может быть отрицательной' }
-                                })}
-                            />
-                            {openShiftForm.formState.errors.openingCash && (
-                                <p className="text-xs text-rose-300">{openShiftForm.formState.errors.openingCash.message}</p>
-                            )}
-                            <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
-                            <Button type="submit" className="w-full">
-                                Начать смену
-                            </Button>
-                        </form>
-                    </Card>
+            <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-4 sm:px-5">
+                <div className="flex justify-end">
+                    <ExitButton />
                 </div>
-            </>
+                <Card>
+                    <CardHeader title="Принять смену" />
+                    <form className="space-y-3" onSubmit={handleOpenShift}>
+                        <Input
+                            type="password"
+                            placeholder="PIN (6 цифр)"
+                            maxLength={6}
+                            inputMode="numeric"
+                            {...openShiftForm.register('pinCode', {
+                                required: 'Введите PIN менеджера',
+                                minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
+                            })}
+                        />
+                        {openShiftForm.formState.errors.pinCode && (
+                            <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
+                        )}
+                        <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Наличные в кассе"
+                            inputMode="decimal"
+                            min={0}
+                            {...openShiftForm.register('openingCash', {
+                                valueAsNumber: true,
+                                required: 'Введите фактический остаток наличных',
+                                min: { value: 0, message: 'Сумма не может быть отрицательной' }
+                            })}
+                        />
+                        {openShiftForm.formState.errors.openingCash && (
+                            <p className="text-xs text-rose-300">{openShiftForm.formState.errors.openingCash.message}</p>
+                        )}
+                        <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
+                        <Button type="submit" className="w-full">
+                            Начать смену
+                        </Button>
+                    </form>
+                </Card>
+            </div>
         );
     }
 
     return (
         <div>
-            <ExitButton />
             <div className="min-h-screen bg-light-bg dark:bg-night">
                 <div className="desktop-container">
                     <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
                         <header>
                             {data?.shift ? (
                                 <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-start justify-between gap-3">
                                         <div className="flex-1">
                                             <h1 className="text-base font-semibold text-light-text dark:text-white lg:text-xl">Смена №{data.shift.number}</h1>
                                             <p className="text-[11px] text-slate-500 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
                                         </div>
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex shrink-0 items-center gap-1">
                                             <ThemeToggle />
                                             <button
                                                 type="button"
@@ -686,6 +685,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
                                                 Сдать смену
                                             </Button>
+                                            <ExitButton />
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">

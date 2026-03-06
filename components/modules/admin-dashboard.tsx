@@ -127,7 +127,7 @@ function SectionCard({ title, subtitle, actions, className, children }: { title:
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                     {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">{subtitle}</p> : null}
-                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">{title}</h2>
+                    <h2 className="mt-1 text-base font-semibold text-slate-800 dark:text-white sm:text-lg">{title}</h2>
                 </div>
                 {actions}
             </div>
@@ -154,7 +154,7 @@ function StatPill({ label, value }: { label: string; value: string }) {
     return (
         <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
             <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/28">{label}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-white">{value}</p>
         </div>
     );
 }
@@ -198,8 +198,8 @@ function SummaryCard({ label, value, valueColor, detail }: {
     const [open, setOpen] = useState(false);
     return (
         <Card className="overflow-hidden p-4 text-light-text dark:text-white">
-            <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">{label}</p>
+            <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 text-[10px] uppercase leading-tight tracking-[0.16em] text-slate-400 dark:text-white/30 sm:text-[11px] sm:tracking-[0.22em]">{label}</p>
                 <button
                     onClick={() => setOpen((v) => !v)}
                     className="sm:hidden flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 text-[11px] font-bold leading-none dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-white/40"
@@ -865,8 +865,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         type="button"
                                         onClick={() => setActiveTab(tab.id)}
                                         className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
-                                            ? "bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white"
-                                            : "hover:text-slate-800 dark:hover:text-white/70"
+                                            ? "bg-white text-slate-800 shadow-sm dark:bg-white/[0.12] dark:text-white"
+                                            : "hover:text-slate-700 dark:hover:text-white/70"
                                             }`}
                                     >
                                         <span>{tab.label}</span>
