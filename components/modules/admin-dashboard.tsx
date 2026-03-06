@@ -123,7 +123,7 @@ function HotelsSkeleton() {
     return (
         <>
             {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                <div key={index} className="rounded-xl border border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-white/[0.02] p-3">
                     <Skeleton className="h-5 w-1/2" />
                     <Skeleton className="mt-2 h-4 w-1/3" />
                     <Skeleton className="mt-4 h-10 w-full" />
@@ -137,7 +137,7 @@ function OverviewSkeleton() {
     return (
         <>
             {Array.from({ length: 4 }).map((_, index) => (
-                <Card key={index} className="bg-white/5 p-4">
+                <Card key={index} className="p-4">
                     <Skeleton className="h-4 w-1/3" />
                     <Skeleton className="mt-3 h-8 w-1/2" />
                     <Skeleton className="mt-2 h-4 w-2/3" />
@@ -157,19 +157,19 @@ function SummaryCard({ label, value, valueColor, detail }: {
 }) {
     const [open, setOpen] = useState(false);
     return (
-        <Card className="p-3 text-white overflow-hidden">
+        <Card className="overflow-hidden p-3 text-light-text dark:text-white">
             <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-widest text-white/35">{label}</p>
+                <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">{label}</p>
                 <button
                     onClick={() => setOpen((v) => !v)}
-                    className="sm:hidden flex items-center justify-center h-5 w-5 rounded-full bg-white/[0.08] text-white/40 text-[11px] font-bold leading-none"
+                    className="sm:hidden flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-500 text-[11px] font-bold leading-none dark:bg-white/[0.08] dark:text-white/40"
                     aria-label="Подробнее"
                 >
                     {open ? '✕' : 'ⓘ'}
                 </button>
             </div>
             <p className={`mt-1 text-sm sm:text-lg font-semibold ${valueColor} truncate`}>{value}</p>
-            <p className={`text-[11px] text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
+            <p className={`text-[11px] text-slate-500 dark:text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
         </Card>
     );
 }
@@ -202,15 +202,15 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
                     className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full"
                     style={chartStyle}
                 >
-                    <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-night text-center">
-                        <span className="text-[9px] uppercase tracking-widest text-white/35">{centerLabel}</span>
+                    <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-slate-100 dark:bg-night text-center">
+                        <span className="text-[9px] uppercase tracking-widest text-slate-500 dark:text-white/35">{centerLabel}</span>
                         <span className={`text-sm font-semibold leading-tight ${centerColor}`}>{centerValue}</span>
                     </div>
                 </div>
                 <div className="flex-1 space-y-2.5 text-sm">
                     {segments.map((seg) => (
                         <div key={seg.label} className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-white/50">
+                            <div className="flex items-center gap-2 text-slate-600 dark:text-white/50">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seg.color }} />
                                 <span>{seg.label}</span>
                             </div>
@@ -237,15 +237,15 @@ const AnalyticsFlowChart = ({ inflow, outflow, net }: AnalyticsFlowChartProps) =
     const safeNet = net || 0;
     const netPositive = safeNet >= 0;
     const segments: DonutSegment[] = [
-        { value: inflow || 0, color: "#34d399", label: "Вход", textColor: "text-emerald-300" },
-        { value: outflow || 0, color: "#f87171", label: "Выход", textColor: "text-rose-300" },
+        { value: inflow || 0, color: "#34d399", label: "Вход", textColor: "text-emerald-600 dark:text-emerald-300" },
+        { value: outflow || 0, color: "#f87171", label: "Выход", textColor: "text-rose-600 dark:text-rose-300" },
     ];
     return (
         <DonutChart
             segments={segments}
             centerLabel={netPositive ? "Профицит" : "Дефицит"}
             centerValue={formatCurrency(safeNet)}
-            centerColor={netPositive ? "text-emerald-200" : "text-rose-200"}
+            centerColor={netPositive ? "text-emerald-600 dark:text-emerald-200" : "text-rose-600 dark:text-rose-200"}
         />
     );
 };
@@ -257,15 +257,15 @@ type PaymentMethodChartProps = { cashTotal: number; cardTotal: number };
 const PaymentMethodChart = ({ cashTotal, cardTotal }: PaymentMethodChartProps) => {
     const total = (cashTotal || 0) + (cardTotal || 0);
     const segments: DonutSegment[] = [
-        { value: cashTotal || 0, color: "#60a5fa", label: "Наличные", textColor: "text-blue-300" },
-        { value: cardTotal || 0, color: "#a78bfa", label: "Карта", textColor: "text-violet-300" },
+        { value: cashTotal || 0, color: "#60a5fa", label: "Наличные", textColor: "text-blue-600 dark:text-blue-300" },
+        { value: cardTotal || 0, color: "#a78bfa", label: "Карта", textColor: "text-violet-600 dark:text-violet-300" },
     ];
     return (
         <DonutChart
             segments={segments}
             centerLabel="Всего"
             centerValue={formatCurrency(total)}
-            centerColor="text-white"
+            centerColor="text-light-text dark:text-white"
             colSpan="col-span-2"
         />
     );
@@ -282,16 +282,16 @@ type ExpenseStructureChartProps = {
 const ExpenseStructureChart = ({ cashOut, payouts, adjustments }: ExpenseStructureChartProps) => {
     const total = (cashOut || 0) + (payouts || 0) + Math.abs(adjustments || 0);
     const segments: DonutSegment[] = [
-        { value: cashOut || 0, color: "#f87171", label: "Расходы", textColor: "text-rose-300" },
-        { value: payouts || 0, color: "#fb923c", label: "Выплаты", textColor: "text-orange-300" },
-        { value: Math.abs(adjustments || 0), color: "#facc15", label: "Корректировки", textColor: "text-yellow-300" },
+        { value: cashOut || 0, color: "#f87171", label: "Расходы", textColor: "text-rose-600 dark:text-rose-300" },
+        { value: payouts || 0, color: "#fb923c", label: "Выплаты", textColor: "text-orange-600 dark:text-orange-300" },
+        { value: Math.abs(adjustments || 0), color: "#facc15", label: "Корректировки", textColor: "text-yellow-600 dark:text-yellow-300" },
     ];
     return (
         <DonutChart
             segments={segments}
             centerLabel="Итого"
             centerValue={formatCurrency(total)}
-            centerColor="text-rose-200"
+            centerColor="text-rose-600 dark:text-rose-200"
             colSpan="col-span-2"
         />
     );
@@ -342,13 +342,13 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
 
     return (
         <Card className="col-span-2 lg:col-span-4 p-4">
-            <p className="mb-2 text-[11px] uppercase tracking-widest text-white/35">Доход / Расход по дням</p>
+            <p className="mb-2 text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Доход / Расход по дням</p>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
                 {/* grid */}
                 {gridSteps.map((v) => (
                     <g key={v}>
-                        <line x1={PX} y1={toY(v)} x2={W - PX} y2={toY(v)} stroke="rgba(255,255,255,0.06)" />
-                        <text x={PX - 6} y={toY(v) + 3} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize="9">{formatShort(v)}</text>
+                        <line x1={PX} y1={toY(v)} x2={W - PX} y2={toY(v)} stroke="var(--border-color)" />
+                        <text x={PX - 6} y={toY(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">{formatShort(v)}</text>
                     </g>
                 ))}
                 {/* area fills */}
@@ -373,19 +373,19 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
                 {/* x labels */}
                 {data.map((d, i) =>
                     i % labelEvery === 0 ? (
-                        <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize="9">
+                        <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
                             {d.date.slice(5)}
                         </text>
                     ) : null,
                 )}
             </svg>
-            <div className="mt-2 flex items-center justify-center gap-5 text-[11px] text-white/50">
+            <div className="mt-2 flex items-center justify-center gap-5 text-[11px] text-slate-600 dark:text-white/50">
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block h-2 w-4 rounded-sm bg-emerald-400" />
                     Доход
                 </span>
                 <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-2 w-4 rounded-sm bg-rose-400" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.3) 3px, rgba(0,0,0,0.3) 5px)' }} />
+                    <span className="inline-block h-2 w-4 rounded-sm bg-rose-400" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(100,116,139,0.45) 3px, rgba(100,116,139,0.45) 5px)' }} />
                     Расход
                 </span>
             </div>
@@ -771,7 +771,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [overview, filters.startDate, filters.endDate, overviewCurrency]);
 
     return (
-        <div className="min-h-screen bg-night">
+        <div className="min-h-screen bg-light-bg dark:bg-night">
             <div className="desktop-container">
                 <div className="flex min-h-screen flex-col gap-3 px-3 pb-16 pt-4 sm:px-5 lg:px-8">
                     <header className="flex items-center justify-between">
@@ -827,7 +827,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 <select
                                     value={filters.hotelId}
                                     onChange={(event) => handleHotelFilterChange(event.target.value)}
-                                    className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    className="h-10 w-full min-w-0 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
                                 >
                                     <option value="">Все объекты</option>
                                     {hotels.map((hotel) => (
@@ -838,7 +838,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     value={filters.managerId}
                                     onChange={(event) => handleFilterInput("managerId", event.target.value)}
                                     disabled={!managerOptions.length}
-                                    className="h-10 w-full min-w-0 rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20"
+                                    className="h-10 w-full min-w-0 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
                                 >
                                     <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
                                     {managerOptions.map((manager) => (
@@ -856,8 +856,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             <section className="grid gap-2 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
                                 {overview ? (
                                     <>
-                                        <Card className="p-3 text-white overflow-hidden lg:p-4">
-                                            <p className="text-[11px] uppercase tracking-widest text-white/35">Баланс</p>
+                                        <Card className="overflow-hidden p-3 text-light-text dark:text-white lg:p-4">
+                                            <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Баланс</p>
                                             <p className="mt-1 text-sm sm:text-xl lg:text-2xl font-semibold truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
                                         </Card>
                                         <SummaryCard
@@ -872,12 +872,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             valueColor="text-rose-400"
                                             detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
                                         />
-                                        <Card className="p-3 text-white overflow-hidden">
-                                            <p className="text-[11px] uppercase tracking-widest text-white/35">Загрузка</p>
+                                        <Card className="overflow-hidden p-3 text-light-text dark:text-white">
+                                            <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Загрузка</p>
                                             <p className="mt-1 text-sm sm:text-lg font-semibold">
                                                 {formatPercent(overview.occupancy.rate)}
                                             </p>
-                                            <p className="text-[11px] text-white/40">
+                                            <p className="text-[11px] text-slate-500 dark:text-white/40">
                                                 {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
                                             </p>
                                         </Card>
@@ -910,7 +910,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         <section className="space-y-2 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
                             {isLoading && <HotelsSkeleton />}
                             {!isLoading && hotels.length === 0 && (
-                                <p className="text-sm text-white/40 px-1">Нет отелей</p>
+                                <p className="px-1 text-sm text-slate-500 dark:text-white/40">Нет отелей</p>
                             )}
                             {!isLoading &&
                                 hotels.map((hotel) => {
@@ -924,20 +924,20 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <h3 className="text-base font-semibold text-white truncate">{hotel.name}</h3>
-                                                    <p className="text-xs text-white/40">{hotel.address || "—"}</p>
+                                                    <h3 className="text-base font-semibold text-light-text dark:text-white truncate">{hotel.name}</h3>
+                                                    <p className="text-xs text-slate-500 dark:text-white/40">{hotel.address || "—"}</p>
                                                 </div>
                                                 <div className="text-right shrink-0">
-                                                    <p className="text-lg font-semibold text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
-                                                    <p className="text-[11px] text-white/35">номеров</p>
+                                                    <p className="text-lg font-semibold text-light-text dark:text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
+                                                    <p className="text-[11px] text-slate-500 dark:text-white/35">номеров</p>
                                                 </div>
                                             </div>
                                             {hotel.activeShift && (
-                                                <p className="mt-1.5 text-xs text-white/40">
+                                                <p className="mt-1.5 text-xs text-slate-500 dark:text-white/40">
                                                     №{hotel.activeShift.number} · {hotel.activeShift.manager} · {formatDT(hotel.activeShift.openedAt, hotel.timezone ?? undefined)}
                                                 </p>
                                             )}
-                                            <div className="mt-3 flex items-center gap-4 text-xs text-white/50">
+                                            <div className="mt-3 flex items-center gap-4 text-xs text-slate-600 dark:text-white/50">
                                                 <span className="text-emerald-400">+{formatCurrency(inflow, hotel.currency ?? undefined)}</span>
                                                 <span className="text-rose-400">-{formatCurrency(outflow, hotel.currency ?? undefined)}</span>
                                             </div>
@@ -946,14 +946,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     {hotel.managers.slice(0, 4).map((m) => (
                                                         <span
                                                             key={m.id}
-                                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.08] text-[10px] font-semibold text-white/70"
+                                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200 dark:bg-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-white/70"
                                                             title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
                                                         >
                                                             {m.displayName?.slice(0, 2).toUpperCase() || "??"}
                                                         </span>
                                                     ))}
                                                     {hotel.managers.length > 4 && (
-                                                        <span className="text-[10px] text-white/30">+{hotel.managers.length - 4}</span>
+                                                        <span className="text-[10px] text-slate-500 dark:text-white/30">+{hotel.managers.length - 4}</span>
                                                     )}
                                                 </div>
                                                 <Link href={`/admin/hotels/${hotel.id}`}>
@@ -972,10 +972,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     {activeTab === "manage" && (
                         <section className="grid gap-3 lg:grid-cols-2">
                             <Card className="p-3">
-                                <h2 className="mb-3 text-sm font-semibold text-white">Новый отель</h2>
+                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Новый отель</h2>
                                 <form action={handleCreateHotel} className="space-y-3">
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="name">
+                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="name">
                                             Название
                                         </label>
                                         <Input
@@ -987,7 +987,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="address">
+                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="address">
                                             Адрес
                                         </label>
                                         <Input
@@ -999,7 +999,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs text-white/40" htmlFor="notes">
+                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="notes">
                                             Заметки
                                         </label>
                                         <Input
@@ -1010,7 +1010,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-white/40" htmlFor="cleaningChatId">
+                                        <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="cleaningChatId">
                                             ID чата уборки
                                         </label>
                                         <Input
@@ -1019,25 +1019,25 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             placeholder="Например, -1001234567890"
 
                                         />
-                                        <p className="text-xs text-white/50">Используется для уведомлений горничных в Telegram.</p>
+                                        <p className="text-xs text-slate-500 dark:text-white/50">Используется для уведомлений горничных в Telegram.</p>
                                     </div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <div className="space-y-1">
-                                            <label className="text-xs text-white/40" htmlFor="country">Страна</label>
+                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="country">Страна</label>
                                             <select id="country" name="country" defaultValue="KG" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
                                                 <option value="KG">🇰🇬 Кыргызстан</option>
                                                 <option value="KZ">🇰🇿 Казахстан</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs text-white/40" htmlFor="timezone">Часовой пояс</label>
+                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="timezone">Часовой пояс</label>
                                             <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
                                                 <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                 <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs text-white/40" htmlFor="currency">Валюта</label>
+                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="currency">Валюта</label>
                                             <select id="currency" name="currency" defaultValue="KGS" className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20 border border-slate-200 dark:border-transparent">
                                                 <option value="KGS">KGS (сом)</option>
                                                 <option value="KZT">KZT (тенге)</option>
@@ -1051,18 +1051,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </Card>
 
                             <Card className="p-3">
-                                <h2 className="mb-3 text-sm font-semibold text-white">Редактировать</h2>
+                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Редактировать</h2>
                                 {hotels.length === 0 ? (
-                                    <p className="text-sm text-white/60">Пока нет отелей для изменения</p>
+                                    <p className="text-sm text-slate-500 dark:text-white/60">Пока нет отелей для изменения</p>
                                 ) : (
                                     <>
                                         <div className="space-y-2">
-                                            <label className="text-xs text-white/40" htmlFor="edit-hotel">
+                                            <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-hotel">
                                                 Выберите отель
                                             </label>
                                             <select
                                                 id="edit-hotel"
-                                                className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                                className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
                                                 value={selectedHotelId}
                                                 onChange={(event) => setSelectedHotelId(event.target.value)}
                                             >
@@ -1078,7 +1078,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         </div>
                                         <form className="mt-4 space-y-3" onSubmit={handleUpdateHotel}>
                                             <div className="space-y-2">
-                                                <label className="text-xs text-white/40" htmlFor="edit-name">
+                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-name">
                                                     Название
                                                 </label>
                                                 <Input
@@ -1092,7 +1092,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-xs text-white/40" htmlFor="edit-address">
+                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-address">
                                                     Адрес
                                                 </label>
                                                 <Input
@@ -1106,7 +1106,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-xs text-white/40" htmlFor="edit-notes">
+                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-notes">
                                                     Заметки
                                                 </label>
                                                 <Input
@@ -1120,7 +1120,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 />
                                             </div>
                                             <div className="space-y-1">
-                                                <label className="text-xs text-white/40" htmlFor="edit-cleaningChatId">
+                                                <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-cleaningChatId">
                                                     ID чата уборки
                                                 </label>
                                                 <Input
@@ -1132,21 +1132,21 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     disabled={!selectedHotelId || isUpdatingHotel}
 
                                                 />
-                                                <p className="text-xs text-white/50">
+                                                <p className="text-xs text-slate-500 dark:text-white/50">
                                                     Укажите Telegram-группу, куда отправлять задачи уборки.
                                                 </p>
                                             </div>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div className="space-y-1">
-                                                    <label className="text-xs text-white/40" htmlFor="edit-timezone">Часовой пояс</label>
-                                                    <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                                    <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-timezone">Часовой пояс</label>
+                                                    <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20">
                                                         <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                         <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                                     </select>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <label className="text-xs text-white/40" htmlFor="edit-currency">Валюта</label>
-                                                    <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-white/20">
+                                                    <label className="text-xs text-slate-500 dark:text-white/40" htmlFor="edit-currency">Валюта</label>
+                                                    <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20">
                                                         <option value="KGS">KGS (сом)</option>
                                                         <option value="KZT">KZT (тенге)</option>
                                                     </select>
@@ -1171,16 +1171,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                             {/* Observer management */}
                             <Card className="p-3 lg:col-span-2">
-                                <h2 className="mb-3 text-sm font-semibold text-white">Наблюдатели</h2>
+                                <h2 className="mb-3 text-sm font-semibold text-light-text dark:text-white">Наблюдатели</h2>
 
                                 {/* Existing observers list */}
                                 {observers && observers.length > 0 && (
                                     <div className="mb-4 space-y-2">
                                         {observers.map((obs) => (
-                                            <div key={obs.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+                                            <div key={obs.id} className="flex items-center justify-between rounded-xl bg-slate-100 dark:bg-white/[0.04] px-3 py-2">
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-white truncate">{obs.displayName}</p>
-                                                    <p className="text-xs text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
+                                                    <p className="text-sm font-medium text-light-text dark:text-white truncate">{obs.displayName}</p>
+                                                    <p className="text-xs text-slate-500 dark:text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button
@@ -1207,7 +1207,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 {/* Reset password inline */}
                                 {resetPasswordId && (
                                     <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 space-y-2">
-                                        <p className="text-xs text-white/60">Новый пароль (мин. 6 символов)</p>
+                                        <p className="text-xs text-slate-600 dark:text-white/60">Новый пароль (мин. 6 символов)</p>
                                         <div className="flex gap-2">
                                             <Input
                                                 type="text"
@@ -1237,7 +1237,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Create observer form */}
                                 <form className="space-y-3" onSubmit={handleCreateObserver}>
-                                    <p className="text-xs text-white/40">Новый наблюдатель</p>
+                                    <p className="text-xs text-slate-500 dark:text-white/40">Новый наблюдатель</p>
                                     <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
                                         <Input
                                             placeholder="Имя"
@@ -1262,7 +1262,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         <select
                                             value={newObserver.hotelId}
                                             onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
-                                            className="h-10 w-full rounded-xl bg-white/[0.06] px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+                                            className="h-10 w-full rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-transparent px-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-white/20"
                                             required
                                         >
                                             <option value="">Выберите объект</option>
@@ -1283,9 +1283,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     {/* Delete hotel confirm modal */}
                     {confirmDelete && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-white">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-light-text dark:text-white">
                                 <p className="text-base font-semibold">Удалить отель?</p>
-                                <p className="text-sm text-white/50">Действие необратимо. Все данные отеля будут удалены.</p>
+                                <p className="text-sm text-slate-500 dark:text-white/50">Действие необратимо. Все данные отеля будут удалены.</p>
                                 <div className="flex gap-2">
                                     <Button type="button" variant="secondary" className="flex-1" onClick={() => setConfirmDelete(false)}>
                                         Отмена

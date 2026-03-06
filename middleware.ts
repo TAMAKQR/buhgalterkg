@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+    const isApiPath = pathname.startsWith('/api');
     const host = request.headers.get('host') || '';
     const subdomain = host.split('.')[0];
     const pathMatch = pathname.match(/^\/(kg|kz)(?=\/|$)/i);
@@ -10,7 +11,9 @@ export function middleware(request: NextRequest) {
     const queryCountry = request.nextUrl.searchParams.get('country')?.toUpperCase();
     const cookieCountry = request.cookies.get('country')?.value?.toUpperCase();
 
-    // Определяем страну (приоритет: путь -> query -> поддомен -> cookie)
+    // Определяем страну:
+    // путь/query/поддомен имеют приоритет всегда,
+    // cookie применяем только для API, чтобы на обычном "/" не залипала чужая страна.
     let country = 'KG';
     if (pathCountry === 'KZ' || pathCountry === 'KG') {
         country = pathCountry;
@@ -20,7 +23,7 @@ export function middleware(request: NextRequest) {
         country = 'KZ';
     } else if (subdomain === 'kg') {
         country = 'KG';
-    } else if (cookieCountry === 'KZ' || cookieCountry === 'KG') {
+    } else if (isApiPath && (cookieCountry === 'KZ' || cookieCountry === 'KG')) {
         country = cookieCountry;
     }
 
