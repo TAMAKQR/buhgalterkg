@@ -78,6 +78,7 @@ export type CleaningNotificationPayload = {
     hotelName: string;
     roomLabel: string;
     managerName?: string | null;
+    roomSnapshotLines?: string[];
 };
 
 export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) => {
@@ -90,7 +91,9 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
         `Отель: ${payload.hotelName}`,
         `Номер: ${payload.roomLabel}`,
         payload.managerName ? `Менеджер: ${payload.managerName}` : null,
-        "Просьба подтвердить уборку после завершения."
+        "Просьба подтвердить уборку после завершения.",
+        payload.roomSnapshotLines?.length ? '' : null,
+        ...(payload.roomSnapshotLines ?? [])
     ]
         .filter(Boolean)
         .join("\n");
@@ -117,6 +120,7 @@ export type CleaningCheckInNotificationPayload = {
     guestName?: string | null;
     checkOut?: string | null;
     timezone?: string;
+    roomSnapshotLines?: string[];
 };
 
 export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNotificationPayload) => {
@@ -132,7 +136,9 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
         `Номер: ${payload.roomLabel}`,
         payload.guestName ? `Гость: ${payload.guestName}` : null,
         `Планируемый выезд: ${formatDate(payload.checkOut, tz)}`,
-        "Пожалуйста, уберите номер перед выездом гостя."
+        "Пожалуйста, уберите номер перед выездом гостя.",
+        payload.roomSnapshotLines?.length ? '' : null,
+        ...(payload.roomSnapshotLines ?? [])
     ]
         .filter(Boolean)
         .join("\n");

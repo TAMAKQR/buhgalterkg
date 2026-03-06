@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 
 export const dynamic = 'force-dynamic';
 
@@ -196,6 +197,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             (payload.status === StayStatus.CHECKED_IN);
         const nowCheckedOut = (payload.actualCheckOut !== undefined && updateData.actualCheckOut !== null) ||
             (payload.status === StayStatus.CHECKED_OUT);
+        const roomSnapshotLines = (nowCheckedIn || nowCheckedOut)
+            ? await buildCleaningRoomSnapshotLines(hotel.id, hotel.timezone)
+            : undefined;
 
         // Уведомление при заселении
         if (!wasCheckedIn && nowCheckedIn) {
@@ -207,6 +211,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                     guestName: updatedStay.guestName || stay.guestName,
                     checkOut: updatedStay.scheduledCheckOut?.toISOString() || stay.scheduledCheckOut?.toISOString(),
                     timezone: hotel.timezone,
+                    roomSnapshotLines,
                 });
             } catch (notificationError) {
                 console.error('Failed to notify cleaning crew about check-in', notificationError);
@@ -221,6 +226,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
                     managerName: session.displayName || session.username || null,
+                    roomSnapshotLines,
                 });
             } catch (notificationError) {
                 console.error('Failed to notify cleaning crew about check-out', notificationError);

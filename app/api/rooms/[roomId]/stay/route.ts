@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { notifyAdminAboutCheckIn, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             }
 
             try {
+                const roomSnapshotLines = await buildCleaningRoomSnapshotLines(room.hotelId, room.hotel.timezone);
                 await notifyCleaningCrewAboutCheckIn({
                     chatId: room.hotel.cleaningChatId,
                     hotelName: room.hotel.name,
@@ -145,6 +147,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     guestName: stay.guestName,
                     checkOut: scheduledCheckOutIso,
                     timezone: room.hotel.timezone,
+                    roomSnapshotLines,
                 });
             } catch (notificationError) {
                 console.error('Failed to notify cleaning crew about check-in', notificationError);
@@ -179,11 +182,13 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
         });
 
         try {
+            const roomSnapshotLines = await buildCleaningRoomSnapshotLines(room.hotelId, room.hotel.timezone);
             await notifyCleaningCrew({
                 chatId: room.hotel.cleaningChatId,
                 hotelName: room.hotel.name,
                 roomLabel: room.label,
-                managerName: session.displayName ?? session.username ?? null
+                managerName: session.displayName ?? session.username ?? null,
+                roomSnapshotLines,
             });
         } catch (notificationError) {
             console.error('Failed to notify cleaning crew', notificationError);
