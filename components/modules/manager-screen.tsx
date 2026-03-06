@@ -670,14 +670,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex-1">
                                             <h1 className="text-base font-semibold text-light-text dark:text-white lg:text-xl">Смена №{data.shift.number}</h1>
-                                            <p className="text-[11px] text-slate-500 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
+                                            <p className="text-[11px] text-slate-600 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
                                         </div>
                                         <div className="flex shrink-0 items-center gap-1">
                                             <ThemeToggle />
                                             <button
                                                 type="button"
                                                 onClick={() => mutate()}
-                                                className={`rounded-full p-1.5 text-slate-400 dark:text-white/40 transition hover:text-slate-600 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
+                                                className={`rounded-full p-1.5 text-slate-500 dark:text-white/40 transition hover:text-slate-700 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
                                                 aria-label="Обновить"
                                             >
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
@@ -689,10 +689,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Касса <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span></span>
-                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCardValue)}</span></span>
-                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Расход <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftExpensesTotal)}</span></span>
-                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600 dark:bg-white/[0.05] dark:text-white/50">Занято <span className="font-semibold text-light-text dark:text-white">{occupiedCount}/{sortedRooms.length}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Касса <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCardValue)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Расход <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftExpensesTotal)}</span></span>
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Занято <span className="font-semibold text-light-text dark:text-white">{occupiedCount}/{sortedRooms.length}</span></span>
                                     </div>
                                 </div>
                             ) : (
@@ -703,7 +703,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             )}
                         </header>
                         <div className="sticky top-0 z-10 -mx-3 bg-light-bg/95 px-3 py-2 backdrop-blur-md dark:bg-night/95 sm:-mx-5 sm:px-5">
-                            <div className="flex gap-1 rounded-xl bg-slate-200/60 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.05] dark:text-white/50">
+                            <div className="flex gap-1 rounded-xl bg-slate-200/60 p-1 text-sm font-medium text-slate-700 dark:bg-white/[0.05] dark:text-white/50">
                                 {panelTabs.map((tab) => (
                                     <button
                                         key={tab.id}
@@ -775,8 +775,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     )}
                                                 </div>
                                                 {room.stay && (
-                                                    <div className="mt-1 text-[11px] text-slate-500 dark:text-white/40">
-                                                        <span className="font-medium text-slate-700 dark:text-white/60">{guestLabel}</span>
+                                                    <div className="mt-1 text-[11px] text-slate-600 dark:text-white/40">
+                                                        <span className="font-medium text-slate-800 dark:text-white/60">{guestLabel}</span>
                                                         {' · '}
                                                         {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
                                                         {room.stay.amountPaid != null && (
@@ -794,31 +794,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {activePanel === 'shift' && (
                             <Card>
                                 <CardHeader title="Сдача смены" />
-                                {isLoading && <p className="text-sm text-slate-500 dark:text-white/60">Загружаем...</p>}
+                                {isLoading && <p className="text-sm text-slate-600 dark:text-white/60">Загружаем...</p>}
                                 {error && <p className="text-sm text-rose-300">{String(error)}</p>}
                                 {data?.shift && (
                                     <div className="mb-4 space-y-3">
-                                        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/50">
+                                        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-white/50">
                                             <span>{managerName} · {primaryHotel?.name}</span>
                                             <span>{formatDateTime(data.shift.openedAt, hotelTz)}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 text-sm">
                                             <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-white/[0.04]">
-                                                <p className="text-[11px] text-slate-500 dark:text-white/40">Выручка</p>
+                                                <p className="text-[11px] text-slate-600 dark:text-white/40">Выручка</p>
                                                 <p className="font-semibold text-emerald-600 dark:text-emerald-300">{formatKgs(shiftRevenueTotal)}</p>
-                                                <p className="text-[11px] text-slate-500 dark:text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
+                                                <p className="text-[11px] text-slate-600 dark:text-white/35">{formatKgs(shiftRevenueCash)} нал · {formatKgs(shiftRevenueCard)} б/н</p>
                                             </div>
                                             <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-white/[0.04]">
-                                                <p className="text-[11px] text-slate-500 dark:text-white/40">Расход</p>
+                                                <p className="text-[11px] text-slate-600 dark:text-white/40">Расход</p>
                                                 <p className="font-semibold text-rose-600 dark:text-rose-300">{formatKgs(shiftExpensesTotal)}</p>
-                                                <p className="text-[11px] text-slate-500 dark:text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
+                                                <p className="text-[11px] text-slate-600 dark:text-white/35">{formatKgs(shiftExpensesCash)} нал · {formatKgs(shiftExpensesCard)} б/н</p>
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-white/[0.06]">
                                             <span className="text-slate-600 dark:text-white/60">К передаче (нал)</span>
                                             <span className="text-lg font-bold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span>
                                         </div>
-                                        <div className="flex items-center justify-between px-1 text-xs text-slate-500 dark:text-white/40">
+                                        <div className="flex items-center justify-between px-1 text-xs text-slate-600 dark:text-white/40">
                                             <span>Открытие: {formatKgs(data.shift.openingCash)}</span>
                                             <span>Безнал: {formatKgs(shiftCardValue)}</span>
                                         </div>
@@ -854,7 +854,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </Button>
                                     </form>
                                 ) : (
-                                    <p className="text-sm text-slate-500 dark:text-white/60">Смена ещё не открыта.</p>
+                                    <p className="text-sm text-slate-600 dark:text-white/60">Смена ещё не открыта.</p>
                                 )}
                             </Card>
                         )}

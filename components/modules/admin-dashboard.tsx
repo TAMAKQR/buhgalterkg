@@ -126,8 +126,8 @@ function SectionCard({ title, subtitle, actions, className, children }: { title:
         <Card className={`p-4 sm:p-5 ${className ?? ""}`}>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">{subtitle}</p> : null}
-                    <h2 className="mt-1 text-base font-semibold text-slate-800 dark:text-white sm:text-lg">{title}</h2>
+                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/30">{subtitle}</p> : null}
+                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">{title}</h2>
                 </div>
                 {actions}
             </div>
@@ -140,10 +140,10 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
     return (
         <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-white/35" htmlFor={htmlFor}>
+                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-white/35" htmlFor={htmlFor}>
                     {label}
                 </label>
-                {hint ? <span className="text-[11px] text-slate-400 dark:text-white/28">{hint}</span> : null}
+                {hint ? <span className="text-[11px] text-slate-500 dark:text-white/28">{hint}</span> : null}
             </div>
             {children}
         </div>
@@ -153,8 +153,8 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
 function StatPill({ label, value }: { label: string; value: string }) {
     return (
         <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/28">{label}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-white">{value}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/28">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
         </div>
     );
 }
@@ -199,17 +199,17 @@ function SummaryCard({ label, value, valueColor, detail }: {
     return (
         <Card className="overflow-hidden p-4 text-light-text dark:text-white">
             <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 text-[10px] uppercase leading-tight tracking-[0.16em] text-slate-400 dark:text-white/30 sm:text-[11px] sm:tracking-[0.22em]">{label}</p>
+                <p className="min-w-0 text-[10px] uppercase leading-tight tracking-[0.16em] text-slate-500 dark:text-white/30 sm:text-[11px] sm:tracking-[0.22em]">{label}</p>
                 <button
                     onClick={() => setOpen((v) => !v)}
-                    className="sm:hidden flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 text-[11px] font-bold leading-none dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-white/40"
+                    className="sm:hidden flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 text-[11px] font-bold leading-none dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-white/40"
                     aria-label="Подробнее"
                 >
                     {open ? '✕' : 'ⓘ'}
                 </button>
             </div>
             <p className={`mt-2 text-base sm:text-xl font-semibold ${valueColor} truncate`}>{value}</p>
-            <p className={`mt-1 text-[12px] text-slate-500 dark:text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
+            <p className={`mt-1 text-[12px] text-slate-600 dark:text-white/40 break-words ${open ? '' : 'hidden'} sm:block`}>{detail}</p>
         </Card>
     );
 }
@@ -243,14 +243,14 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
                     style={chartStyle}
                 >
                     <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full border border-slate-200/80 bg-white/95 dark:border-white/[0.06] dark:bg-night text-center">
-                        <span className="text-[9px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">{centerLabel}</span>
+                        <span className="text-[9px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">{centerLabel}</span>
                         <span className={`text-sm font-semibold leading-tight ${centerColor}`}>{centerValue}</span>
                     </div>
                 </div>
                 <div className="flex-1 space-y-2.5 text-sm">
                     {segments.map((seg) => (
                         <div key={seg.label} className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-slate-600 dark:text-white/50">
+                            <div className="flex items-center gap-2 text-slate-700 dark:text-white/50">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seg.color }} />
                                 <span>{seg.label}</span>
                             </div>
