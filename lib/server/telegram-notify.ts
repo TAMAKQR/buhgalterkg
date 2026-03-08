@@ -75,6 +75,7 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
 
 export type CleaningNotificationPayload = {
     chatId?: string | null;
+    roomId: string;
     hotelName: string;
     roomLabel: string;
     managerName?: string | null;
@@ -103,7 +104,15 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: payload.chatId,
-            text
+            text,
+            reply_markup: {
+                inline_keyboard: [[
+                    {
+                        text: 'УБРАНО',
+                        callback_data: `clean:${payload.roomId}`,
+                    }
+                ]]
+            }
         })
     });
 

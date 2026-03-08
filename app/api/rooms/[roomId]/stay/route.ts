@@ -185,6 +185,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             const roomSnapshotLines = await buildCleaningRoomSnapshotLines(room.hotelId, room.hotel.timezone);
             await notifyCleaningCrew({
                 chatId: room.hotel.cleaningChatId,
+                roomId: room.id,
                 hotelName: room.hotel.name,
                 roomLabel: room.label,
                 managerName: session.displayName ?? session.username ?? null,

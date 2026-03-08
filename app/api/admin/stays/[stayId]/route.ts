@@ -228,6 +228,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             try {
                 await notifyCleaningCrew({
                     chatId: hotel.cleaningChatId,
+                    roomId: stay.roomId,
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
                     managerName: session.displayName || session.username || null,
