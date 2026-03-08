@@ -75,8 +75,9 @@ const appendCleanedLine = (text: string | undefined, roomLabel: string, cleanerN
         return confirmationLine;
     }
 
-    if (baseText.includes(confirmationLine)) {
-        return baseText;
+    const roomLinePattern = new RegExp(`(^|\\n)${roomLabel.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')} — [^\\n]*`, 'u');
+    if (roomLinePattern.test(baseText)) {
+        return baseText.replace(roomLinePattern, (_match, prefix) => `${prefix}${confirmationLine}`);
     }
 
     return `${baseText}\n${confirmationLine}`;
