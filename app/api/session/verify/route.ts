@@ -8,11 +8,11 @@ export async function GET(request: NextRequest) {
         const user = await getManualSessionUser(request);
 
         if (!user) {
-            return NextResponse.json({ user: null }, { status: 401 });
+            return NextResponse.json({ user: null });
         }
 
         return NextResponse.json({ user });
     } catch {
-        return NextResponse.json({ user: null }, { status: 401 });
+        return NextResponse.json({ user: null });
     }
 }
