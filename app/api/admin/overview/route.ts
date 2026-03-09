@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
                 entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT] },
             },
             orderBy: { recordedAt: "desc" },
-            take: 8,
+            take: 200,
             select: {
                 id: true,
                 hotelId: true,

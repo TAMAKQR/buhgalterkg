@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
 
@@ -290,6 +290,148 @@ function ExpenseFeed({
                         Нет расходов за выбранный период.
                     </p>
                 )}
+            </div>
+        </Card>
+    );
+}
+
+function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
+    entries: ExpenseEntry[];
+    defaultCurrency?: string;
+    className?: string;
+}) {
+    const grouped = useMemo(() => {
+        const buckets = new Map<string, { label: string; count: number; amount: number }>();
+
+        for (const entry of entries) {
+            const label = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+            const normalized = label.toLocaleLowerCase("ru-RU");
+            const bucket = buckets.get(normalized) ?? { label, count: 0, amount: 0 };
+            bucket.count += 1;
+            bucket.amount += entry.amount;
+            buckets.set(normalized, bucket);
+        }
+
+        return Array.from(buckets.values())
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 10);
+    }, [entries]);
+
+    return (
+        <Card className={`p-4 ${className ?? ""}`}>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Структура расходов</p>
+            <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По причинам</h3>
+            <div className="mt-4 space-y-2.5">
+                {grouped.length ? grouped.map((item) => (
+                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{item.label}</p>
+                            <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
+                        </div>
+                        <p className="shrink-0 text-sm font-semibold text-rose-500 dark:text-rose-300">-{formatCurrency(item.amount, defaultCurrency)}</p>
+                    </div>
+                )) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
+                        Нет расходов за выбранный период.
+                    </p>
+                )}
+            </div>
+        </Card>
+    );
+}
+
+function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName = false, className }: {
+    entries: ExpenseEntry[];
+    defaultCurrency?: string;
+    defaultTimezone?: string;
+    showHotelName?: boolean;
+    className?: string;
+}) {
+    const [query, setQuery] = useState("");
+    const deferredQuery = useDeferredValue(query);
+
+    const filteredEntries = useMemo(() => {
+        const normalizedQuery = deferredQuery.trim().toLocaleLowerCase("ru-RU");
+        if (!normalizedQuery) {
+            return entries;
+        }
+
+        return entries.filter((entry) => {
+            const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+            const haystack = [
+                note,
+                entry.managerName,
+                entry.hotelName,
+                paymentMethodLabel(entry.method),
+                expenseTypeLabel(entry.entryType),
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLocaleLowerCase("ru-RU");
+
+            return haystack.includes(normalizedQuery);
+        });
+    }, [deferredQuery, entries]);
+
+    return (
+        <Card className={`p-4 ${className ?? ""}`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Журнал расходов</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все расходы по фильтру</h3>
+                </div>
+                <div className="w-full sm:max-w-xs">
+                    <Input
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Поиск по причине, менеджеру, объекту"
+                    />
+                </div>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
+                <div className="max-h-[28rem] overflow-auto">
+                    <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-white/[0.06]">
+                        <thead className="bg-slate-50/80 dark:bg-white/[0.03]">
+                            <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">
+                                <th className="px-3 py-2.5 font-medium">Причина</th>
+                                <th className="px-3 py-2.5 font-medium">Детали</th>
+                                <th className="px-3 py-2.5 font-medium">Когда</th>
+                                <th className="px-3 py-2.5 text-right font-medium">Сумма</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/70 bg-white dark:divide-white/[0.05] dark:bg-transparent">
+                            {filteredEntries.length ? filteredEntries.map((entry) => {
+                                const currency = entry.currency ?? defaultCurrency;
+                                const timezone = entry.timezone ?? defaultTimezone;
+                                const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+                                return (
+                                    <tr key={entry.id} className="align-top text-slate-700 dark:text-white/80">
+                                        <td className="px-3 py-3">
+                                            <p className="font-medium text-slate-900 dark:text-white">{note}</p>
+                                        </td>
+                                        <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
+                                            <p>{expenseTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.method)}</p>
+                                            {entry.managerName ? <p className="mt-1">{entry.managerName}</p> : null}
+                                            {showHotelName && entry.hotelName ? <p className="mt-1">{entry.hotelName}</p> : null}
+                                        </td>
+                                        <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
+                                            {formatDT(entry.recordedAt, timezone ?? undefined)}
+                                        </td>
+                                        <td className="px-3 py-3 text-right font-semibold text-rose-500 dark:text-rose-300">
+                                            -{formatCurrency(entry.amount, currency)}
+                                        </td>
+                                    </tr>
+                                );
+                            }) : (
+                                <tr>
+                                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-white/40">
+                                        Ничего не найдено.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </Card>
     );
@@ -1200,6 +1342,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                         <ExpenseFeed
                                             title="Последние списания по фильтру"
+                                            entries={(overview.recentExpenses ?? []).slice(0, 8)}
+                                            defaultCurrency={overviewCurrency}
+                                            defaultTimezone={overviewTimezone}
+                                            showHotelName={!filters.hotelId}
+                                            className="col-span-2 lg:col-span-2"
+                                        />
+                                        <ExpenseReasonSummary
+                                            entries={overview.recentExpenses ?? []}
+                                            defaultCurrency={overviewCurrency}
+                                            className="col-span-2 lg:col-span-2"
+                                        />
+                                        <ExpenseTable
                                             entries={overview.recentExpenses ?? []}
                                             defaultCurrency={overviewCurrency}
                                             defaultTimezone={overviewTimezone}
