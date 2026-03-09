@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { getCountryConfig } from '@/lib/country';
 import { getSessionUser } from '@/lib/server/session';
+import { getCountryFromRequest } from '@/lib/server/request-country';
+import { parseDateOnly } from '@/lib/timezone';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
-import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,15 +34,45 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
 
-        // Получаем страну из middleware заголовка
-        const headerCountry = request.headers.get('x-country-code');
-        const country = headerCountry === 'KZ' || headerCountry === 'KG'
-            ? headerCountry
-            : 'KG';
+        const country = getCountryFromRequest(request);
+        const countryConfig = getCountryConfig(country);
+        const { searchParams } = new URL(request.url);
+
+        const parseIds = (key: string) => {
+            return searchParams
+                .getAll(key)
+                .flatMap((value) => value.split(','))
+                .map((value) => value.trim())
+                .filter(Boolean);
+        };
+
+        const hotelIds = parseIds('hotelId');
+        const managerIds = parseIds('managerId');
+        const startDate = parseDateOnly(searchParams.get('startDate'), false, countryConfig.timezone);
+        const endDate = parseDateOnly(searchParams.get('endDate'), true, countryConfig.timezone);
+
+        const hotelWhere: Prisma.HotelWhereInput = {
+            country,
+            ...(hotelIds.length ? { id: { in: hotelIds } } : {}),
+        };
+
+        const ledgerWhere: Prisma.CashEntryWhereInput = {
+            hotel: { country },
+            ...(hotelIds.length ? { hotelId: { in: hotelIds } } : {}),
+            ...(managerIds.length ? { managerId: { in: managerIds } } : {}),
+            ...((startDate || endDate)
+                ? {
+                    recordedAt: {
+                        ...(startDate ? { gte: startDate } : {}),
+                        ...(endDate ? { lte: endDate } : {}),
+                    },
+                }
+                : {}),
+        };
 
         const [hotels, ledgerGroups, recentExpenseEntries] = await Promise.all([
             prisma.hotel.findMany({
-                where: { country },
+                where: hotelWhere,
                 include: {
                     rooms: true,
                     shifts: {
@@ -59,13 +92,11 @@ export async function GET(request: NextRequest) {
             prisma.cashEntry.groupBy({
                 by: ['hotelId', 'entryType', 'method'],
                 _sum: { amount: true },
-                where: {
-                    hotel: { country }
-                }
+                where: ledgerWhere
             }),
             prisma.cashEntry.findMany({
                 where: {
-                    hotel: { country },
+                    ...ledgerWhere,
                     entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT] },
                 },
                 orderBy: { recordedAt: 'desc' },

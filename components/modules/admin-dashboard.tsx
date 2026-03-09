@@ -776,7 +776,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         return response.json();
     }, []);
 
-    const { data, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
+    const { data: hotelDirectory, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
     const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month", getDisplaySettings().timezone));
     const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
 
@@ -798,9 +798,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [filters]);
 
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
+    const filteredHotelsUrl = overviewQuery ? `/api/hotels?${overviewQuery}` : '/api/hotels';
     const { data: overview } = useSWR<AdminOverview>(overviewUrl, fetchWithAuth);
+    const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(filteredHotelsUrl, fetchWithAuth);
 
-    const hotels = useMemo(() => data ?? [], [data]);
+    const hotels = useMemo(() => hotelDirectory ?? [], [hotelDirectory]);
+    const overviewHotels = useMemo(() => filteredHotelSummaries ?? hotels, [filteredHotelSummaries, hotels]);
     const overviewDisplay = useMemo(() => {
         if (overview?.display) {
             return overview.display;
@@ -914,11 +917,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             return;
         }
 
-        if (!data) {
+        if (!hotelDirectory) {
             return;
         }
 
-        const target = data.find((hotel) => hotel.id === selectedHotelId);
+        const target = hotelDirectory.find((hotel) => hotel.id === selectedHotelId);
         if (target) {
             setEditForm({
                 name: target.name ?? "",
@@ -932,7 +935,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             setSelectedHotelId("");
             setEditForm(createEmptyHotelForm(overviewDisplay));
         }
-    }, [data, selectedHotelId, overviewDisplay]);
+    }, [hotelDirectory, selectedHotelId, overviewDisplay]);
 
     const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = event.target;
@@ -1103,16 +1106,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             const h = hotels.find((hotel) => hotel.id === filters.hotelId);
             return h?.currency ?? overviewDisplay.currency;
         }
-        return hotels.length === 1 ? (hotels[0]?.currency ?? overviewDisplay.currency) : overviewDisplay.currency;
-    }, [filters.hotelId, hotels, overviewDisplay.currency]);
+        return overviewHotels.length === 1 ? (overviewHotels[0]?.currency ?? overviewDisplay.currency) : overviewDisplay.currency;
+    }, [filters.hotelId, hotels, overviewDisplay.currency, overviewHotels]);
 
     const overviewTimezone = useMemo(() => {
         if (filters.hotelId) {
             const h = hotels.find((hotel) => hotel.id === filters.hotelId);
             return h?.timezone ?? overviewDisplay.timezone;
         }
-        return hotels.length === 1 ? (hotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
-    }, [filters.hotelId, hotels, overviewDisplay.timezone]);
+        return overviewHotels.length === 1 ? (overviewHotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
+    }, [filters.hotelId, hotels, overviewDisplay.timezone, overviewHotels]);
 
     const handleFilterInput = (field: keyof OverviewFilters, value: string) => {
         setPeriodPreset(null);
@@ -1371,11 +1374,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     {activeTab === "hotels" && (
                         <section className="space-y-3 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
                             {isLoading && <HotelsSkeleton />}
-                            {!isLoading && hotels.length === 0 && (
+                            {!isLoading && overviewHotels.length === 0 && (
                                 <p className="px-1 text-sm text-slate-500 dark:text-white/40">Нет отелей</p>
                             )}
                             {!isLoading &&
-                                hotels.map((hotel) => {
+                                overviewHotels.map((hotel) => {
                                     const inflow = hotel.ledger?.cashIn ?? 0;
                                     const outflow = hotel.ledger?.cashOut ?? 0;
 
