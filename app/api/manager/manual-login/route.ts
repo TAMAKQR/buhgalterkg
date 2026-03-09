@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { UserRole } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/types";
@@ -64,8 +65,62 @@ const clearAttempts = (key: string) => {
 };
 
 const pinSchema = z.object({
+    managerId: z.string().cuid().optional(),
+    hotelId: z.string().cuid().optional(),
     pinCode: z.string().regex(/^\d{6}$/, "Код состоит из 6 цифр"),
 });
+
+export async function GET() {
+    try {
+        if (!manualSessionAvailable()) {
+            return new NextResponse("Веб-доступ отключён", { status: 503 });
+        }
+
+        const managers = await prisma.user.findMany({
+            where: {
+                role: UserRole.MANAGER,
+                assignments: {
+                    some: {
+                        isActive: true,
+                    },
+                },
+            },
+            select: {
+                id: true,
+                displayName: true,
+                username: true,
+                assignments: {
+                    where: { isActive: true },
+                    select: {
+                        hotel: {
+                            select: {
+                                id: true,
+                                name: true,
+                                address: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: [
+                { displayName: "asc" },
+                { id: "asc" },
+            ],
+        });
+
+        return NextResponse.json(
+            managers.map((manager) => ({
+                id: manager.id,
+                displayName: manager.displayName,
+                username: manager.username,
+                hotels: manager.assignments.map((assignment) => assignment.hotel),
+            })),
+        );
+    } catch (error) {
+        console.error(error);
+        return new NextResponse("Не удалось загрузить список менеджеров", { status: 500 });
+    }
+}
 
 export async function POST(request: NextRequest) {
     const fingerprint = getClientFingerprint(request);
@@ -84,35 +139,68 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { pinCode } = pinSchema.parse(body);
+        const { managerId, hotelId, pinCode } = pinSchema.parse(body);
 
-        const assignments = await prisma.hotelAssignment.findMany({
-            where: { pinCode, isActive: true },
-            include: {
-                user: {
-                    include: {
-                        assignments: {
-                            where: { isActive: true },
-                            include: { hotel: true },
+        const managerRecord = managerId
+            ? await prisma.user.findFirst({
+                where: {
+                    id: managerId,
+                    role: UserRole.MANAGER,
+                    assignments: {
+                        some: {
+                            isActive: true,
+                            pinCode,
                         },
                     },
                 },
-            },
-        });
+                include: {
+                    assignments: {
+                        where: { isActive: true },
+                        include: { hotel: true },
+                    },
+                },
+            })
+            : await prisma.user.findFirst({
+                where: {
+                    role: UserRole.MANAGER,
+                    assignments: {
+                        some: {
+                            isActive: true,
+                            pinCode,
+                        },
+                    },
+                },
+                include: {
+                    assignments: {
+                        where: { isActive: true },
+                        include: { hotel: true },
+                    },
+                },
+                orderBy: { displayName: "asc" },
+            });
 
-        if (assignments.length === 0) {
+        if (!managerRecord) {
             registerFailure(fingerprint);
-            return new NextResponse("Неверный PIN", { status: 401 });
+            return new NextResponse(managerId ? "Неверное имя или PIN" : "Неверный PIN", { status: 401 });
         }
 
-        const uniqueUsers = new Set(assignments.map((assignment) => assignment.userId));
-        if (uniqueUsers.size > 1) {
+        const activeAssignments = hotelId
+            ? managerRecord.assignments.filter((assignment) => assignment.hotelId === hotelId)
+            : managerRecord.assignments;
+
+        if (activeAssignments.length === 0) {
             registerFailure(fingerprint);
-            return new NextResponse("PIN назначен нескольким менеджерам. Обратитесь к администратору", { status: 409 });
+            return new NextResponse("Выберите корректный объект", { status: 403 });
         }
 
-        const managerRecord = assignments[0].user;
-        if (managerRecord.assignments.length === 0) {
+        if (!hotelId && activeAssignments.length > 1) {
+            registerFailure(fingerprint);
+            return new NextResponse("Выберите объект", { status: 400 });
+        }
+
+        const selectedAssignment = activeAssignments[0];
+
+        if (!selectedAssignment) {
             registerFailure(fingerprint);
             return new NextResponse("У менеджера нет активных точек", { status: 403 });
         }
@@ -124,11 +212,11 @@ export async function POST(request: NextRequest) {
             username: managerRecord.username,
             avatarUrl: managerRecord.avatarUrl,
             role: managerRecord.role,
-            hotels: managerRecord.assignments.map((assignment) => ({
-                id: assignment.hotel.id,
-                name: assignment.hotel.name,
-                address: assignment.hotel.address,
-            })),
+            hotels: [{
+                id: selectedAssignment.hotel.id,
+                name: selectedAssignment.hotel.name,
+                address: selectedAssignment.hotel.address,
+            }],
         };
 
         const { token, user } = createManualSession(sessionUser);
