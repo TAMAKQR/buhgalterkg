@@ -227,7 +227,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [historyToDate, setHistoryToDate] = useState('');
     const [isCashLedgerOpen, setIsCashLedgerOpen] = useState(false);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
-    const [isSharingState, setIsSharingState] = useState(false);
     const { toast } = useToast();
     const {
         data: profileData,
@@ -468,17 +467,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         } catch {
             toast('Не удалось скопировать сообщение', 'error');
         }
-    };
-
-    const handleShareToWhatsApp = () => {
-        if (!shareMessage || typeof window === 'undefined') {
-            toast('Нет данных для отправки', 'error');
-            return;
-        }
-
-        setIsSharingState(true);
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, '_blank', 'noopener,noreferrer');
-        window.setTimeout(() => setIsSharingState(false), 800);
     };
 
     const filteredProfileShifts = useMemo(() => {
@@ -803,30 +791,39 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         <header>
                             {data?.shift ? (
                                 <div className="space-y-2">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex-1">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div className="flex min-w-0 flex-1 flex-col">
                                             <h1 className="text-base font-semibold text-light-text dark:text-white lg:text-xl">Смена №{data.shift.number}</h1>
                                             <p className="text-[11px] text-slate-600 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
                                         </div>
-                                        <div className="flex shrink-0 items-center gap-1">
+                                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                                            <Button
+                                                type="button"
+                                                size="icon"
+                                                variant="ghost"
+                                                className="h-8 w-8 rounded-xl"
+                                                onClick={handleCopyState}
+                                                disabled={!shareMessage}
+                                                aria-label="Скопировать состояние"
+                                                title="Скопировать состояние"
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                                </svg>
+                                            </Button>
+                                            <Button type="button" size="sm" variant="ghost" className="h-8 rounded-xl px-2.5 text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
+                                                Сдать смену
+                                            </Button>
                                             <ThemeToggle />
-                                            <Button type="button" size="sm" variant="secondary" className="text-[11px]" onClick={handleShareToWhatsApp} disabled={isSharingState || !shareMessage}>
-                                                WhatsApp
-                                            </Button>
-                                            <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handleCopyState} disabled={!shareMessage}>
-                                                Копировать
-                                            </Button>
                                             <button
                                                 type="button"
                                                 onClick={() => mutate()}
-                                                className={`rounded-full p-1.5 text-slate-500 dark:text-white/40 transition hover:text-slate-700 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
+                                                className={`rounded-xl p-1.5 text-slate-500 dark:text-white/40 transition hover:text-slate-700 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
                                                 aria-label="Обновить"
                                             >
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
                                             </button>
-                                            <Button type="button" size="sm" variant="ghost" className="text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
-                                                Сдать смену
-                                            </Button>
                                             <ExitButton />
                                         </div>
                                     </div>
