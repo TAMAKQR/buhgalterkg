@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
@@ -147,6 +147,50 @@ interface CheckInModalState {
 
 type PanelKey = 'rooms' | 'shift' | 'cash';
 
+type RoomShareSection = {
+    title: string;
+    min: number;
+    max: number;
+};
+
+const ROOM_SHARE_SECTIONS: RoomShareSection[] = [
+    { title: '1-й этаж (№1-9)', min: 1, max: 9 },
+    { title: '2-й этаж (№10-18)', min: 10, max: 18 },
+    { title: 'Во дворе (№19-22)', min: 19, max: 22 },
+];
+
+const roomNumberFromLabel = (label: string) => {
+    const match = label.match(/\d+/);
+    return match ? Number(match[0]) : Number.NaN;
+};
+
+const formatShareDate = (value: string, timeZone?: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone,
+    }).format(date);
+};
+
+const isSameDayInTimeZone = (first: string | Date, second: string | Date, timeZone?: string) => {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone,
+    });
+
+    return formatter.format(new Date(first)) === formatter.format(new Date(second));
+};
+
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
     const { get, request } = useCookieApi();
 
@@ -166,7 +210,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const hotelTz = data?.hotel?.timezone;
     const hotelCur = data?.hotel?.currency;
-    const formatKgs = (amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur);
+    const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatDateInputValue = (date: Date) => formatInputValue(date, hotelTz);
 
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT' } });
@@ -183,6 +227,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [historyToDate, setHistoryToDate] = useState('');
     const [isCashLedgerOpen, setIsCashLedgerOpen] = useState(false);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
+    const [isSharingState, setIsSharingState] = useState(false);
     const { toast } = useToast();
     const {
         data: profileData,
@@ -344,6 +389,97 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         { id: 'shift', label: data?.shift ? `Смена №${data.shift.number}` : 'Принять смену' },
         { id: 'cash', label: 'Касса' }
     ];
+
+    const shareMessage = useMemo(() => {
+        if (!data) {
+            return '';
+        }
+
+        const sectionMap = new Map<string, string[]>();
+        const otherRooms: string[] = [];
+        const now = new Date();
+
+        for (const section of ROOM_SHARE_SECTIONS) {
+            sectionMap.set(section.title, []);
+        }
+
+        for (const room of sortedRooms) {
+            const roomNumber = roomNumberFromLabel(room.label);
+            const statusText = (() => {
+                if (room.status !== 'OCCUPIED' || !room.stay?.scheduledCheckOut) {
+                    if (room.status === 'DIRTY') return 'уборка';
+                    if (room.status === 'HOLD') return 'удержание';
+                    return 'свободно';
+                }
+
+                const checkoutLabel = isSameDayInTimeZone(room.stay.scheduledCheckOut, now, hotelTz)
+                    ? new Intl.DateTimeFormat('ru-RU', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                        timeZone: hotelTz,
+                    }).format(new Date(room.stay.scheduledCheckOut))
+                    : formatShareDate(room.stay.scheduledCheckOut, hotelTz);
+
+                return `до ${checkoutLabel}`;
+            })();
+
+            const line = `${room.label} комната ${statusText}`;
+            const section = ROOM_SHARE_SECTIONS.find((item) => roomNumber >= item.min && roomNumber <= item.max);
+            if (section) {
+                sectionMap.get(section.title)?.push(line);
+            } else {
+                otherRooms.push(line);
+            }
+        }
+
+        const blocks = ROOM_SHARE_SECTIONS
+            .map((section) => {
+                const lines = sectionMap.get(section.title) ?? [];
+                if (!lines.length) return null;
+                return [section.title, ...lines].join('\n');
+            })
+            .filter(Boolean) as string[];
+
+        if (otherRooms.length) {
+            blocks.push(['Другие комнаты', ...otherRooms].join('\n'));
+        }
+
+        return [
+            ...blocks,
+            '',
+            `Общая сумма: ${formatKgs(shiftRevenueTotal)}`,
+            `Безнал: ${formatKgs(shiftRevenueCard)}`,
+            `Нал: ${formatKgs(shiftRevenueCash)}`,
+            '',
+            `${managerName} на смене`,
+        ].join('\n');
+    }, [data, formatKgs, hotelTz, managerName, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, sortedRooms]);
+
+    const handleCopyState = async () => {
+        if (!shareMessage || typeof navigator === 'undefined' || !navigator.clipboard) {
+            toast('Не удалось скопировать сообщение', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(shareMessage);
+            toast('Состояние скопировано', 'success');
+        } catch {
+            toast('Не удалось скопировать сообщение', 'error');
+        }
+    };
+
+    const handleShareToWhatsApp = () => {
+        if (!shareMessage || typeof window === 'undefined') {
+            toast('Нет данных для отправки', 'error');
+            return;
+        }
+
+        setIsSharingState(true);
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => setIsSharingState(false), 800);
+    };
 
     const filteredProfileShifts = useMemo(() => {
         if (!profileData?.shifts) {
@@ -674,6 +810,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                         <div className="flex shrink-0 items-center gap-1">
                                             <ThemeToggle />
+                                            <Button type="button" size="sm" variant="secondary" className="text-[11px]" onClick={handleShareToWhatsApp} disabled={isSharingState || !shareMessage}>
+                                                WhatsApp
+                                            </Button>
+                                            <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handleCopyState} disabled={!shareMessage}>
+                                                Копировать
+                                            </Button>
                                             <button
                                                 type="button"
                                                 onClick={() => mutate()}
