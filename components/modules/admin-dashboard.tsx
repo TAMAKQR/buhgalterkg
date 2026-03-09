@@ -376,6 +376,12 @@ const ExpenseStructureChart = ({ cashOut, payouts, adjustments }: ExpenseStructu
 
 type DailyPoint = { date: string; cashIn: number; cashOut: number };
 
+const dailyAxisDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short",
+    timeZone: BISHKEK_TIMEZONE,
+});
+
 const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
     if (!data.length) return null;
 
@@ -437,6 +443,14 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
         return abs.toFixed(0);
     };
 
+    const formatAxisDate = (value: string) => {
+        const date = new Date(`${value}T00:00:00+06:00`);
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+        return dailyAxisDateFormatter.format(date).replace('.', '');
+    };
+
     const labelEvery = Math.max(1, Math.ceil(data.length / 6));
 
     return (
@@ -473,7 +487,7 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
                 {data.map((d, i) =>
                     i % labelEvery === 0 ? (
                         <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="8.5" opacity="0.9">
-                            {d.date.slice(5)}
+                            {formatAxisDate(d.date)}
                         </text>
                     ) : null,
                 )}
