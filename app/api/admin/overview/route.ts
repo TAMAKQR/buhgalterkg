@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getCountryConfig } from "@/lib/country";
 import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
 import { parseDateOnly } from "@/lib/timezone";
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
+        const countryConfig = getCountryConfig(country);
 
         const { searchParams } = new URL(request.url);
 
@@ -29,8 +31,8 @@ export async function GET(request: NextRequest) {
         const hotelIds = parseIds("hotelId");
         const managerIds = parseIds("managerId");
 
-        const startDate = parseDateOnly(searchParams.get("startDate"));
-        const endDate = parseDateOnly(searchParams.get("endDate"), true);
+        const startDate = parseDateOnly(searchParams.get("startDate"), false, countryConfig.timezone);
+        const endDate = parseDateOnly(searchParams.get("endDate"), true, countryConfig.timezone);
 
         const hotelFilter: Prisma.HotelWhereInput = {
             country,
@@ -161,7 +163,7 @@ export async function GET(request: NextRequest) {
         const dailyRows = await prisma.$queryRawUnsafe<
             Array<{ day: string; entry_type: string; total: bigint }>
         >(
-            `SELECT TO_CHAR("recordedAt" AT TIME ZONE 'Asia/Bishkek', 'YYYY-MM-DD') AS day,
+            `SELECT TO_CHAR("recordedAt" AT TIME ZONE '${countryConfig.timezone}', 'YYYY-MM-DD') AS day,
                     "entryType" AS entry_type,
                     SUM(amount) AS total
              FROM "CashEntry"
@@ -185,6 +187,11 @@ export async function GET(request: NextRequest) {
             .map(([date, values]) => ({ date, ...values }));
 
         return NextResponse.json({
+            display: {
+                country,
+                timezone: countryConfig.timezone,
+                currency: countryConfig.currency,
+            },
             totals: {
                 ...totals,
                 netCash: totals.cashIn - totals.cashOut - totals.payouts + totals.adjustments,

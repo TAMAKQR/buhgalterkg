@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSPr
 import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
 
+import { getCountryConfig, type CountryCode } from "@/lib/country";
 import type { SessionUser } from "@/lib/types";
-import { BISHKEK_TIMEZONE, formatDateTime as fdt, formatMoney } from "@/lib/timezone";
+import { formatDateTime as fdt, formatMoney } from "@/lib/timezone";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -54,6 +55,11 @@ type AdminHotelSummary = {
 };
 
 type AdminOverview = {
+    display: {
+        country: CountryCode;
+        timezone: string;
+        currency: string;
+    };
     totals: {
         cashIn: number;
         cashInBreakdown: PaymentSplit;
@@ -115,6 +121,27 @@ type HotelFormState = {
 
 // notify is replaced by useToast() inside the component
 
+const DEFAULT_COUNTRY: CountryCode = "KG";
+
+const getDisplaySettings = (country?: string | null) => {
+    const countryCode: CountryCode = country === "KZ" ? "KZ" : DEFAULT_COUNTRY;
+    const config = getCountryConfig(countryCode);
+    return {
+        country: countryCode,
+        timezone: config.timezone,
+        currency: config.currency,
+    };
+};
+
+const createEmptyHotelForm = (display: { timezone: string; currency: string }): HotelFormState => ({
+    name: "",
+    address: "",
+    notes: "",
+    cleaningChatId: "",
+    timezone: display.timezone,
+    currency: display.currency,
+});
+
 const formatCurrency = (value: number, currency?: string) => formatMoney(value, currency);
 
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
@@ -123,20 +150,18 @@ const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefine
 
 const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
 
-const bishkekDateInputFormatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: BISHKEK_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-});
-
-const toDateInputValue = (value: Date) => {
-    const parts = bishkekDateInputFormatter.formatToParts(value);
+const toDateInputValue = (value: Date, timeZone: string) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(value);
     const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
     return `${pick("year")}-${pick("month")}-${pick("day")}`;
 };
 
-const createPeriodFilters = (preset: PeriodPreset): OverviewFilters => {
+const createPeriodFilters = (preset: PeriodPreset, timeZone: string): OverviewFilters => {
     const endDate = new Date();
     const startDate = new Date(endDate);
 
@@ -149,8 +174,8 @@ const createPeriodFilters = (preset: PeriodPreset): OverviewFilters => {
     }
 
     return {
-        startDate: toDateInputValue(startDate),
-        endDate: toDateInputValue(endDate),
+        startDate: toDateInputValue(startDate, timeZone),
+        endDate: toDateInputValue(endDate, timeZone),
         hotelId: "",
         managerId: "",
     };
@@ -253,12 +278,13 @@ function SummaryCard({ label, value, valueColor, detail }: {
 
 type DonutSegment = { value: number; color: string; label: string; textColor: string };
 
-const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }: {
+const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan, currency }: {
     segments: DonutSegment[];
     centerLabel: string;
     centerValue: string;
     centerColor: string;
     colSpan?: string;
+    currency?: string;
 }) => {
     const total = segments.reduce((s, seg) => s + (seg.value || 0), 0) || 1;
     let cumDeg = 0;
@@ -290,7 +316,7 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan }
                                 <span>{seg.label}</span>
                             </div>
                             <p className={`text-sm font-semibold ${seg.textColor}`}>
-                                {formatCurrency(seg.value)}
+                                {formatCurrency(seg.value, currency)}
                             </p>
                         </div>
                     ))}
@@ -306,9 +332,10 @@ type AnalyticsFlowChartProps = {
     inflow: number;
     outflow: number;
     net: number;
+    currency?: string;
 };
 
-const AnalyticsFlowChart = ({ inflow, outflow, net }: AnalyticsFlowChartProps) => {
+const AnalyticsFlowChart = ({ inflow, outflow, net, currency }: AnalyticsFlowChartProps) => {
     const safeNet = net || 0;
     const netPositive = safeNet >= 0;
     const segments: DonutSegment[] = [
@@ -319,17 +346,18 @@ const AnalyticsFlowChart = ({ inflow, outflow, net }: AnalyticsFlowChartProps) =
         <DonutChart
             segments={segments}
             centerLabel={netPositive ? "Профицит" : "Дефицит"}
-            centerValue={formatCurrency(safeNet)}
+            centerValue={formatCurrency(safeNet, currency)}
             centerColor={netPositive ? "text-emerald-600 dark:text-emerald-200" : "text-rose-600 dark:text-rose-200"}
+            currency={currency}
         />
     );
 };
 
 /* ── Chart 2: Нал / Карта ──────────────────────────── */
 
-type PaymentMethodChartProps = { cashTotal: number; cardTotal: number };
+type PaymentMethodChartProps = { cashTotal: number; cardTotal: number; currency?: string };
 
-const PaymentMethodChart = ({ cashTotal, cardTotal }: PaymentMethodChartProps) => {
+const PaymentMethodChart = ({ cashTotal, cardTotal, currency }: PaymentMethodChartProps) => {
     const total = (cashTotal || 0) + (cardTotal || 0);
     const segments: DonutSegment[] = [
         { value: cashTotal || 0, color: "#60a5fa", label: "Наличные", textColor: "text-blue-600 dark:text-blue-300" },
@@ -339,9 +367,10 @@ const PaymentMethodChart = ({ cashTotal, cardTotal }: PaymentMethodChartProps) =
         <DonutChart
             segments={segments}
             centerLabel="Всего"
-            centerValue={formatCurrency(total)}
+            centerValue={formatCurrency(total, currency)}
             centerColor="text-light-text dark:text-white"
             colSpan="col-span-2"
+            currency={currency}
         />
     );
 };
@@ -352,9 +381,10 @@ type ExpenseStructureChartProps = {
     cashOut: number;
     payouts: number;
     adjustments: number;
+    currency?: string;
 };
 
-const ExpenseStructureChart = ({ cashOut, payouts, adjustments }: ExpenseStructureChartProps) => {
+const ExpenseStructureChart = ({ cashOut, payouts, adjustments, currency }: ExpenseStructureChartProps) => {
     const total = (cashOut || 0) + (payouts || 0) + Math.abs(adjustments || 0);
     const segments: DonutSegment[] = [
         { value: cashOut || 0, color: "#f87171", label: "Расходы", textColor: "text-rose-600 dark:text-rose-300" },
@@ -365,9 +395,10 @@ const ExpenseStructureChart = ({ cashOut, payouts, adjustments }: ExpenseStructu
         <DonutChart
             segments={segments}
             centerLabel="Итого"
-            centerValue={formatCurrency(total)}
+            centerValue={formatCurrency(total, currency)}
             centerColor="text-rose-600 dark:text-rose-200"
             colSpan="col-span-2"
+            currency={currency}
         />
     );
 };
@@ -376,14 +407,14 @@ const ExpenseStructureChart = ({ cashOut, payouts, adjustments }: ExpenseStructu
 
 type DailyPoint = { date: string; cashIn: number; cashOut: number };
 
-const dailyAxisDateFormatter = new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric",
-    month: "short",
-    timeZone: BISHKEK_TIMEZONE,
-});
-
-const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
+const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: string }) => {
     if (!data.length) return null;
+
+    const dailyAxisDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+        day: "numeric",
+        month: "short",
+        timeZone,
+    });
 
     const W = 600;
     const H = 200;
@@ -444,7 +475,8 @@ const DailyLineChart = ({ data }: { data: DailyPoint[] }) => {
     };
 
     const formatAxisDate = (value: string) => {
-        const date = new Date(`${value}T00:00:00+06:00`);
+        const [year, month, day] = value.split("-").map(Number);
+        const date = new Date(Date.UTC(year, (month || 1) - 1, day || 1, 12, 0, 0));
         if (Number.isNaN(date.getTime())) {
             return value;
         }
@@ -527,8 +559,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, []);
 
     const { data, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
-
-    const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month"));
+    const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month", getDisplaySettings().timezone));
     const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
 
     const overviewQuery = useMemo(() => {
@@ -551,17 +582,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
     const { data: overview } = useSWR<AdminOverview>(overviewUrl, fetchWithAuth);
 
-    const createEmptyHotelForm = (): HotelFormState => ({
-        name: "",
-        address: "",
-        notes: "",
-        cleaningChatId: "",
-        timezone: "Asia/Bishkek",
-        currency: "KGS",
-    });
+    const hotels = useMemo(() => data ?? [], [data]);
+    const overviewDisplay = useMemo(() => {
+        if (overview?.display) {
+            return overview.display;
+        }
+        const hotelCountry = hotels.length ? hotels[0]?.country : undefined;
+        return getDisplaySettings(hotelCountry);
+    }, [overview, hotels]);
 
     const [selectedHotelId, setSelectedHotelId] = useState("");
-    const [editForm, setEditForm] = useState<HotelFormState>(() => createEmptyHotelForm());
+    const [editForm, setEditForm] = useState<HotelFormState>(() => createEmptyHotelForm(getDisplaySettings()));
+
     const [isUpdatingHotel, setIsUpdatingHotel] = useState(false);
     const [isDeletingHotel, setIsDeletingHotel] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -585,6 +617,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const [resetPasswordId, setResetPasswordId] = useState<string | null>(null);
     const [resetPasswordValue, setResetPasswordValue] = useState('');
     const [resettingPassword, setResettingPassword] = useState(false);
+
+    useEffect(() => {
+        if (!periodPreset) {
+            return;
+        }
+
+        setFilters((prev) => ({
+            ...prev,
+            ...createPeriodFilters(periodPreset, overviewDisplay.timezone),
+            hotelId: prev.hotelId,
+            managerId: prev.managerId,
+        }));
+    }, [overviewDisplay.timezone, periodPreset]);
 
     const handleCreateObserver = async (event: FormEvent) => {
         event.preventDefault();
@@ -647,7 +692,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     useEffect(() => {
         if (!selectedHotelId) {
-            setEditForm(createEmptyHotelForm());
+            setEditForm(createEmptyHotelForm(overviewDisplay));
             return;
         }
 
@@ -662,14 +707,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 address: target.address ?? "",
                 notes: target.notes ?? "",
                 cleaningChatId: target.cleaningChatId ?? "",
-                timezone: target.timezone ?? "Asia/Bishkek",
-                currency: target.currency ?? "KGS",
+                timezone: target.timezone ?? overviewDisplay.timezone,
+                currency: target.currency ?? overviewDisplay.currency,
             });
         } else {
             setSelectedHotelId("");
-            setEditForm(createEmptyHotelForm());
+            setEditForm(createEmptyHotelForm(overviewDisplay));
         }
-    }, [data, selectedHotelId]);
+    }, [data, selectedHotelId, overviewDisplay]);
 
     const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = event.target;
@@ -802,7 +847,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
             await mutate();
             setSelectedHotelId("");
-            setEditForm(createEmptyHotelForm());
+            setEditForm(createEmptyHotelForm(overviewDisplay));
             notify("Отель удалён", 'success');
         } catch (error) {
             console.error(error);
@@ -810,9 +855,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         } finally {
             setIsDeletingHotel(false);
         }
-    }, [mutate, notify, selectedHotelId]);
-
-    const hotels = useMemo(() => data ?? [], [data]);
+    }, [mutate, notify, overviewDisplay, selectedHotelId]);
 
     const adminTabs: Array<{ id: AdminTab; label: string; hint?: string }> = [
         { id: "overview", label: "Сводка" },
@@ -840,10 +883,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const overviewCurrency = useMemo(() => {
         if (filters.hotelId) {
             const h = hotels.find((hotel) => hotel.id === filters.hotelId);
-            return h?.currency ?? "KGS";
+            return h?.currency ?? overviewDisplay.currency;
         }
-        return hotels.length === 1 ? (hotels[0]?.currency ?? "KGS") : undefined;
-    }, [filters.hotelId, hotels]);
+        return hotels.length === 1 ? (hotels[0]?.currency ?? overviewDisplay.currency) : overviewDisplay.currency;
+    }, [filters.hotelId, hotels, overviewDisplay.currency]);
+
+    const overviewTimezone = useMemo(() => {
+        if (filters.hotelId) {
+            const h = hotels.find((hotel) => hotel.id === filters.hotelId);
+            return h?.timezone ?? overviewDisplay.timezone;
+        }
+        return hotels.length === 1 ? (hotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
+    }, [filters.hotelId, hotels, overviewDisplay.timezone]);
 
     const handleFilterInput = (field: keyof OverviewFilters, value: string) => {
         setPeriodPreset(null);
@@ -858,7 +909,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         setPeriodPreset(preset);
         setFilters((prev) => ({
             ...prev,
-            ...createPeriodFilters(preset),
+            ...createPeriodFilters(preset, overviewTimezone),
             hotelId: prev.hotelId,
             managerId: prev.managerId,
         }));
@@ -1052,21 +1103,24 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             </p>
                                         </Card>
                                         {overview.dailySeries && overview.dailySeries.length > 0 && (
-                                            <DailyLineChart data={overview.dailySeries} />
+                                            <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
                                         )}
                                         <AnalyticsFlowChart
                                             inflow={overview.totals.cashIn}
                                             outflow={overview.totals.cashOut}
                                             net={overview.totals.netCash}
+                                            currency={overviewCurrency}
                                         />
                                         <PaymentMethodChart
                                             cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash}
                                             cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card}
+                                            currency={overviewCurrency}
                                         />
                                         <ExpenseStructureChart
                                             cashOut={overview.totals.cashOut}
                                             payouts={overview.totals.payouts}
                                             adjustments={overview.totals.adjustments}
+                                            currency={overviewCurrency}
                                         />
                                     </>
                                 ) : (
@@ -1180,19 +1234,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </Field>
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         <Field label="Страна" htmlFor="country">
-                                            <select id="country" name="country" defaultValue="KG" className={selectClassName}>
+                                            <select id="country" name="country" defaultValue={overviewDisplay.country} className={selectClassName}>
                                                 <option value="KG">🇰🇬 Кыргызстан</option>
                                                 <option value="KZ">🇰🇿 Казахстан</option>
                                             </select>
                                         </Field>
                                         <Field label="Часовой пояс" htmlFor="timezone">
-                                            <select id="timezone" name="timezone" defaultValue="Asia/Bishkek" className={selectClassName}>
+                                            <select id="timezone" name="timezone" defaultValue={overviewDisplay.timezone} className={selectClassName}>
                                                 <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
                                                 <option value="Asia/Almaty">Алматы (UTC+5)</option>
                                             </select>
                                         </Field>
                                         <Field label="Валюта" htmlFor="currency">
-                                            <select id="currency" name="currency" defaultValue="KGS" className={selectClassName}>
+                                            <select id="currency" name="currency" defaultValue={overviewDisplay.currency} className={selectClassName}>
                                                 <option value="KGS">KGS (сом)</option>
                                                 <option value="KZT">KZT (тенге)</option>
                                             </select>
