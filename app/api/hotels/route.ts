@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
             ? headerCountry
             : 'KG';
 
-        const [hotels, ledgerGroups] = await Promise.all([
+        const [hotels, ledgerGroups, recentExpenseEntries] = await Promise.all([
             prisma.hotel.findMany({
                 where: { country },
                 include: {
@@ -62,6 +62,28 @@ export async function GET(request: NextRequest) {
                 where: {
                     hotel: { country }
                 }
+            }),
+            prisma.cashEntry.findMany({
+                where: {
+                    hotel: { country },
+                    entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT] },
+                },
+                orderBy: { recordedAt: 'desc' },
+                take: 120,
+                select: {
+                    id: true,
+                    hotelId: true,
+                    amount: true,
+                    method: true,
+                    note: true,
+                    recordedAt: true,
+                    entryType: true,
+                    manager: {
+                        select: {
+                            displayName: true,
+                        },
+                    },
+                },
             })
         ]);
 
@@ -91,10 +113,37 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        const recentExpensesMap = new Map<string, Array<{
+            id: string;
+            amount: number;
+            method: PaymentMethod;
+            note: string | null;
+            recordedAt: Date;
+            entryType: LedgerEntryType;
+            managerName: string | null;
+        }>>();
+
+        for (const entry of recentExpenseEntries) {
+            const bucket = recentExpensesMap.get(entry.hotelId) ?? [];
+            if (bucket.length < 3) {
+                bucket.push({
+                    id: entry.id,
+                    amount: entry.amount,
+                    method: entry.method,
+                    note: entry.note,
+                    recordedAt: entry.recordedAt,
+                    entryType: entry.entryType,
+                    managerName: entry.manager?.displayName ?? null,
+                });
+            }
+            recentExpensesMap.set(entry.hotelId, bucket);
+        }
+
         const payload = hotels.map((hotel) => ({
             id: hotel.id,
             name: hotel.name,
             address: hotel.address,
+            country: hotel.country,
             timezone: hotel.timezone,
             currency: hotel.currency,
             managerSharePct: hotel.managerSharePct,
@@ -132,7 +181,8 @@ export async function GET(request: NextRequest) {
                     cashOut: summary[LedgerEntryType.CASH_OUT].total,
                     cashOutBreakdown: toBreakdown(LedgerEntryType.CASH_OUT)
                 };
-            })()
+            })(),
+            recentExpenses: recentExpensesMap.get(hotel.id) ?? []
         }));
 
         return NextResponse.json(payload);

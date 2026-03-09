@@ -20,6 +20,20 @@ type PaymentSplit = {
     card: number;
 };
 
+type ExpenseEntry = {
+    id: string;
+    amount: number;
+    method: "CASH" | "CARD";
+    note?: string | null;
+    recordedAt: string;
+    entryType: "CASH_OUT" | "MANAGER_PAYOUT";
+    managerName?: string | null;
+    hotelId?: string;
+    hotelName?: string;
+    currency?: string | null;
+    timezone?: string | null;
+};
+
 type AdminHotelSummary = {
     id: string;
     name: string;
@@ -52,6 +66,7 @@ type AdminHotelSummary = {
         cashOut: number;
         cashOutBreakdown: PaymentSplit;
     };
+    recentExpenses?: ExpenseEntry[];
 };
 
 type AdminOverview = {
@@ -82,6 +97,7 @@ type AdminOverview = {
         lastOpenedAt: string | null;
     };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number }>;
+    recentExpenses?: ExpenseEntry[];
 };
 
 type AdminTab = "overview" | "hotels" | "manage";
@@ -147,6 +163,8 @@ const formatCurrency = (value: number, currency?: string) => formatMoney(value, 
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
+const paymentMethodLabel = (method: "CASH" | "CARD") => (method === "CASH" ? "нал" : "карта");
+const expenseTypeLabel = (entryType: "CASH_OUT" | "MANAGER_PAYOUT") => (entryType === "MANAGER_PAYOUT" ? "выплата" : "расход");
 
 const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
 
@@ -216,6 +234,64 @@ function StatPill({ label, value }: { label: string; value: string }) {
             <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/28">{label}</p>
             <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
         </div>
+    );
+}
+
+function ExpenseFeed({
+    title,
+    entries,
+    defaultCurrency,
+    defaultTimezone,
+    showHotelName = false,
+    className,
+}: {
+    title: string;
+    entries: ExpenseEntry[];
+    defaultCurrency?: string;
+    defaultTimezone?: string;
+    showHotelName?: boolean;
+    className?: string;
+}) {
+    return (
+        <Card className={`p-4 ${className ?? ""}`}>
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Расходы</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-white/35">{entries.length}</span>
+            </div>
+            <div className="mt-4 space-y-2.5">
+                {entries.length ? entries.map((entry) => {
+                    const currency = entry.currency ?? defaultCurrency;
+                    const timezone = entry.timezone ?? defaultTimezone;
+                    const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+
+                    return (
+                        <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{note}</p>
+                                    <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">
+                                        {expenseTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.method)}
+                                        {entry.managerName ? ` · ${entry.managerName}` : ""}
+                                        {showHotelName && entry.hotelName ? ` · ${entry.hotelName}` : ""}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm font-semibold text-rose-500 dark:text-rose-300">-{formatCurrency(entry.amount, currency ?? undefined)}</p>
+                                    <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{formatDT(entry.recordedAt, timezone ?? undefined)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
+                        Нет расходов за выбранный период.
+                    </p>
+                )}
+            </div>
+        </Card>
     );
 }
 
@@ -1122,6 +1198,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             adjustments={overview.totals.adjustments}
                                             currency={overviewCurrency}
                                         />
+                                        <ExpenseFeed
+                                            title="Последние списания по фильтру"
+                                            entries={overview.recentExpenses ?? []}
+                                            defaultCurrency={overviewCurrency}
+                                            defaultTimezone={overviewTimezone}
+                                            showHotelName={!filters.hotelId}
+                                            className="col-span-2 lg:col-span-4"
+                                        />
                                     </>
                                 ) : (
                                     <OverviewSkeleton />
@@ -1164,6 +1248,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                                                 <StatPill label="Доход" value={`+${formatCurrency(inflow, hotel.currency ?? undefined)}`} />
                                                 <StatPill label="Расход" value={`-${formatCurrency(outflow, hotel.currency ?? undefined)}`} />
+                                            </div>
+                                            <div className="mt-4">
+                                                <ExpenseFeed
+                                                    title="Последние расходы"
+                                                    entries={hotel.recentExpenses ?? []}
+                                                    defaultCurrency={hotel.currency ?? undefined}
+                                                    defaultTimezone={hotel.timezone ?? undefined}
+                                                />
                                             </div>
                                             <div className="mt-4 flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5">

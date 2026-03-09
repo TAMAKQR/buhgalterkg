@@ -89,6 +89,36 @@ export async function GET(request: NextRequest) {
             }),
         ]);
 
+        const recentExpenses = await prisma.cashEntry.findMany({
+            where: {
+                ...ledgerWhere,
+                entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT] },
+            },
+            orderBy: { recordedAt: "desc" },
+            take: 8,
+            select: {
+                id: true,
+                hotelId: true,
+                amount: true,
+                method: true,
+                note: true,
+                recordedAt: true,
+                entryType: true,
+                hotel: {
+                    select: {
+                        name: true,
+                        currency: true,
+                        timezone: true,
+                    },
+                },
+                manager: {
+                    select: {
+                        displayName: true,
+                    },
+                },
+            },
+        });
+
         const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
         const ledgerTotals: Record<LedgerEntryType, { total: number; cash: number; card: number }> = {
             [LedgerEntryType.CASH_IN]: createBreakdown(),
@@ -207,6 +237,19 @@ export async function GET(request: NextRequest) {
                 lastOpenedAt: lastShift?.openedAt ?? null,
             },
             dailySeries,
+            recentExpenses: recentExpenses.map((entry) => ({
+                id: entry.id,
+                hotelId: entry.hotelId,
+                hotelName: entry.hotel.name,
+                amount: entry.amount,
+                method: entry.method,
+                note: entry.note,
+                recordedAt: entry.recordedAt,
+                entryType: entry.entryType,
+                managerName: entry.manager?.displayName ?? null,
+                currency: entry.hotel.currency,
+                timezone: entry.hotel.timezone,
+            })),
         });
     } catch (error) {
         return handleApiError(error, "Failed to load overview");
