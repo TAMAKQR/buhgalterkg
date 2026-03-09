@@ -231,7 +231,6 @@ export async function GET(request: NextRequest) {
             shifts: {
                 active: activeShifts,
                 lastOpenedAt: lastShift?.openedAt ?? null,
-                activeOpenedAt: lastShift?.openedAt ?? null,
             },
             dailySeries,
             recentExpenses: recentExpenses.map((entry) => ({

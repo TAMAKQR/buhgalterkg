@@ -7,7 +7,7 @@ import useSWR from "swr";
 
 import { getCountryConfig, type CountryCode } from "@/lib/country";
 import type { SessionUser } from "@/lib/types";
-import { formatDateTime as fdt, formatInputValue, formatMoney } from "@/lib/timezone";
+import { formatDateTime as fdt, formatMoney } from "@/lib/timezone";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -95,7 +95,6 @@ type AdminOverview = {
     shifts: {
         active: number;
         lastOpenedAt: string | null;
-        activeOpenedAt: string | null;
     };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number }>;
     recentExpenses?: ExpenseEntry[];
@@ -112,7 +111,7 @@ type OverviewFilters = {
     managerId: string;
 };
 
-type PeriodPreset = "today" | "shift" | "week" | "month" | "year";
+type PeriodPreset = "today" | "week" | "month" | "year";
 
 interface AdminDashboardProps {
     user: SessionUser;
@@ -203,18 +202,6 @@ const createPeriodFilters = (preset: PeriodPreset, timeZone: string): OverviewFi
         endAt: "",
         hotelId: "",
         managerId: "",
-    };
-};
-
-const createShiftStartFilters = (openedAt: string, timeZone: string): Pick<OverviewFilters, "startDate" | "endDate" | "startAt" | "endAt"> => {
-    const openedDate = new Date(openedAt);
-    const now = new Date();
-
-    return {
-        startDate: toDateInputValue(openedDate, timeZone),
-        endDate: toDateInputValue(now, timeZone),
-        startAt: formatInputValue(openedDate, timeZone),
-        endAt: formatInputValue(now, timeZone),
     };
 };
 
@@ -865,7 +852,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const [resettingPassword, setResettingPassword] = useState(false);
 
     useEffect(() => {
-        if (!periodPreset || periodPreset === "shift") {
+        if (!periodPreset) {
             return;
         }
 
@@ -1156,23 +1143,6 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     };
 
     const handlePeriodPreset = (preset: PeriodPreset) => {
-        if (preset === "shift") {
-            const openedAt = overview?.shifts.activeOpenedAt;
-            if (!openedAt) {
-                notify("Нет активной смены для выбранных фильтров", 'error');
-                return;
-            }
-
-            setPeriodPreset(preset);
-            setFilters((prev) => ({
-                ...prev,
-                ...createShiftStartFilters(openedAt, overviewTimezone),
-                hotelId: prev.hotelId,
-                managerId: prev.managerId,
-            }));
-            return;
-        }
-
         setPeriodPreset(preset);
         setFilters((prev) => ({
             ...prev,
@@ -1270,7 +1240,6 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 <div className="mb-4 flex flex-wrap gap-2">
                                     {([
                                         { id: "today", label: "Сегодня" },
-                                        { id: "shift", label: "От смены" },
                                         { id: "week", label: "Неделя" },
                                         { id: "month", label: "Месяц" },
                                         { id: "year", label: "Год" },
@@ -1279,10 +1248,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             key={preset.id}
                                             type="button"
                                             onClick={() => handlePeriodPreset(preset.id)}
-                                            disabled={preset.id === "shift" && !overview?.shifts.activeOpenedAt}
                                             className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${periodPreset === preset.id
                                                 ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                                                : "border-slate-200/80 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
+                                                : "border-slate-200/80 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
                                                 }`}
                                         >
                                             {preset.label}
