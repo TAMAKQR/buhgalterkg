@@ -5,7 +5,6 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus } from '@prisma/client';
-import { getCountryFromSubdomain } from '@/lib/country';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,12 +31,11 @@ export async function GET(request: NextRequest) {
         const session = await getSessionUser(request);
         assertAdmin(session);
 
-        // Получаем страну из middleware заголовка или поддомена
+        // Получаем страну из middleware заголовка
         const headerCountry = request.headers.get('x-country-code');
-        const host = request.headers.get('host') || '';
         const country = headerCountry === 'KZ' || headerCountry === 'KG'
             ? headerCountry
-            : getCountryFromSubdomain(host);
+            : 'KG';
 
         const [hotels, ledgerGroups] = await Promise.all([
             prisma.hotel.findMany({
@@ -151,12 +149,11 @@ export async function POST(request: NextRequest) {
 
         const payload = createHotelSchema.parse(body);
 
-        // Получаем страну из middleware заголовка или поддомена, если не указана явно
+        // Получаем страну из middleware заголовка, если не указана явно
         const headerCountry = request.headers.get('x-country-code');
-        const host = request.headers.get('host') || '';
         const country = payload.country || (headerCountry === 'KZ' || headerCountry === 'KG'
             ? headerCountry
-            : getCountryFromSubdomain(host));
+            : 'KG');
 
         const hotel = await prisma.hotel.create({
             data: {
