@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { getCountryConfig } from '@/lib/country';
 import { getSessionUser } from '@/lib/server/session';
 import { getCountryFromRequest } from '@/lib/server/request-country';
-import { parseDateOnly } from '@/lib/timezone';
+import { parseDateOnly, parseInputValue } from '@/lib/timezone';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
@@ -48,8 +48,10 @@ export async function GET(request: NextRequest) {
 
         const hotelIds = parseIds('hotelId');
         const managerIds = parseIds('managerId');
-        const startDate = parseDateOnly(searchParams.get('startDate'), false, countryConfig.timezone);
-        const endDate = parseDateOnly(searchParams.get('endDate'), true, countryConfig.timezone);
+        const startDate = parseInputValue(searchParams.get('startAt'), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get('startDate'), false, countryConfig.timezone);
+        const endDate = parseInputValue(searchParams.get('endAt'), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get('endDate'), true, countryConfig.timezone);
 
         const hotelWhere: Prisma.HotelWhereInput = {
             country,

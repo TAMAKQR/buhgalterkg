@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCountryConfig } from "@/lib/country";
 import { assertAdmin } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/server/session";
-import { parseDateOnly } from "@/lib/timezone";
+import { parseDateOnly, parseInputValue } from "@/lib/timezone";
 import { handleApiError } from "@/lib/server/errors";
 import { getCountryFromRequest } from "@/lib/server/request-country";
 
@@ -31,8 +31,10 @@ export async function GET(request: NextRequest) {
         const hotelIds = parseIds("hotelId");
         const managerIds = parseIds("managerId");
 
-        const startDate = parseDateOnly(searchParams.get("startDate"), false, countryConfig.timezone);
-        const endDate = parseDateOnly(searchParams.get("endDate"), true, countryConfig.timezone);
+        const startDate = parseInputValue(searchParams.get("startAt"), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get("startDate"), false, countryConfig.timezone);
+        const endDate = parseInputValue(searchParams.get("endAt"), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get("endDate"), true, countryConfig.timezone);
 
         const hotelFilter: Prisma.HotelWhereInput = {
             country,
@@ -43,20 +45,14 @@ export async function GET(request: NextRequest) {
             hotel: { country },
         };
 
-        const shiftWhere: Prisma.ShiftWhereInput = {
+        const shiftScopeWhere: Prisma.ShiftWhereInput = {
             hotel: { country },
         };
         if (hotelIds.length) {
-            shiftWhere.hotelId = { in: hotelIds };
+            shiftScopeWhere.hotelId = { in: hotelIds };
         }
         if (managerIds.length) {
-            shiftWhere.managerId = { in: managerIds };
-        }
-        if (startDate || endDate) {
-            shiftWhere.openedAt = {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-            };
+            shiftScopeWhere.managerId = { in: managerIds };
         }
 
         const ledgerWhere: Prisma.CashEntryWhereInput = {
@@ -79,8 +75,8 @@ export async function GET(request: NextRequest) {
             prisma.hotel.count({ where: hotelFilter }),
             prisma.room.count({ where: roomHotelFilter }),
             prisma.room.count({ where: { status: RoomStatus.OCCUPIED, ...roomHotelFilter } }),
-            prisma.shift.count({ where: { status: ShiftStatus.OPEN, ...shiftWhere } }),
-            prisma.shift.findFirst({ where: shiftWhere, orderBy: { openedAt: "desc" }, select: { openedAt: true } }),
+            prisma.shift.count({ where: { status: ShiftStatus.OPEN, ...shiftScopeWhere } }),
+            prisma.shift.findFirst({ where: { status: ShiftStatus.OPEN, ...shiftScopeWhere }, orderBy: { openedAt: "desc" }, select: { openedAt: true } }),
             prisma.cashEntry.groupBy({
                 by: ["entryType", "method"],
                 orderBy: { entryType: "asc" },
@@ -235,6 +231,7 @@ export async function GET(request: NextRequest) {
             shifts: {
                 active: activeShifts,
                 lastOpenedAt: lastShift?.openedAt ?? null,
+                activeOpenedAt: lastShift?.openedAt ?? null,
             },
             dailySeries,
             recentExpenses: recentExpenses.map((entry) => ({
