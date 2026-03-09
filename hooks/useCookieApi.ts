@@ -2,6 +2,8 @@
 
 import { useCallback } from 'react';
 
+import { useCountryContext } from '@/hooks/useCountryContext';
+
 type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
 const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
@@ -20,17 +22,21 @@ const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
  * Uses HTTP-only cookies for session management
  */
 export function useCookieApi() {
+    const { withCountry } = useCountryContext();
+
     const request = useCallback(
         async <T,>(path: string, options?: ApiRequestOptions) => {
             const { body, headers, ...rest } = options ?? {};
+            const requestPath = withCountry(path);
 
-            const response = await fetch(path, {
+            const response = await fetch(requestPath, {
                 method: rest.method ?? 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     ...normalizeHeaders(headers)
                 },
                 credentials: 'include', // Include cookies
+                cache: 'no-store',
                 ...rest,
                 body: body ? JSON.stringify(body) : undefined
             });
@@ -42,20 +48,21 @@ export function useCookieApi() {
 
             return (await response.json()) as T;
         },
-        []
+        [withCountry]
     );
 
     const get = useCallback(
         async <T,>(path: string) => {
-            const response = await fetch(path, {
-                credentials: 'include' // Include cookies
+            const response = await fetch(withCountry(path), {
+                credentials: 'include', // Include cookies
+                cache: 'no-store'
             });
             if (!response.ok) {
                 throw new Error(await response.text());
             }
             return (await response.json()) as T;
         },
-        []
+        [withCountry]
     );
 
     return { request, get };

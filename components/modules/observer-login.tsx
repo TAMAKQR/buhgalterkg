@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 
+import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,6 +14,7 @@ interface ObserverLoginProps {
 
 export function ObserverLogin({ onBack }: ObserverLoginProps) {
     const { mutate } = useManualSession();
+    const { withCountry } = useCountryContext();
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string>();
@@ -24,9 +26,10 @@ export function ObserverLogin({ onBack }: ObserverLoginProps) {
         setPending(true);
 
         try {
-            const response = await fetch('/api/observer/login', {
+            const response = await fetch(withCountry('/api/observer/login'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
                 body: JSON.stringify({ login, password }),
             });
 

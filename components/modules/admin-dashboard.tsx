@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
+import { useCountryContext } from '@/hooks/useCountryContext';
 
 import { getCountryConfig, type CountryCode } from "@/lib/country";
 import type { SessionUser } from "@/lib/types";
@@ -763,16 +764,18 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 };
 
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
+    const { country, withCountry } = useCountryContext();
     const handleLogout = async () => {
-        await fetch('/api/session/logout', { method: 'POST' });
+        await fetch(withCountry('/api/session/logout'), { method: 'POST', cache: 'no-store' });
         if (onLogout) {
             onLogout();
         }
     };
 
     const fetchWithAuth = useCallback(async (url: string) => {
-        const response = await fetch(url, {
-            credentials: 'include' // Include cookies
+        const response = await fetch(withCountry(url), {
+            credentials: 'include', // Include cookies
+            cache: 'no-store'
         });
 
         if (!response.ok) {
@@ -780,9 +783,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         }
 
         return response.json();
-    }, []);
+    }, [withCountry]);
 
-    const { data: hotelDirectory, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
+    const { data: hotelDirectory, mutate, isLoading } = useSWR<AdminHotelSummary[]>(['admin-hotels', country], () => fetchWithAuth('/api/hotels'));
     const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month", getDisplaySettings().timezone));
     const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
 
@@ -811,8 +814,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
     const filteredHotelsUrl = overviewQuery ? `/api/hotels?${overviewQuery}` : '/api/hotels';
-    const { data: overview } = useSWR<AdminOverview>(overviewUrl, fetchWithAuth);
-    const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(filteredHotelsUrl, fetchWithAuth);
+    const { data: overview } = useSWR<AdminOverview>(['admin-overview', country, overviewUrl], () => fetchWithAuth(overviewUrl));
+    const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(['admin-filtered-hotels', country, filteredHotelsUrl], () => fetchWithAuth(filteredHotelsUrl));
 
     const hotels = useMemo(() => hotelDirectory ?? [], [hotelDirectory]);
     const overviewHotels = useMemo(() => filteredHotelSummaries ?? hotels, [filteredHotelSummaries, hotels]);
@@ -841,8 +844,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         hotels: Array<{ id: string; name: string }>;
     };
     const { data: observers, mutate: mutateObservers } = useSWR<ObserverItem[]>(
-        '/api/admin/observers',
-        fetchWithAuth
+        ['admin-observers', country],
+        () => fetchWithAuth('/api/admin/observers')
     );
     const [newObserver, setNewObserver] = useState({ displayName: '', loginName: '', password: '', hotelId: '' });
     const [creatingObserver, setCreatingObserver] = useState(false);
@@ -869,9 +872,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         if (!newObserver.displayName || !newObserver.loginName || !newObserver.password || !newObserver.hotelId) return;
         setCreatingObserver(true);
         try {
-            const response = await fetch('/api/admin/observers', {
+            const response = await fetch(withCountry('/api/admin/observers'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
                 body: JSON.stringify(newObserver),
             });
             if (!response.ok) {
@@ -891,8 +895,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const handleDeleteObserver = async (observerId: string) => {
         setDeletingObserverId(observerId);
         try {
-            await fetch(`/api/admin/observers/${observerId}`, {
+            await fetch(withCountry(`/api/admin/observers/${observerId}`), {
                 method: 'DELETE',
+                cache: 'no-store',
             });
             mutateObservers();
             notify('Наблюдатель удалён', 'success');
@@ -907,9 +912,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         if (!resetPasswordId || resetPasswordValue.length < 6) return;
         setResettingPassword(true);
         try {
-            const response = await fetch(`/api/admin/observers/${resetPasswordId}`, {
+            const response = await fetch(withCountry(`/api/admin/observers/${resetPasswordId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
                 body: JSON.stringify({ password: resetPasswordValue }),
             });
             if (!response.ok) throw new Error('Ошибка');
@@ -984,10 +990,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             }
 
             try {
-                const res = await fetch("/api/hotels", {
+                const res = await fetch(withCountry("/api/hotels"), {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     credentials: 'include',
+                    cache: 'no-store',
                     body: JSON.stringify(payload),
                 });
 
@@ -1002,7 +1009,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 notify("Ошибка создания", 'error');
             }
         },
-        [mutate, notify],
+        [mutate, notify, withCountry],
     );
 
     const handleUpdateHotel = useCallback(
@@ -1036,10 +1043,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     currency: editForm.currency || "KGS",
                 };
 
-                const res = await fetch(`/api/hotels/${selectedHotelId}`, {
+                const res = await fetch(withCountry(`/api/hotels/${selectedHotelId}`), {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     credentials: 'include',
+                    cache: 'no-store',
                     body: JSON.stringify(payload),
                 });
 
@@ -1056,7 +1064,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 setIsUpdatingHotel(false);
             }
         },
-        [editForm, mutate, notify, selectedHotelId],
+        [editForm, mutate, notify, selectedHotelId, withCountry],
     );
 
     const handleDeleteHotel = useCallback(async () => {
@@ -1068,10 +1076,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         setIsDeletingHotel(true);
 
         try {
-            const res = await fetch(`/api/hotels/${selectedHotelId}`, {
+            const res = await fetch(withCountry(`/api/hotels/${selectedHotelId}`), {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 credentials: 'include',
+                cache: 'no-store',
             });
 
             if (!res.ok) {
@@ -1088,7 +1097,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         } finally {
             setIsDeletingHotel(false);
         }
-    }, [mutate, notify, overviewDisplay, selectedHotelId]);
+    }, [mutate, notify, overviewDisplay, selectedHotelId, withCountry]);
 
     const adminTabs: Array<{ id: AdminTab; label: string; hint?: string }> = [
         { id: "overview", label: "Сводка" },

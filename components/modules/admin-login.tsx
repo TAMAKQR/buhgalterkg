@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 
+import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,6 +25,7 @@ interface AdminLoginGateProps {
 
 export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLoginGateProps = {}) {
     const { mutate } = useManualSession();
+    const { withCountry } = useCountryContext();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string>();
@@ -35,9 +37,10 @@ export function AdminLoginGate({ embed = false, onBack, contextError }: AdminLog
         setPending(true);
 
         try {
-            const response = await fetch('/api/admin/manual-login', {
+            const response = await fetch(withCountry('/api/admin/manual-login'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
                 body: JSON.stringify({ username, password }),
             });
 

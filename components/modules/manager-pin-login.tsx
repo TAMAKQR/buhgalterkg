@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
 
 interface ManualLoginResponse {
@@ -35,10 +36,11 @@ interface ManagerPinLoginProps {
 
 export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLoginProps) {
     const { mutate } = useManualSession();
+    const { country, withCountry } = useCountryContext();
     const { data: managers, isLoading: managersLoading, error: managersError } = useSWR<ManagerOption[]>(
-        '/api/manager/manual-login',
-        async (url: string) => {
-            const response = await fetch(url, { credentials: 'include' });
+        ['manager-manual-login', country],
+        async () => {
+            const response = await fetch(withCountry('/api/manager/manual-login'), { credentials: 'include', cache: 'no-store' });
             if (!response.ok) {
                 throw new Error('Не удалось загрузить список менеджеров');
             }
@@ -81,9 +83,10 @@ export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLogin
         setPending(true);
 
         try {
-            const response = await fetch('/api/manager/manual-login', {
+            const response = await fetch(withCountry('/api/manager/manual-login'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
                 body: JSON.stringify({ managerId, hotelId, pinCode })
             });
 
