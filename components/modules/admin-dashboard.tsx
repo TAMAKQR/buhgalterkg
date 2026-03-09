@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
 
 import type { SessionUser } from "@/lib/types";
-import { formatDateTime as fdt, formatMoney } from "@/lib/timezone";
+import { BISHKEK_TIMEZONE, formatDateTime as fdt, formatMoney } from "@/lib/timezone";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -87,6 +87,8 @@ type OverviewFilters = {
     managerId: string;
 };
 
+type PeriodPreset = "week" | "month" | "year";
+
 interface AdminDashboardProps {
     user: SessionUser;
     onLogout?: () => void;
@@ -120,6 +122,39 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 
 const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
+
+const bishkekDateInputFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BISHKEK_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+});
+
+const toDateInputValue = (value: Date) => {
+    const parts = bishkekDateInputFormatter.formatToParts(value);
+    const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+    return `${pick("year")}-${pick("month")}-${pick("day")}`;
+};
+
+const createPeriodFilters = (preset: PeriodPreset): OverviewFilters => {
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+
+    if (preset === "week") {
+        startDate.setDate(startDate.getDate() - 6);
+    } else if (preset === "month") {
+        startDate.setMonth(startDate.getMonth() - 1);
+    } else {
+        startDate.setFullYear(startDate.getFullYear() - 1);
+    }
+
+    return {
+        startDate: toDateInputValue(startDate),
+        endDate: toDateInputValue(endDate),
+        hotelId: "",
+        managerId: "",
+    };
+};
 
 function SectionCard({ title, subtitle, actions, className, children }: { title: string; subtitle?: string; actions?: React.ReactNode; className?: string; children: React.ReactNode }) {
     return (
@@ -479,7 +514,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     const { data, mutate, isLoading } = useSWR<AdminHotelSummary[]>('/api/hotels', fetchWithAuth);
 
-    const [filters, setFilters] = useState<OverviewFilters>({ startDate: "", endDate: "", hotelId: "", managerId: "" });
+    const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month"));
+    const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
 
     const overviewQuery = useMemo(() => {
         const params = new URLSearchParams();
@@ -796,11 +832,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [filters.hotelId, hotels]);
 
     const handleFilterInput = (field: keyof OverviewFilters, value: string) => {
+        setPeriodPreset(null);
         setFilters((prev) => ({ ...prev, [field]: value }));
     };
 
     const handleHotelFilterChange = (value: string) => {
         setFilters((prev) => ({ ...prev, hotelId: value, managerId: "" }));
+    };
+
+    const handlePeriodPreset = (preset: PeriodPreset) => {
+        setPeriodPreset(preset);
+        setFilters((prev) => ({
+            ...prev,
+            ...createPeriodFilters(preset),
+            hotelId: prev.hotelId,
+            managerId: prev.managerId,
+        }));
     };
 
     const handleExportCSV = useCallback(() => {
@@ -888,6 +935,25 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </Button>
                                 ) : undefined}
                             >
+                                <div className="mb-4 flex flex-wrap gap-2">
+                                    {([
+                                        { id: "week", label: "Неделя" },
+                                        { id: "month", label: "Месяц" },
+                                        { id: "year", label: "Год" },
+                                    ] as Array<{ id: PeriodPreset; label: string }>).map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            onClick={() => handlePeriodPreset(preset.id)}
+                                            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${periodPreset === preset.id
+                                                ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                                                : "border-slate-200/80 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
+                                                }`}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                </div>
                                 <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 xl:grid-cols-4">
                                     <Field label="Период от" htmlFor="overview-start">
                                         <Input
