@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useForm } from 'react-hook-form';
 import { useEffect, useMemo, useState } from 'react';
@@ -331,10 +331,14 @@ interface AdminHotelDetailProps {
 
 export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { request, get } = useApi();
     const { toast } = useToast();
 
-    const hotelKey = hotelId ? `/api/hotels/${hotelId}` : null;
+    const country = searchParams.get('country')?.toUpperCase();
+    const countryQuery = country === 'KZ' || country === 'KG' ? `?country=${country}` : '';
+
+    const hotelKey = hotelId ? `/api/hotels/${hotelId}${countryQuery}` : null;
     const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(hotelKey, (url: string) => get<HotelDetailPayload>(url));
 
     const hotelTz = data?.timezone ?? undefined;
@@ -1209,7 +1213,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 >
                                     Панель управления
                                 </Button>
-                                <Link href="/">
+                                <Link href={`/${countryQuery}`}>
                                     <Button variant="ghost" size="sm">Назад</Button>
                                 </Link>
                             </div>
