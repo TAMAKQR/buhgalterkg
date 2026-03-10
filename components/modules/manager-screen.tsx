@@ -470,6 +470,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return [
             ...blocks,
             '',
+            `На начало смены: ${formatKgs(data.shift?.openingCash ?? 0)}`,
             `Общая сумма: ${formatKgs(shiftRevenueTotal)}`,
             `Безнал: ${formatKgs(shiftRevenueCard)}`,
             `Нал: ${formatKgs(shiftRevenueCash)}`,
