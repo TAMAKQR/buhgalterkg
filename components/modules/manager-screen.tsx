@@ -338,13 +338,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     <p class="brand">${primaryHotel.name}</p>
     <p>${primaryHotel.address}</p>
     <ul>
-        <li><span>Менеджер</span><strong>${managerName}</strong></li>
+        <li><span>На смене</span><strong>${managerName}</strong></li>
         <li><span>Открыта</span><strong>${formatDateTime(data.shift.openedAt, hotelTz)}</strong></li>
         <li><span>Печать</span><strong>${formatDateTime(printTimestamp, hotelTz)}</strong></li>
-        <li><span>Открытие кассы</span><strong>${formatKgs(data.shift.openingCash)}</strong></li>
-        <li><span>Выручка (нал)</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
-        <li><span>Выручка (безнал)</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
-        <li><span>Затраты (нал/безнал)</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
+        <li><span>На начало смены</span><strong>${formatKgs(data.shift.openingCash)}</strong></li>
+        <li><span>Поступления за смену</span><strong>${formatKgs(shiftRevenueTotal)}</strong></li>
+        <li><span>Поступило наличными</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
+        <li><span>Поступило безналом</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
+        <li><span>Расходы за смену</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
     </ul>
     ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').length > 0 ? `
     <ul class="expenses">
@@ -354,9 +355,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     </ul>` : ''}
     <ul>
         <li><span>Чистый доход</span><strong>${formatKgs(shiftNetIncome)}</strong></li>
-        <li><span>Остаток (нал)</span><strong>${formatKgs(shiftCashValue)}</strong></li>
-        <li><span>Остаток (безнал)</span><strong>${formatKgs(shiftCardValue)}</strong></li>
-        <li><span>Остаток суммарно</span><strong>${formatKgs(shiftTotalBalance)}</strong></li>
+        <li><span>Сейчас в кассе</span><strong>${formatKgs(shiftCashValue)}</strong></li>
+        <li><span>Сейчас безналом</span><strong>${formatKgs(shiftCardValue)}</strong></li>
+        <li><span>Сейчас всего</span><strong>${formatKgs(shiftTotalBalance)}</strong></li>
     </ul>
     <p class="footer">Сохраните в PDF через диалог печати браузера.</p>
 </div>
@@ -471,13 +472,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             ...blocks,
             '',
             `На начало смены: ${formatKgs(data.shift?.openingCash ?? 0)}`,
-            `Общая сумма: ${formatKgs(shiftRevenueTotal)}`,
-            `Безнал: ${formatKgs(shiftRevenueCard)}`,
-            `Нал: ${formatKgs(shiftRevenueCash)}`,
+            `Поступления за смену: ${formatKgs(shiftRevenueTotal)}`,
+            `Поступило безналом: ${formatKgs(shiftRevenueCard)}`,
+            `Поступило наличными: ${formatKgs(shiftRevenueCash)}`,
+            `Сейчас в кассе: ${formatKgs(shiftCashValue)}`,
             '',
-            `${managerName} на смене`,
+            `На смене: ${managerName}`,
         ].join('\n');
-    }, [data, formatKgs, hotelTz, managerName, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, sortedRooms]);
+    }, [data, formatKgs, hotelTz, managerName, shiftCashValue, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, sortedRooms]);
 
     const handleCopyState = async () => {
         if (!shareMessage || typeof navigator === 'undefined' || !navigator.clipboard) {
