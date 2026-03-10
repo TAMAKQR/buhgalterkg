@@ -111,6 +111,11 @@ export async function GET(request: NextRequest) {
                     note: true,
                     recordedAt: true,
                     entryType: true,
+                    expenseCategory: {
+                        select: {
+                            name: true
+                        }
+                    },
                     manager: {
                         select: {
                             displayName: true,
@@ -151,6 +156,7 @@ export async function GET(request: NextRequest) {
             amount: number;
             method: PaymentMethod;
             note: string | null;
+            categoryName: string | null;
             recordedAt: Date;
             entryType: LedgerEntryType;
             managerName: string | null;
@@ -164,6 +170,7 @@ export async function GET(request: NextRequest) {
                     amount: entry.amount,
                     method: entry.method,
                     note: entry.note,
+                    categoryName: entry.expenseCategory?.name ?? null,
                     recordedAt: entry.recordedAt,
                     entryType: entry.entryType,
                     managerName: entry.manager?.displayName ?? null,

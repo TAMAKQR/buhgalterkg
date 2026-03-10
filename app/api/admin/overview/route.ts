@@ -100,6 +100,11 @@ export async function GET(request: NextRequest) {
                 note: true,
                 recordedAt: true,
                 entryType: true,
+                expenseCategory: {
+                    select: {
+                        name: true,
+                    },
+                },
                 hotel: {
                     select: {
                         name: true,
@@ -240,6 +245,7 @@ export async function GET(request: NextRequest) {
                 amount: entry.amount,
                 method: entry.method,
                 note: entry.note,
+                categoryName: entry.expenseCategory?.name ?? null,
                 recordedAt: entry.recordedAt,
                 entryType: entry.entryType,
                 managerName: entry.manager?.displayName ?? null,

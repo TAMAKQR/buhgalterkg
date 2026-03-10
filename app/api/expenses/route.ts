@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 const expenseSchema = z.object({
     hotelId: z.string().cuid(),
     shiftId: z.string().cuid().optional(),
+    categoryId: z.string().cuid().optional(),
     amount: z.number().int().positive(),
     method: z.nativeEnum(PaymentMethod),
     entryType: z.nativeEnum(LedgerEntryType),
@@ -25,6 +26,10 @@ export async function POST(request: NextRequest) {
 
         assertHotelAccess(session, payload.hotelId);
 
+        if (payload.categoryId && payload.entryType !== LedgerEntryType.CASH_OUT) {
+            return new NextResponse('Категорию можно указать только для расходов', { status: 400 });
+        }
+
         let managerId = session.id;
         if (payload.shiftId) {
             const shift = await prisma.shift.findUnique({ where: { id: payload.shiftId } });
@@ -34,11 +39,27 @@ export async function POST(request: NextRequest) {
             managerId = shift.managerId;
         }
 
+        let categoryId: string | undefined;
+        if (payload.categoryId) {
+            const category = await prisma.expenseCategory.findFirst({
+                where: {
+                    id: payload.categoryId,
+                    hotelId: payload.hotelId,
+                },
+                select: { id: true },
+            });
+            if (!category) {
+                return new NextResponse('Категория расходов не найдена', { status: 400 });
+            }
+            categoryId = category.id;
+        }
+
         const entry = await prisma.cashEntry.create({
             data: {
                 hotelId: payload.hotelId,
                 shiftId: payload.shiftId,
                 managerId,
+                categoryId,
                 recordedAt: new Date(),
                 amount: payload.amount,
                 method: payload.method,

@@ -42,6 +42,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             prisma.hotel.findFirst({
                 where: { id: params.hotelId, country },
                 include: {
+                    expenseCategories: {
+                        orderBy: { name: 'asc' }
+                    },
                     rooms: {
                         orderBy: { label: 'asc' },
                         include: {
@@ -73,6 +76,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 orderBy: { recordedAt: 'desc' },
                 take: 50,
                 include: {
+                    expenseCategory: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    },
                     manager: true,
                     shift: { select: { number: true } }
                 }
@@ -281,9 +290,19 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 method: entry.method,
                 amount: entry.amount,
                 note: entry.note,
+                category: entry.expenseCategory
+                    ? {
+                        id: entry.expenseCategory.id,
+                        name: entry.expenseCategory.name
+                    }
+                    : null,
                 recordedAt: entry.recordedAt,
                 managerName: entry.manager?.displayName ?? null,
                 shiftNumber: entry.shift?.number ?? null
+            })),
+            expenseCategories: hotel.expenseCategories.map((category) => ({
+                id: category.id,
+                name: category.name
             })),
             bonusTiers: bonusTiers.map((t) => ({
                 id: t.id,

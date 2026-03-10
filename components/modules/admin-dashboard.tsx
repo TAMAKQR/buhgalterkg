@@ -26,6 +26,7 @@ type ExpenseEntry = {
     amount: number;
     method: "CASH" | "CARD";
     note?: string | null;
+    categoryName?: string | null;
     recordedAt: string;
     entryType: "CASH_OUT" | "MANAGER_PAYOUT";
     managerName?: string | null;
@@ -168,6 +169,8 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 const paymentMethodLabel = (method: "CASH" | "CARD") => (method === "CASH" ? "нал" : "карта");
 const expenseTypeLabel = (entryType: "CASH_OUT" | "MANAGER_PAYOUT") => (entryType === "MANAGER_PAYOUT" ? "выплата" : "расход");
+const expenseReasonLabel = (entry: ExpenseEntry) => entry.categoryName?.trim() || entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без категории");
+const expenseNoteLabel = (entry: ExpenseEntry) => entry.note?.trim() || null;
 
 const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
 
@@ -272,7 +275,8 @@ function ExpenseFeed({
                 {entries.length ? entries.map((entry) => {
                     const currency = entry.currency ?? defaultCurrency;
                     const timezone = entry.timezone ?? defaultTimezone;
-                    const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+                    const note = expenseReasonLabel(entry);
+                    const noteDetails = expenseNoteLabel(entry);
 
                     return (
                         <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -284,6 +288,7 @@ function ExpenseFeed({
                                         {entry.managerName ? ` · ${entry.managerName}` : ""}
                                         {showHotelName && entry.hotelName ? ` · ${entry.hotelName}` : ""}
                                     </p>
+                                    {noteDetails && entry.categoryName ? <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{noteDetails}</p> : null}
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm font-semibold text-rose-500 dark:text-rose-300">-{formatCurrency(entry.amount, currency ?? undefined)}</p>
@@ -311,7 +316,7 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
         const buckets = new Map<string, { label: string; count: number; amount: number }>();
 
         for (const entry of entries) {
-            const label = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+            const label = expenseReasonLabel(entry);
             const normalized = label.toLocaleLowerCase("ru-RU");
             const bucket = buckets.get(normalized) ?? { label, count: 0, amount: 0 };
             bucket.count += 1;
@@ -327,7 +332,7 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
     return (
         <Card className={`p-4 ${className ?? ""}`}>
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Структура расходов</p>
-            <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По причинам</h3>
+            <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По категориям</h3>
             <div className="mt-4 space-y-2.5">
                 {grouped.length ? grouped.map((item) => (
                     <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -364,9 +369,10 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
         }
 
         return entries.filter((entry) => {
-            const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+            const note = expenseReasonLabel(entry);
             const haystack = [
                 note,
+                entry.note,
                 entry.managerName,
                 entry.hotelName,
                 paymentMethodLabel(entry.method),
@@ -410,11 +416,13 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                             {filteredEntries.length ? filteredEntries.map((entry) => {
                                 const currency = entry.currency ?? defaultCurrency;
                                 const timezone = entry.timezone ?? defaultTimezone;
-                                const note = entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без описания");
+                                const note = expenseReasonLabel(entry);
+                                const noteDetails = expenseNoteLabel(entry);
                                 return (
                                     <tr key={entry.id} className="align-top text-slate-700 dark:text-white/80">
                                         <td className="px-3 py-3">
                                             <p className="font-medium text-slate-900 dark:text-white">{note}</p>
+                                            {noteDetails && entry.categoryName ? <p className="mt-1 text-[12px] text-slate-500 dark:text-white/45">{noteDetails}</p> : null}
                                         </td>
                                         <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
                                             <p>{expenseTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.method)}</p>

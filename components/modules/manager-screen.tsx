@@ -53,8 +53,16 @@ interface ManagerStateResponse {
         method: 'CASH' | 'CARD';
         amount: number;
         note?: string | null;
+        category?: {
+            id: string;
+            name: string;
+        } | null;
         recordedAt: string;
     }> | null;
+    expenseCategories?: Array<{
+        id: string;
+        name: string;
+    }>;
     rooms: Array<{
         id: string;
         label: string;
@@ -120,6 +128,7 @@ interface ExpenseForm {
     amount: number;
     method: 'CASH' | 'CARD';
     note?: string;
+    categoryId?: string;
     entryType: 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
 }
 
@@ -213,7 +222,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatDateInputValue = (date: Date) => formatInputValue(date, hotelTz);
 
-    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT' } });
+    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '' } });
     const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '', handoverRecipientId: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
@@ -265,6 +274,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const shiftTotalBalance = shiftBalances?.total ?? shiftCashValue + shiftCardValue;
     const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
     const shiftLedger = data?.shiftLedger ?? [];
+    const expenseCategories = data?.expenseCategories ?? [];
+    const selectedExpenseEntryType = expenseForm.watch('entryType');
     const compensation = data?.compensation ?? null;
     const managerName = user.displayName?.trim() || user.username?.trim() || 'Менеджер';
     const shiftPayDisplay = typeof compensation?.shiftPayAmount === 'number' ? formatKgs(compensation.shiftPayAmount) : null;
@@ -278,6 +289,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         : null;
     const handleOpenProfile = () => setIsProfileOpen(true);
     const handleCloseProfile = () => setIsProfileOpen(false);
+
+    useEffect(() => {
+        if (selectedExpenseEntryType !== 'CASH_OUT') {
+            expenseForm.setValue('categoryId', '');
+        }
+    }, [expenseForm, selectedExpenseEntryType]);
+
     const handlePrintShiftReceipt = () => {
         if (typeof window === 'undefined' || !data?.shift || !primaryHotel) {
             return;
@@ -326,7 +344,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').length > 0 ? `
     <ul class="expenses">
         ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').map(e =>
-            `<li><span style="padding-left:16px;color:#64748b">↳ ${e.note?.trim() || 'Расход'} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${formatKgs(e.amount)}</strong></li>`
+            `<li><span style="padding-left:16px;color:#64748b">↳ ${[e.category?.name?.trim(), e.note?.trim()].filter(Boolean).join(' · ') || 'Расход'} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${formatKgs(e.amount)}</strong></li>`
         ).join('')}
     </ul>` : ''}
     <ul>
@@ -583,11 +601,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 shiftId: data.shift.id,
                 amount: toMinor(values.amount),
                 method: values.method,
+                categoryId: values.entryType === 'CASH_OUT' && values.categoryId ? values.categoryId : undefined,
                 note: values.note,
                 entryType: values.entryType
             }
         });
-        expenseForm.reset({ amount: 0, method: values.method, entryType: values.entryType, note: '' });
+        expenseForm.reset({
+            amount: 0,
+            method: values.method,
+            entryType: values.entryType,
+            categoryId: values.entryType === 'CASH_OUT' ? values.categoryId ?? '' : '',
+            note: ''
+        });
     });
 
     const handleCheckout = async (roomId: string) => {
@@ -1001,7 +1026,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {activePanel === 'cash' && (
                             <Card>
                                 <CardHeader title="Касса" />
-                                <form className="grid gap-3 md:grid-cols-3" onSubmit={handleExpense}>
+                                <form className="grid gap-3 md:grid-cols-4" onSubmit={handleExpense}>
                                     <Input type="number" step="0.01" placeholder="Сумма" {...expenseForm.register('amount', { valueAsNumber: true })} />
                                     <Select className="min-w-0 max-w-full" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
@@ -1013,8 +1038,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
                                         <option value="ADJUSTMENT">Корректировка</option>
                                     </Select>
-                                    <TextArea rows={1} className="md:col-span-3" placeholder="Комментарий" {...expenseForm.register('note')} />
-                                    <Button type="submit" className="md:col-span-3">
+                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('categoryId')} disabled={selectedExpenseEntryType !== 'CASH_OUT'}>
+                                        <option value="">{selectedExpenseEntryType === 'CASH_OUT' ? (expenseCategories.length ? 'Без категории' : 'Категорий пока нет') : 'Категория недоступна'}</option>
+                                        {expenseCategories.map((category) => (
+                                            <option key={category.id} value={category.id}>{category.name}</option>
+                                        ))}
+                                    </Select>
+                                    <TextArea rows={1} className="md:col-span-4" placeholder="Комментарий" {...expenseForm.register('note')} />
+                                    <Button type="submit" className="md:col-span-4">
                                         Записать операцию
                                     </Button>
                                 </form>
@@ -1053,13 +1084,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                         ? 'Выплата'
                                                                         : 'Корр.';
                                                         const amountClass = signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300';
+                                                        const detailLabel = [entry.category?.name?.trim(), entry.note?.trim()].filter(Boolean).join(' · ');
 
                                                         return (
                                                             <div key={entry.id} className="flex items-center justify-between py-2 text-xs">
                                                                 <div className="min-w-0">
                                                                     <span className="text-slate-500 dark:text-white/50">{timestamp}</span>
                                                                     <span className="ml-2 text-slate-500 dark:text-white/40">{entryLabel} · {methodLabel}</span>
-                                                                    {entry.note && <span className="ml-2 text-slate-600 dark:text-white/60">{entry.note}</span>}
+                                                                    {detailLabel && <span className="ml-2 text-slate-600 dark:text-white/60">{detailLabel}</span>}
                                                                 </div>
                                                                 <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{formatKgs(signedAmount)}</span>
                                                             </div>

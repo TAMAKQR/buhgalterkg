@@ -43,6 +43,7 @@ model Hotel {
   stays           RoomStay[]
   shifts          Shift[]
   bonusTiers      BonusTier[]
+  expenseCategories ExpenseCategory[]
 }
 
 model HotelAssignment {
@@ -137,15 +138,30 @@ model CashEntry {
   shiftId    String?
   hotelId    String
   managerId  String?
+  categoryId String?         @map("expense_category_id")
   entryType  LedgerEntryType
   method     PaymentMethod
   amount     Int
   note       String?
   meta       Json?
   recordedAt DateTime        @default(now())
+  expenseCategory ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   hotel      Hotel           @relation(fields: [hotelId], references: [id])
   manager    User?           @relation(fields: [managerId], references: [id])
   shift      Shift?          @relation(fields: [shiftId], references: [id])
+}
+
+model ExpenseCategory {
+  id        String      @id @default(cuid())
+  hotelId   String
+  name      String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  hotel     Hotel       @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  entries   CashEntry[]
+
+  @@unique([hotelId, name])
+  @@index([hotelId])
 }
 
 

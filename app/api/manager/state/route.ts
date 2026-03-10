@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
         const hotel = await prisma.hotel.findUnique({
             where: { id: hotelId },
             include: {
+                expenseCategories: {
+                    orderBy: { name: 'asc' }
+                },
                 rooms: {
                     include: {
                         stays: {
@@ -82,6 +85,10 @@ export async function GET(request: NextRequest) {
             method: PaymentMethod;
             amount: number;
             note: string | null;
+            category: {
+                id: string;
+                name: string;
+            } | null;
             recordedAt: Date;
         }> = [];
         if (shift) {
@@ -105,6 +112,12 @@ export async function GET(request: NextRequest) {
                         method: true,
                         amount: true,
                         note: true,
+                        expenseCategory: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        },
                         recordedAt: true
                     }
                 })
@@ -136,7 +149,20 @@ export async function GET(request: NextRequest) {
                 total: paymentTotals[PaymentMethod.CASH] + paymentTotals[PaymentMethod.CARD]
             };
 
-            shiftLedger = ledgerEntries;
+            shiftLedger = ledgerEntries.map((entry) => ({
+                id: entry.id,
+                entryType: entry.entryType,
+                method: entry.method,
+                amount: entry.amount,
+                note: entry.note,
+                category: entry.expenseCategory
+                    ? {
+                        id: entry.expenseCategory.id,
+                        name: entry.expenseCategory.name
+                    }
+                    : null,
+                recordedAt: entry.recordedAt
+            }));
             shiftExpenses = ledgerEntries.reduce(
                 (totals, entry) => {
                     if (
@@ -243,6 +269,10 @@ export async function GET(request: NextRequest) {
                 timezone: hotel.timezone,
                 currency: hotel.currency
             },
+            expenseCategories: hotel.expenseCategories.map((category) => ({
+                id: category.id,
+                name: category.name
+            })),
             shift,
             shiftCash,
             shiftBalances,

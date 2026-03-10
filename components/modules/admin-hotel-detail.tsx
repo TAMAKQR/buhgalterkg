@@ -43,6 +43,10 @@ interface LedgerEntryDetail {
     method: LedgerPaymentMethodValue;
     amount: number;
     note?: string | null;
+    category?: {
+        id: string;
+        name: string;
+    } | null;
     recordedAt: string;
     managerName?: string | null;
     shiftNumber?: number | null;
@@ -115,6 +119,10 @@ interface HotelDetailPayload {
         threshold: number;
         bonus: number;
         bonusPct: number | null;
+    }>;
+    expenseCategories?: Array<{
+        id: string;
+        name: string;
     }>;
 }
 
@@ -416,9 +424,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
     const [isMassAddRoomsExpanded, setIsMassAddRoomsExpanded] = useState(false);
     const [isBonusTiersExpanded, setIsBonusTiersExpanded] = useState(false);
+    const [isExpenseCategoriesExpanded, setIsExpenseCategoriesExpanded] = useState(false);
     const [newTier, setNewTier] = useState({ threshold: '', bonus: '', bonusPct: '', usePercent: false });
     const [savingTier, setSavingTier] = useState(false);
     const [removingTierId, setRemovingTierId] = useState<string | null>(null);
+    const [newExpenseCategoryName, setNewExpenseCategoryName] = useState('');
+    const [editingExpenseCategoryId, setEditingExpenseCategoryId] = useState<string | null>(null);
+    const [editingExpenseCategoryName, setEditingExpenseCategoryName] = useState('');
+    const [savingExpenseCategoryId, setSavingExpenseCategoryId] = useState<string | 'new' | null>(null);
+    const [removingExpenseCategoryId, setRemovingExpenseCategoryId] = useState<string | null>(null);
 
     const stayFormValues = stayEditForm.watch();
     const hasStaySelection = Boolean(stayFormValues.stayId);
@@ -876,6 +890,80 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             toast(String(e), 'error');
         } finally {
             setRemovingTierId(null);
+        }
+    };
+
+    const handleAddExpenseCategory = async () => {
+        const name = newExpenseCategoryName.trim();
+        if (!name) {
+            toast('Введите название категории', 'error');
+            return;
+        }
+
+        setSavingExpenseCategoryId('new');
+        try {
+            await request('/api/admin/expense-categories', {
+                body: {
+                    hotelId,
+                    name
+                }
+            });
+            setNewExpenseCategoryName('');
+            mutate();
+            toast('Категория добавлена', 'success');
+        } catch (error) {
+            console.error(error);
+            toast(String(error), 'error');
+        } finally {
+            setSavingExpenseCategoryId(null);
+        }
+    };
+
+    const handleStartEditExpenseCategory = (category: NonNullable<HotelDetailPayload['expenseCategories']>[number]) => {
+        setEditingExpenseCategoryId(category.id);
+        setEditingExpenseCategoryName(category.name);
+    };
+
+    const handleSaveExpenseCategory = async (categoryId: string) => {
+        const name = editingExpenseCategoryName.trim();
+        if (!name) {
+            toast('Введите название категории', 'error');
+            return;
+        }
+
+        setSavingExpenseCategoryId(categoryId);
+        try {
+            await request(`/api/admin/expense-categories/${categoryId}`, {
+                method: 'PATCH',
+                body: { name }
+            });
+            setEditingExpenseCategoryId(null);
+            setEditingExpenseCategoryName('');
+            mutate();
+            toast('Категория обновлена', 'success');
+        } catch (error) {
+            console.error(error);
+            toast(String(error), 'error');
+        } finally {
+            setSavingExpenseCategoryId(null);
+        }
+    };
+
+    const handleDeleteExpenseCategory = async (categoryId: string) => {
+        setRemovingExpenseCategoryId(categoryId);
+        try {
+            await request(`/api/admin/expense-categories/${categoryId}`, { method: 'DELETE' });
+            if (editingExpenseCategoryId === categoryId) {
+                setEditingExpenseCategoryId(null);
+                setEditingExpenseCategoryName('');
+            }
+            mutate();
+            toast('Категория удалена', 'success');
+        } catch (error) {
+            console.error(error);
+            toast(String(error), 'error');
+        } finally {
+            setRemovingExpenseCategoryId(null);
         }
     };
 
@@ -1463,6 +1551,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <div className="space-y-3">
                                                         {selectedShiftTransactions.map((entry) => {
                                                             const note = entry.note?.trim() || null;
+                                                            const categoryName = entry.category?.name?.trim() || null;
                                                             return (
                                                                 <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1481,8 +1570,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     <div className="mt-3 flex flex-wrap gap-2">
                                                                         <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
                                                                         <Badge label={ledgerMethodLabels[entry.method]} />
+                                                                        {categoryName ? <Badge label={categoryName} /> : null}
                                                                     </div>
-                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || ledgerEntryTypeLabels[entry.entryType]}</p>
+                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerEntryTypeLabels[entry.entryType]}</p>
                                                                 </div>
                                                             );
                                                         })}
@@ -2204,6 +2294,97 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
                                 <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <CardHeader
+                                        title="Категории расходов"
+                                        actions={
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                className="border border-slate-200/80 dark:border-white/15"
+                                                onClick={() => setIsExpenseCategoriesExpanded((prev) => !prev)}
+                                            >
+                                                {isExpenseCategoriesExpanded ? 'Свернуть' : 'Открыть'}
+                                            </Button>
+                                        }
+                                    />
+                                    {isExpenseCategoriesExpanded && (
+                                        <div className="space-y-3">
+                                            {(data?.expenseCategories ?? []).length ? (
+                                                <div className="space-y-2">
+                                                    {(data?.expenseCategories ?? []).map((category) => {
+                                                        const isEditing = editingExpenseCategoryId === category.id;
+                                                        const isSaving = savingExpenseCategoryId === category.id;
+                                                        const isRemoving = removingExpenseCategoryId === category.id;
+
+                                                        return (
+                                                            <div key={category.id} className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                                {isEditing ? (
+                                                                    <Input
+                                                                        value={editingExpenseCategoryName}
+                                                                        onChange={(event) => setEditingExpenseCategoryName(event.target.value)}
+                                                                        className="min-w-[12rem] flex-1"
+                                                                        placeholder="Название категории"
+                                                                    />
+                                                                ) : (
+                                                                    <p className="min-w-0 flex-1 text-sm text-slate-900 dark:text-white">{category.name}</p>
+                                                                )}
+                                                                {isEditing ? (
+                                                                    <>
+                                                                        <Button type="button" size="sm" variant="secondary" disabled={isSaving} onClick={() => handleSaveExpenseCategory(category.id)}>
+                                                                            {isSaving ? 'Сохраняем…' : 'Сохранить'}
+                                                                        </Button>
+                                                                        <Button
+                                                                            type="button"
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            className="border border-slate-200/80 dark:border-white/15"
+                                                                            onClick={() => {
+                                                                                setEditingExpenseCategoryId(null);
+                                                                                setEditingExpenseCategoryName('');
+                                                                            }}
+                                                                        >
+                                                                            Отмена
+                                                                        </Button>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Button type="button" size="sm" variant="ghost" className="border border-slate-200/80 dark:border-white/15" onClick={() => handleStartEditExpenseCategory(category)}>
+                                                                            Изменить
+                                                                        </Button>
+                                                                        <Button type="button" size="sm" variant="ghost" className="border border-rose-200/80 text-rose-600 hover:bg-rose-50 dark:border-rose-500/20 dark:text-rose-300 dark:hover:bg-rose-500/10" disabled={isRemoving} onClick={() => handleDeleteExpenseCategory(category.id)}>
+                                                                            {isRemoving ? 'Удаляем…' : 'Удалить'}
+                                                                        </Button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
+                                                    Категории еще не созданы.
+                                                </p>
+                                            )}
+                                            <div className="flex flex-col gap-2 sm:flex-row">
+                                                <Input
+                                                    value={newExpenseCategoryName}
+                                                    onChange={(event) => setNewExpenseCategoryName(event.target.value)}
+                                                    placeholder="Новая категория расходов"
+                                                    className="flex-1"
+                                                />
+                                                <Button type="button" size="sm" variant="secondary" disabled={savingExpenseCategoryId === 'new'} onClick={handleAddExpenseCategory}>
+                                                    {savingExpenseCategoryId === 'new' ? 'Добавляем…' : 'Добавить'}
+                                                </Button>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 dark:text-white/30">
+                                                Эти категории будут доступны менеджеру в форме расхода. Удаление категории не удаляет старые записи, только снимает привязку.
+                                            </p>
+                                        </div>
+                                    )}
+                                </Card>
+
+                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                    <CardHeader
                                         title="Бонусы за кассу"
                                         actions={
                                             <Button
@@ -2484,6 +2665,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 {selectedShiftOutflows.length ? (
                                     selectedShiftOutflows.map((entry) => {
                                         const note = entry.note?.trim() || null;
+                                        const categoryName = entry.category?.name?.trim() || null;
                                         return (
                                             <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-white/60">
@@ -2492,7 +2674,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </div>
                                                 <p className="mt-2 text-lg font-semibold text-rose-300">-{formatCurrency(entry.amount)}</p>
                                                 <p className="text-xs text-slate-500 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
-                                                <p className="mt-1 text-xs text-slate-400 dark:text-white/40">{note || 'Расход'}</p>
+                                                <p className="mt-1 text-xs text-slate-400 dark:text-white/40">{note || categoryName || 'Расход'}</p>
                                             </div>
                                         );
                                     })
