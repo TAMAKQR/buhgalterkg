@@ -47,6 +47,7 @@ interface ManagerStateResponse {
         card: number;
         total: number;
     } | null;
+    shiftStayRevenue?: number | null;
     shiftLedger?: Array<{
         id: string;
         entryType: 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
@@ -267,6 +268,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const shiftRevenueTotal = shiftPayments?.total ?? 0;
     const shiftRevenueCash = shiftPayments?.cash ?? 0;
     const shiftRevenueCard = shiftPayments?.card ?? 0;
+    const shiftStayRevenue = data?.shiftStayRevenue ?? 0;
+    const shiftOtherReceipts = Math.max(shiftRevenueTotal - shiftStayRevenue, 0);
     const shiftBalances = data?.shiftBalances ?? null;
     const shiftCashValue = shiftBalances?.cash ?? data?.shiftCash ?? data?.shift?.openingCash ?? 0;
     const computedCardFallback = shiftRevenueCard - shiftExpensesCard;
@@ -343,6 +346,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         <li><span>Печать</span><strong>${formatDateTime(printTimestamp, hotelTz)}</strong></li>
         <li><span>На начало смены</span><strong>${formatKgs(data.shift.openingCash)}</strong></li>
         <li><span>Поступления за смену</span><strong>${formatKgs(shiftRevenueTotal)}</strong></li>
+        <li><span>Из заселений</span><strong>${formatKgs(shiftStayRevenue)}</strong></li>
+        <li><span>Прочие поступления</span><strong>${formatKgs(shiftOtherReceipts)}</strong></li>
         <li><span>Поступило наличными</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
         <li><span>Поступило безналом</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
         <li><span>Расходы за смену</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
@@ -473,13 +478,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             '',
             `На начало смены: ${formatKgs(data.shift?.openingCash ?? 0)}`,
             `Поступления за смену: ${formatKgs(shiftRevenueTotal)}`,
+            `Из заселений: ${formatKgs(shiftStayRevenue)}`,
+            `Прочие поступления: ${formatKgs(shiftOtherReceipts)}`,
             `Поступило безналом: ${formatKgs(shiftRevenueCard)}`,
             `Поступило наличными: ${formatKgs(shiftRevenueCash)}`,
             `Сейчас в кассе: ${formatKgs(shiftCashValue)}`,
             '',
             `На смене: ${managerName}`,
         ].join('\n');
-    }, [data, formatKgs, hotelTz, managerName, shiftCashValue, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, sortedRooms]);
+    }, [data, formatKgs, hotelTz, managerName, shiftCashValue, shiftOtherReceipts, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, shiftStayRevenue, sortedRooms]);
 
     const handleCopyState = async () => {
         if (!shareMessage || typeof navigator === 'undefined' || !navigator.clipboard) {

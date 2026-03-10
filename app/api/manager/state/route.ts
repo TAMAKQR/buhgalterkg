@@ -278,6 +278,7 @@ export async function GET(request: NextRequest) {
             shiftBalances,
             shiftExpenses,
             shiftPayments,
+            shiftStayRevenue,
             shiftLedger: serializedLedger,
             rooms: hotel.rooms.map((room) => ({
                 id: room.id,
