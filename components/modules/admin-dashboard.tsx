@@ -46,6 +46,11 @@ type AdminHotelSummary = {
     cleaningChatId?: string | null;
     timezone?: string | null;
     currency?: string | null;
+    monthlyPayrollCost?: number | null;
+    monthlyRentCost?: number | null;
+    monthlyUtilitiesCost?: number | null;
+    monthlySuppliesCost?: number | null;
+    monthlyOtherCost?: number | null;
     roomCount: number;
     occupiedRooms: number;
     managers: Array<{
@@ -98,6 +103,28 @@ type AdminOverview = {
         active: number;
         lastOpenedAt: string | null;
     };
+    businessTarget?: {
+        hotelsInScope: number;
+        monthLabel: string;
+        costs: {
+            payroll: number;
+            rent: number;
+            utilities: number;
+            supplies: number;
+            other: number;
+        };
+        monthlyRequiredRevenue: number;
+        monthRevenue: number;
+        remainingToTarget: number;
+        coveredPct: number;
+        elapsedDays: number;
+        totalDays: number;
+        remainingDays: number;
+        currentDailyAverage: number;
+        requiredDailyAverage: number;
+        projectedRevenue: number;
+        onTrack: boolean;
+    };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number }>;
     recentExpenses?: ExpenseEntry[];
 };
@@ -128,6 +155,11 @@ interface CreateHotelPayload {
     cleaningChatId?: string;
     timezone?: string;
     currency?: string;
+    monthlyPayrollCost?: number;
+    monthlyRentCost?: number;
+    monthlyUtilitiesCost?: number;
+    monthlySuppliesCost?: number;
+    monthlyOtherCost?: number;
 }
 
 type HotelFormState = {
@@ -137,6 +169,11 @@ type HotelFormState = {
     cleaningChatId: string;
     timezone: string;
     currency: string;
+    monthlyPayrollCost: string;
+    monthlyRentCost: string;
+    monthlyUtilitiesCost: string;
+    monthlySuppliesCost: string;
+    monthlyOtherCost: string;
 };
 
 // notify is replaced by useToast() inside the component
@@ -160,9 +197,28 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     cleaningChatId: "",
     timezone: display.timezone,
     currency: display.currency,
+    monthlyPayrollCost: "0",
+    monthlyRentCost: "0",
+    monthlyUtilitiesCost: "0",
+    monthlySuppliesCost: "0",
+    monthlyOtherCost: "0",
 });
 
 const formatCurrency = (value: number, currency?: string) => formatMoney(value, currency);
+const formatPercentInt = (value: number) => `${Math.round(value)}%`;
+
+const toMinorUnits = (value?: string | null) => {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    const parsed = Number(normalized.replace(",", "."));
+    if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+    return Math.round(parsed * 100);
+};
+
+const fromMinorUnits = (value?: number | null) => {
+    if (!value) return "0";
+    return String(value / 100);
+};
 
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
@@ -244,6 +300,98 @@ function StatPill({ label, value }: { label: string; value: string }) {
             <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/28">{label}</p>
             <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
         </div>
+    );
+}
+
+function BusinessTargetCard({
+    target,
+    currency,
+    hotelLabel,
+}: {
+    target?: AdminOverview["businessTarget"];
+    currency?: string;
+    hotelLabel?: string;
+}) {
+    if (!target) return null;
+
+    const breakdown = [
+        { label: "Зарплаты", value: target.costs.payroll },
+        { label: "Аренда", value: target.costs.rent },
+        { label: "Ком услуги", value: target.costs.utilities },
+        { label: "Хоз товары", value: target.costs.supplies },
+        { label: "Прочее", value: target.costs.other },
+    ];
+    const hasPlan = target.monthlyRequiredRevenue > 0;
+
+    return (
+        <Card className="col-span-1 xs:col-span-2 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-3xl">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Финансовый ориентир</p>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                        {hotelLabel ? `План для ${hotelLabel}` : `План по объектам: ${target.hotelsInScope}`}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-white/45">
+                        {hasPlan
+                            ? `Показывает, сколько нужно заработать в ${target.monthLabel}, чтобы закрыть основные ежемесячные затраты.`
+                            : "Добавь ежемесячные затраты по объектам, и здесь появится ориентир по выручке и темпу."}
+                    </p>
+                </div>
+                {hasPlan ? (
+                    <div className={`rounded-2xl border px-4 py-3 text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Статус месяца</p>
+                        <p className={`mt-1 text-base font-semibold ${target.onTrack ? "text-emerald-700 dark:text-emerald-200" : "text-amber-700 dark:text-amber-200"}`}>
+                            {target.onTrack ? "Идем по темпу" : "Нужно ускориться"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+                            Прогноз: {formatCurrency(target.projectedRevenue, currency)}
+                        </p>
+                    </div>
+                ) : null}
+            </div>
+
+            {hasPlan ? (
+                <>
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                        <StatPill label="Нужно за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
+                        <StatPill label="Уже заработано" value={formatCurrency(target.monthRevenue, currency)} />
+                        <StatPill label="Осталось добрать" value={formatCurrency(target.remainingToTarget, currency)} />
+                        <StatPill label="Средний темп" value={`${formatCurrency(target.currentDailyAverage, currency)}/день`} />
+                        <StatPill label="Нужно дальше" value={target.requiredDailyAverage > 0 ? `${formatCurrency(target.requiredDailyAverage, currency)}/день` : "цель закрыта"} />
+                    </div>
+
+                    <div className="mt-4 rounded-3xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-slate-600 dark:text-white/55">Покрытие плана</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{formatPercentInt(target.coveredPct * 100)}</span>
+                        </div>
+                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/[0.08]">
+                            <div
+                                className={`h-full rounded-full ${target.onTrack ? "bg-emerald-500" : "bg-amber-500"}`}
+                                style={{ width: `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` }}
+                            />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-white/40">
+                            <span>Прошло дней: {target.elapsedDays}/{target.totalDays}</span>
+                            <span>Осталось дней: {target.remainingDays}</span>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-5">
+                        {breakdown.map((item) => (
+                            <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">{item.label}</p>
+                                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            ) : (
+                <div className="mt-4 rounded-3xl border border-dashed border-slate-200/80 px-4 py-5 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/45">
+                    Заполни в управлении объектом ежемесячные ориентиры по зарплатам, аренде, коммуналке, хозтоварам и прочим тратам. Тогда сводка начнет показывать, сколько выручки нужно в месяц и какой темп нужен до конца месяца.
+                </div>
+            )}
+        </Card>
     );
 }
 
@@ -956,6 +1104,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 cleaningChatId: target.cleaningChatId ?? "",
                 timezone: target.timezone ?? overviewDisplay.timezone,
                 currency: target.currency ?? overviewDisplay.currency,
+                monthlyPayrollCost: fromMinorUnits(target.monthlyPayrollCost),
+                monthlyRentCost: fromMinorUnits(target.monthlyRentCost),
+                monthlyUtilitiesCost: fromMinorUnits(target.monthlyUtilitiesCost),
+                monthlySuppliesCost: fromMinorUnits(target.monthlySuppliesCost),
+                monthlyOtherCost: fromMinorUnits(target.monthlyOtherCost),
             });
         } else {
             setSelectedHotelId("");
@@ -986,6 +1139,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             if (rawTimezone) payload.timezone = rawTimezone;
             const rawCurrency = (formData.get("currency") as string | null)?.trim();
             if (rawCurrency) payload.currency = rawCurrency;
+            payload.monthlyPayrollCost = toMinorUnits(formData.get("monthlyPayrollCost") as string | null);
+            payload.monthlyRentCost = toMinorUnits(formData.get("monthlyRentCost") as string | null);
+            payload.monthlyUtilitiesCost = toMinorUnits(formData.get("monthlyUtilitiesCost") as string | null);
+            payload.monthlySuppliesCost = toMinorUnits(formData.get("monthlySuppliesCost") as string | null);
+            payload.monthlyOtherCost = toMinorUnits(formData.get("monthlyOtherCost") as string | null);
 
             if (!payload.name?.trim()) {
                 notify("Название обязательно", 'error');
@@ -1049,6 +1207,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     cleaningChatId: editForm.cleaningChatId.trim() ? editForm.cleaningChatId.trim() : null,
                     timezone: editForm.timezone || "Asia/Bishkek",
                     currency: editForm.currency || "KGS",
+                    monthlyPayrollCost: toMinorUnits(editForm.monthlyPayrollCost) ?? 0,
+                    monthlyRentCost: toMinorUnits(editForm.monthlyRentCost) ?? 0,
+                    monthlyUtilitiesCost: toMinorUnits(editForm.monthlyUtilitiesCost) ?? 0,
+                    monthlySuppliesCost: toMinorUnits(editForm.monthlySuppliesCost) ?? 0,
+                    monthlyOtherCost: toMinorUnits(editForm.monthlyOtherCost) ?? 0,
                 };
 
                 const res = await fetch(withCountry(`/api/hotels/${selectedHotelId}`), {
@@ -1145,6 +1308,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         }
         return overviewHotels.length === 1 ? (overviewHotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
     }, [filters.hotelId, hotels, overviewDisplay.timezone, overviewHotels]);
+
+    const overviewHotelLabel = useMemo(() => {
+        if (!filters.hotelId) return "";
+        return hotels.find((hotel) => hotel.id === filters.hotelId)?.name ?? "";
+    }, [filters.hotelId, hotels]);
 
     const handleFilterInput = (field: keyof OverviewFilters, value: string) => {
         setPeriodPreset(null);
@@ -1328,6 +1496,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             <section className="grid grid-cols-1 gap-2 xs:grid-cols-2 lg:grid-cols-4">
                                 {overview ? (
                                     <>
+                                        <BusinessTargetCard
+                                            target={overview.businessTarget}
+                                            currency={overviewCurrency}
+                                            hotelLabel={overviewHotelLabel}
+                                        />
                                         <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
                                             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Баланс</p>
                                             <p className="mt-2 text-lg sm:text-2xl lg:text-[1.75rem] font-semibold tracking-tight truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
@@ -1535,6 +1708,23 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             </select>
                                         </Field>
                                     </div>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                                        <Field label={`Зарплаты / мес (${overviewDisplay.currency})`} htmlFor="monthlyPayrollCost">
+                                            <Input id="monthlyPayrollCost" name="monthlyPayrollCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
+                                        </Field>
+                                        <Field label={`Аренда / мес (${overviewDisplay.currency})`} htmlFor="monthlyRentCost">
+                                            <Input id="monthlyRentCost" name="monthlyRentCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
+                                        </Field>
+                                        <Field label={`Ком услуги / мес (${overviewDisplay.currency})`} htmlFor="monthlyUtilitiesCost">
+                                            <Input id="monthlyUtilitiesCost" name="monthlyUtilitiesCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
+                                        </Field>
+                                        <Field label={`Хоз товары / мес (${overviewDisplay.currency})`} htmlFor="monthlySuppliesCost">
+                                            <Input id="monthlySuppliesCost" name="monthlySuppliesCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
+                                        </Field>
+                                        <Field label={`Прочее / мес (${overviewDisplay.currency})`} htmlFor="monthlyOtherCost">
+                                            <Input id="monthlyOtherCost" name="monthlyOtherCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
+                                        </Field>
+                                    </div>
                                     <Button type="submit" className="w-full">
                                         Сохранить
                                     </Button>
@@ -1623,6 +1813,23 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <option value="KGS">KGS (сом)</option>
                                                         <option value="KZT">KZT (тенге)</option>
                                                     </select>
+                                                </Field>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                                                <Field label={`Зарплаты / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyPayrollCost">
+                                                    <Input id="edit-monthlyPayrollCost" name="monthlyPayrollCost" type="number" step="0.01" min="0" value={editForm.monthlyPayrollCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
+                                                </Field>
+                                                <Field label={`Аренда / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyRentCost">
+                                                    <Input id="edit-monthlyRentCost" name="monthlyRentCost" type="number" step="0.01" min="0" value={editForm.monthlyRentCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
+                                                </Field>
+                                                <Field label={`Ком услуги / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyUtilitiesCost">
+                                                    <Input id="edit-monthlyUtilitiesCost" name="monthlyUtilitiesCost" type="number" step="0.01" min="0" value={editForm.monthlyUtilitiesCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
+                                                </Field>
+                                                <Field label={`Хоз товары / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlySuppliesCost">
+                                                    <Input id="edit-monthlySuppliesCost" name="monthlySuppliesCost" type="number" step="0.01" min="0" value={editForm.monthlySuppliesCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
+                                                </Field>
+                                                <Field label={`Прочее / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyOtherCost">
+                                                    <Input id="edit-monthlyOtherCost" name="monthlyOtherCost" type="number" step="0.01" min="0" value={editForm.monthlyOtherCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
                                             </div>
                                             <div className="flex flex-col gap-2 pt-1 sm:flex-row">

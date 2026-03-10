@@ -34,6 +34,11 @@ model Hotel {
   currency        String            @default("KGS")
   managerSharePct Int?              @map("manager_share_pct")
   cleaningChatId  String?           @map("cleaning_chat_id")
+  monthlyPayrollCost   Int          @default(0) @map("monthly_payroll_cost")
+  monthlyRentCost      Int          @default(0) @map("monthly_rent_cost")
+  monthlyUtilitiesCost Int          @default(0) @map("monthly_utilities_cost")
+  monthlySuppliesCost  Int          @default(0) @map("monthly_supplies_cost")
+  monthlyOtherCost     Int          @default(0) @map("monthly_other_cost")
   notes           String?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt

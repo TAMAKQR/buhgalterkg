@@ -26,6 +26,11 @@ const updateHotelSchema = z
         timezone: z.string().min(1).max(50).optional(),
         currency: z.string().min(1).max(10).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
+        monthlyPayrollCost: z.number().int().min(0).optional(),
+        monthlyRentCost: z.number().int().min(0).optional(),
+        monthlyUtilitiesCost: z.number().int().min(0).optional(),
+        monthlySuppliesCost: z.number().int().min(0).optional(),
+        monthlyOtherCost: z.number().int().min(0).optional(),
         notes: z.string().max(500).optional(),
         cleaningChatId: cleaningChatIdSchema.optional().nullable()
     })

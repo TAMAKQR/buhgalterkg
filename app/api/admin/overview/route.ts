@@ -11,6 +11,23 @@ import { getCountryFromRequest } from "@/lib/server/request-country";
 
 export const dynamic = "force-dynamic";
 
+const getTodayParts = (timeZone: string) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date());
+
+    const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+
+    return {
+        year: Number(pick("year")),
+        month: Number(pick("month")),
+        day: Number(pick("day")),
+    };
+};
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
@@ -71,7 +88,28 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups] = await prisma.$transaction([
+        const today = getTodayParts(countryConfig.timezone);
+        const monthStart = parseDateOnly(`${today.year}-${String(today.month).padStart(2, "0")}-01`, false, countryConfig.timezone);
+        const totalDaysInMonth = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
+        const monthEnd = parseDateOnly(`${today.year}-${String(today.month).padStart(2, "0")}-${String(totalDaysInMonth).padStart(2, "0")}`, true, countryConfig.timezone);
+
+        const monthStayWhere: Prisma.RoomStayWhereInput = {
+            hotel: { country },
+            status: { in: ["CHECKED_IN", "CHECKED_OUT"] },
+            OR: [
+                { actualCheckIn: { gte: monthStart, lte: monthEnd } },
+                {
+                    actualCheckIn: null,
+                    scheduledCheckIn: { gte: monthStart, lte: monthEnd },
+                },
+            ],
+        };
+
+        if (hotelIds.length) {
+            monthStayWhere.hotelId = { in: hotelIds };
+        }
+
+        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, targetHotels, monthStayRevenue] = await prisma.$transaction([
             prisma.hotel.count({ where: hotelFilter }),
             prisma.room.count({ where: roomHotelFilter }),
             prisma.room.count({ where: { status: RoomStatus.OCCUPIED, ...roomHotelFilter } }),
@@ -82,6 +120,21 @@ export async function GET(request: NextRequest) {
                 orderBy: { entryType: "asc" },
                 _sum: { amount: true },
                 where: ledgerWhere,
+            }),
+            prisma.hotel.findMany({
+                where: hotelFilter,
+                select: {
+                    id: true,
+                    monthlyPayrollCost: true,
+                    monthlyRentCost: true,
+                    monthlyUtilitiesCost: true,
+                    monthlySuppliesCost: true,
+                    monthlyOtherCost: true,
+                },
+            }),
+            prisma.roomStay.aggregate({
+                where: monthStayWhere,
+                _sum: { amountPaid: true },
             }),
         ]);
 
@@ -163,6 +216,32 @@ export async function GET(request: NextRequest) {
         };
 
         const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0;
+        const monthlyCostPlan = targetHotels.reduce(
+            (totals, hotel) => {
+                totals.payroll += hotel.monthlyPayrollCost ?? 0;
+                totals.rent += hotel.monthlyRentCost ?? 0;
+                totals.utilities += hotel.monthlyUtilitiesCost ?? 0;
+                totals.supplies += hotel.monthlySuppliesCost ?? 0;
+                totals.other += hotel.monthlyOtherCost ?? 0;
+                return totals;
+            },
+            { payroll: 0, rent: 0, utilities: 0, supplies: 0, other: 0 }
+        );
+        const monthlyRequiredRevenue =
+            monthlyCostPlan.payroll +
+            monthlyCostPlan.rent +
+            monthlyCostPlan.utilities +
+            monthlyCostPlan.supplies +
+            monthlyCostPlan.other;
+        const monthRevenue = monthStayRevenue._sum.amountPaid ?? 0;
+        const remainingToTarget = Math.max(monthlyRequiredRevenue - monthRevenue, 0);
+        const coveredPct = monthlyRequiredRevenue > 0 ? Math.min(monthRevenue / monthlyRequiredRevenue, 1) : 0;
+        const currentDailyAverage = today.day > 0 ? Math.round(monthRevenue / today.day) : 0;
+        const remainingDays = Math.max(totalDaysInMonth - today.day, 0);
+        const requiredDailyAverage = remainingToTarget > 0 && remainingDays > 0
+            ? Math.ceil(remainingToTarget / remainingDays)
+            : 0;
+        const projectedRevenue = currentDailyAverage * totalDaysInMonth;
 
         /* ── Daily series for line chart ── */
         const dailyConditions: string[] = [];
@@ -236,6 +315,26 @@ export async function GET(request: NextRequest) {
             shifts: {
                 active: activeShifts,
                 lastOpenedAt: lastShift?.openedAt ?? null,
+            },
+            businessTarget: {
+                hotelsInScope: targetHotels.length,
+                monthLabel: new Intl.DateTimeFormat("ru-RU", {
+                    month: "long",
+                    year: "numeric",
+                    timeZone: countryConfig.timezone,
+                }).format(new Date()),
+                costs: monthlyCostPlan,
+                monthlyRequiredRevenue,
+                monthRevenue,
+                remainingToTarget,
+                coveredPct,
+                elapsedDays: today.day,
+                totalDays: totalDaysInMonth,
+                remainingDays,
+                currentDailyAverage,
+                requiredDailyAverage,
+                projectedRevenue,
+                onTrack: monthlyRequiredRevenue > 0 ? projectedRevenue >= monthlyRequiredRevenue : false,
             },
             dailySeries,
             recentExpenses: recentExpenses.map((entry) => ({

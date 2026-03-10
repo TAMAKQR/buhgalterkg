@@ -1,0 +1,6 @@
+ALTER TABLE "Hotel"
+ADD COLUMN "monthly_payroll_cost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "monthly_rent_cost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "monthly_utilities_cost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "monthly_supplies_cost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "monthly_other_cost" INTEGER NOT NULL DEFAULT 0;
