@@ -287,6 +287,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             pending: compensation.pendingPayout ?? null
         }
         : null;
+    const pendingPayoutMajor = typeof payoutSummary?.pending === 'number' ? payoutSummary.pending / 100 : 0;
+    const isAutoManagerPayout = selectedExpenseEntryType === 'MANAGER_PAYOUT';
     const handleOpenProfile = () => setIsProfileOpen(true);
     const handleCloseProfile = () => setIsProfileOpen(false);
 
@@ -294,7 +296,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         if (selectedExpenseEntryType !== 'CASH_OUT') {
             expenseForm.setValue('categoryId', '');
         }
-    }, [expenseForm, selectedExpenseEntryType]);
+        if (selectedExpenseEntryType === 'MANAGER_PAYOUT') {
+            expenseForm.setValue('amount', pendingPayoutMajor);
+        }
+    }, [expenseForm, pendingPayoutMajor, selectedExpenseEntryType]);
 
     const handlePrintShiftReceipt = () => {
         if (typeof window === 'undefined' || !data?.shift || !primaryHotel) {
@@ -599,15 +604,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             body: {
                 hotelId: data.hotel.id,
                 shiftId: data.shift.id,
-                amount: toMinor(values.amount),
+                amount: Number.isFinite(values.amount) ? toMinor(values.amount) : undefined,
                 method: values.method,
                 categoryId: values.entryType === 'CASH_OUT' && values.categoryId ? values.categoryId : undefined,
                 note: values.note,
                 entryType: values.entryType
             }
         });
+        await mutate();
         expenseForm.reset({
-            amount: 0,
+            amount: values.entryType === 'MANAGER_PAYOUT' ? pendingPayoutMajor : 0,
             method: values.method,
             entryType: values.entryType,
             categoryId: values.entryType === 'CASH_OUT' ? values.categoryId ?? '' : '',
@@ -1027,7 +1033,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             <Card>
                                 <CardHeader title="Касса" />
                                 <form className="grid gap-3 md:grid-cols-4" onSubmit={handleExpense}>
-                                    <Input type="number" step="0.01" placeholder="Сумма" {...expenseForm.register('amount', { valueAsNumber: true })} />
+                                    <Input type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
                                     <Select className="min-w-0 max-w-full" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
                                         <option value="CARD">Безнал</option>
@@ -1044,8 +1050,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <option key={category.id} value={category.id}>{category.name}</option>
                                         ))}
                                     </Select>
+                                    {isAutoManagerPayout ? (
+                                        <p className="md:col-span-4 text-xs text-slate-500 dark:text-white/50">
+                                            Выплата рассчитывается по ставке и проценту менеджера. К выплате сейчас: <span className="font-semibold text-light-text dark:text-white">{formatKgs(payoutSummary?.pending ?? 0)}</span>
+                                        </p>
+                                    ) : null}
                                     <TextArea rows={1} className="md:col-span-4" placeholder="Комментарий" {...expenseForm.register('note')} />
-                                    <Button type="submit" className="md:col-span-4">
+                                    <Button type="submit" className="md:col-span-4" disabled={isAutoManagerPayout && (payoutSummary?.pending ?? 0) <= 0}>
                                         Записать операцию
                                     </Button>
                                 </form>

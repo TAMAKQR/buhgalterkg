@@ -5,6 +5,7 @@ import { assertHotelAccess } from '@/lib/permissions';
 import { LedgerEntryType, PaymentMethod, ShiftStatus, UserRole } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
+import { calculateManagerPayout } from '@/lib/manager-payout';
 
 export const dynamic = 'force-dynamic';
 
@@ -222,20 +223,6 @@ export async function GET(request: NextRequest) {
             recordedAt: entry.recordedAt.toISOString()
         }));
 
-        const payoutSummary = (() => {
-            if (!assignment || !shift) {
-                return null;
-            }
-            const fixed = assignment.shiftPayAmount ?? 0;
-            const sharePct = assignment.revenueSharePct ?? 0;
-            const turnover = shiftPayments?.total ?? 0;
-            const shareComponent = sharePct ? Math.round((turnover * sharePct) / 100) : 0;
-            const expected = fixed + shareComponent;
-            const paid = managerPayoutTotals?.[LedgerEntryType.MANAGER_PAYOUT] ?? 0;
-            const pending = expected > paid ? expected - paid : 0;
-            return { expected, paid, pending };
-        })();
-
         const shiftStayRevenue = shift
             ? (await prisma.roomStay.aggregate({
                 where: { shiftId: shift.id, hotelId },
@@ -246,6 +233,19 @@ export async function GET(request: NextRequest) {
         const shiftBonus = shift && shiftStayRevenue > 0
             ? calculateBonusFromTiers(shiftStayRevenue, bonusTiers)
             : null;
+
+        const payoutSummary = (() => {
+            if (!assignment || !shift) {
+                return null;
+            }
+            return calculateManagerPayout({
+                shiftPayAmount: assignment.shiftPayAmount,
+                revenueSharePct: assignment.revenueSharePct,
+                bonusAmount: shiftBonus?.computed ?? 0,
+                cashIn: shiftPayments?.total ?? 0,
+                payouts: managerPayoutTotals?.[LedgerEntryType.MANAGER_PAYOUT] ?? 0,
+            });
+        })();
 
         const handoverManagers = managerAssignments
             .map((assignment) => assignment.user)

@@ -7,6 +7,7 @@ import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { getCountryFromRequest } from '@/lib/server/request-country';
+import { calculateManagerPayout } from '@/lib/manager-payout';
 
 export const dynamic = 'force-dynamic';
 
@@ -157,19 +158,19 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             });
         }
 
-        const computePayout = (shiftId: string, managerId: string) => {
+        const computePayout = (shiftId: string, managerId: string, bonusAmount?: number | null) => {
             const comp = assignmentComp.get(managerId);
             if (!comp) {
                 return null;
             }
             const ledger = shiftLedgerTotals.get(shiftId) ?? { cashIn: 0, payouts: 0 };
-            const fixed = comp.shiftPayAmount ?? 0;
-            const sharePct = comp.revenueSharePct ?? 0;
-            const variable = sharePct ? Math.round((ledger.cashIn * sharePct) / 100) : 0;
-            const expected = fixed + variable;
-            const paid = ledger.payouts ?? 0;
-            const pending = expected > paid ? expected - paid : 0;
-            return { expected, paid, pending };
+            return calculateManagerPayout({
+                shiftPayAmount: comp.shiftPayAmount,
+                revenueSharePct: comp.revenueSharePct,
+                bonusAmount: bonusAmount ?? 0,
+                cashIn: ledger.cashIn,
+                payouts: ledger.payouts ?? 0,
+            });
         };
 
         const shiftStayRevenue = new Map<string, number>();
@@ -185,14 +186,14 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         };
 
         const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
-        const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId) : null;
         const activeShiftBonus = activeShiftRecord ? computeShiftBonus(activeShiftRecord.id) : null;
+        const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId, activeShiftBonus?.computed ?? 0) : null;
 
         const shiftHistory = hotel.shifts
             .filter((shift) => shift.status === ShiftStatus.CLOSED)
             .map((shift) => {
-                const payout = computePayout(shift.id, shift.managerId);
                 const shiftBonus = computeShiftBonus(shift.id);
+                const payout = computePayout(shift.id, shift.managerId, shiftBonus?.computed ?? 0);
                 return {
                     id: shift.id,
                     number: shift.number,

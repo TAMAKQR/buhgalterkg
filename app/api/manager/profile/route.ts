@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
+import { calculateManagerPayout } from '@/lib/manager-payout';
+import { calculateBonusFromTiers } from '@/lib/bonus';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
 
         assertHotelAccess(session, hotelId);
 
-        const [assignment, shifts] = await Promise.all([
+        const [assignment, shifts, bonusTiers] = await Promise.all([
             prisma.hotelAssignment.findFirst({
                 where: { hotelId, userId: session.id, isActive: true },
                 select: { shiftPayAmount: true, revenueSharePct: true, createdAt: true, pinCode: true }
@@ -27,6 +29,10 @@ export async function GET(request: NextRequest) {
                 where: { hotelId, managerId: session.id },
                 orderBy: { openedAt: 'desc' },
                 take: 25
+            }),
+            prisma.bonusTier.findMany({
+                where: { hotelId },
+                orderBy: { threshold: 'asc' }
             })
         ]);
 
@@ -39,9 +45,24 @@ export async function GET(request: NextRequest) {
             })
             : [];
 
+        const stayRevenueGroups = shiftIds.length
+            ? await prisma.roomStay.groupBy({
+                by: ['shiftId'],
+                where: { shiftId: { in: shiftIds }, hotelId },
+                _sum: { amountPaid: true }
+            })
+            : [];
+
         const ledgerTotals = new Map<string, { cashIn: number; payouts: number }>();
         for (const shiftId of shiftIds) {
             ledgerTotals.set(shiftId, { cashIn: 0, payouts: 0 });
+        }
+
+        const stayRevenueMap = new Map<string, number>();
+        for (const group of stayRevenueGroups) {
+            if (group.shiftId) {
+                stayRevenueMap.set(group.shiftId, group._sum.amountPaid ?? 0);
+            }
         }
 
         for (const group of ledgerGroups) {
@@ -58,15 +79,16 @@ export async function GET(request: NextRequest) {
             ledgerTotals.set(group.shiftId, bucket);
         }
 
-        const shiftPayAmount = assignment?.shiftPayAmount ?? 0;
-        const revenueSharePct = assignment?.revenueSharePct ?? 0;
-
         const shiftHistory = shifts.map((shift) => {
             const ledger = ledgerTotals.get(shift.id) ?? { cashIn: 0, payouts: 0 };
-            const variableShare = revenueSharePct ? Math.round((ledger.cashIn * revenueSharePct) / 100) : 0;
-            const expected = shiftPayAmount + variableShare;
-            const paid = ledger.payouts;
-            const pending = expected > paid ? expected - paid : 0;
+            const shiftBonus = calculateBonusFromTiers(stayRevenueMap.get(shift.id) ?? 0, bonusTiers);
+            const payout = calculateManagerPayout({
+                shiftPayAmount: assignment?.shiftPayAmount,
+                revenueSharePct: assignment?.revenueSharePct,
+                bonusAmount: shiftBonus?.computed ?? 0,
+                cashIn: ledger.cashIn,
+                payouts: ledger.payouts,
+            });
 
             return {
                 id: shift.id,
@@ -83,9 +105,9 @@ export async function GET(request: NextRequest) {
                     handover: shift.handoverNote
                 },
                 payout: {
-                    expected,
-                    paid,
-                    pending
+                    expected: payout.expected,
+                    paid: payout.paid,
+                    pending: payout.pending
                 }
             };
         });
