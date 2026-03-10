@@ -9,6 +9,17 @@ const formatDate = (value?: string | null, tz?: string) => formatDateTime(value,
 
 const formatAmount = (value: number, currency?: string) => formatMoney(value, currency);
 
+const escapeTelegramHtml = (value: string) =>
+    value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+const formatCleaningSnapshotLine = (line: string) => {
+    const safeLine = escapeTelegramHtml(line);
+    return /нужна уборка/i.test(line) ? `<b>${safeLine}</b>` : safeLine;
+};
+
 export type CheckInNotificationPayload = {
     hotelName: string;
     roomLabel: string;
@@ -88,13 +99,13 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
     }
 
     const text = [
-        "🧹 Требуется уборка",
-        `Отель: ${payload.hotelName}`,
-        `Номер: ${payload.roomLabel}`,
-        payload.managerName ? `Менеджер: ${payload.managerName}` : null,
-        "Просьба подтвердить уборку после завершения.",
+        "🧹 <b>Требуется уборка</b>",
+        `<b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
+        `<b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
+        payload.managerName ? `<b>Менеджер:</b> ${escapeTelegramHtml(payload.managerName)}` : null,
+        "<b>Просьба подтвердить уборку после завершения.</b>",
         payload.roomSnapshotLines?.length ? '' : null,
-        ...(payload.roomSnapshotLines ?? [])
+        ...(payload.roomSnapshotLines ?? []).map(formatCleaningSnapshotLine)
     ]
         .filter(Boolean)
         .join("\n");
@@ -105,6 +116,7 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
         body: JSON.stringify({
             chat_id: payload.chatId,
             text,
+            parse_mode: "HTML",
             reply_markup: {
                 inline_keyboard: [[
                     {
