@@ -705,7 +705,7 @@ const DonutChart = ({ segments, centerLabel, centerValue, centerColor, colSpan, 
     const chartStyle: CSSProperties = { backgroundImage: `conic-gradient(${stops.join(", ")})` };
 
     return (
-        <Card className={`p-4 ${colSpan ?? "col-span-2 lg:col-span-4"}`}>
+        <Card className={`p-4 ${colSpan ?? "col-span-1 lg:col-span-4"}`}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                 <div
                     className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-full shadow-[0_20px_45px_-26px_rgba(15,23,42,0.35)]"
@@ -777,7 +777,7 @@ const PaymentMethodChart = ({ cashTotal, cardTotal, currency }: PaymentMethodCha
             centerLabel="Всего"
             centerValue={formatCurrency(total, currency)}
             centerColor="text-light-text dark:text-white"
-            colSpan="col-span-2"
+            colSpan="col-span-1 lg:col-span-2"
             currency={currency}
         />
     );
@@ -805,7 +805,7 @@ const ExpenseStructureChart = ({ cashOut, payouts, adjustments, currency }: Expe
             centerLabel="Итого"
             centerValue={formatCurrency(total, currency)}
             centerColor="text-rose-600 dark:text-rose-200"
-            colSpan="col-span-2"
+            colSpan="col-span-1 lg:col-span-2"
             currency={currency}
         />
     );
@@ -894,7 +894,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
     const labelEvery = Math.max(1, Math.ceil(data.length / 6));
 
     return (
-        <Card className="col-span-2 lg:col-span-4 p-4">
+        <Card className="col-span-1 lg:col-span-4 p-4">
             <p className="mb-2 text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Доход / Расход по дням</p>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
                 {/* grid */}
@@ -1586,19 +1586,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             defaultCurrency={overviewCurrency}
                                             defaultTimezone={overviewTimezone}
                                             showHotelName={!filters.hotelId}
-                                            className="col-span-2 lg:col-span-2"
+                                            className="col-span-1 lg:col-span-2"
                                         />
                                         <ExpenseReasonSummary
                                             entries={overview.recentExpenses ?? []}
                                             defaultCurrency={overviewCurrency}
-                                            className="col-span-2 lg:col-span-2"
+                                            className="col-span-1 lg:col-span-2"
                                         />
                                         <ExpenseTable
                                             entries={overview.recentExpenses ?? []}
                                             defaultCurrency={overviewCurrency}
                                             defaultTimezone={overviewTimezone}
                                             showHotelName={!filters.hotelId}
-                                            className="col-span-2 lg:col-span-4"
+                                            className="col-span-1 lg:col-span-4"
                                         />
                                     </>
                                 ) : (
