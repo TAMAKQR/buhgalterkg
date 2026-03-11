@@ -28,6 +28,81 @@ const getTodayParts = (timeZone: string) => {
     };
 };
 
+const getDaysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+const shiftMonth = (year: number, month: number, delta: number) => {
+    const shifted = new Date(Date.UTC(year, month - 1 + delta, 1));
+    return {
+        year: shifted.getUTCFullYear(),
+        month: shifted.getUTCMonth() + 1,
+    };
+};
+
+const toDateKey = ({ year, month, day }: { year: number; month: number; day: number }) => (
+    `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+);
+
+const toUtcDate = ({ year, month, day }: { year: number; month: number; day: number }) => (
+    new Date(Date.UTC(year, month - 1, day))
+);
+
+const countInclusiveDays = (
+    start: { year: number; month: number; day: number },
+    end: { year: number; month: number; day: number },
+) => {
+    const diff = toUtcDate(end).getTime() - toUtcDate(start).getTime();
+    return Math.floor(diff / 86_400_000) + 1;
+};
+
+const cycleRangeFormatter = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+});
+
+const formatCycleRange = (
+    start: { year: number; month: number; day: number },
+    end: { year: number; month: number; day: number },
+) => `${cycleRangeFormatter.format(toUtcDate(start))} - ${cycleRangeFormatter.format(toUtcDate(end))}`;
+
+const getFinancialCycleWindow = (timeZone: string, cycleStartDay: number) => {
+    const today = getTodayParts(timeZone);
+    const normalizedCycleStartDay = Math.min(Math.max(cycleStartDay || 1, 1), 31);
+    const currentMonthStartDay = Math.min(normalizedCycleStartDay, getDaysInMonth(today.year, today.month));
+    const startMonth = today.day >= currentMonthStartDay
+        ? { year: today.year, month: today.month }
+        : shiftMonth(today.year, today.month, -1);
+    const nextMonth = shiftMonth(startMonth.year, startMonth.month, 1);
+    const start = {
+        year: startMonth.year,
+        month: startMonth.month,
+        day: Math.min(normalizedCycleStartDay, getDaysInMonth(startMonth.year, startMonth.month)),
+    };
+    const nextStart = {
+        year: nextMonth.year,
+        month: nextMonth.month,
+        day: Math.min(normalizedCycleStartDay, getDaysInMonth(nextMonth.year, nextMonth.month)),
+    };
+    const endDate = new Date(toUtcDate(nextStart).getTime() - 86_400_000);
+    const end = {
+        year: endDate.getUTCFullYear(),
+        month: endDate.getUTCMonth() + 1,
+        day: endDate.getUTCDate(),
+    };
+    const totalDays = countInclusiveDays(start, end);
+    const elapsedDays = countInclusiveDays(start, today);
+
+    return {
+        start,
+        end,
+        label: formatCycleRange(start, end),
+        cycleStartDay: normalizedCycleStartDay,
+        totalDays,
+        elapsedDays,
+        remainingDays: Math.max(totalDays - elapsedDays, 0),
+    };
+};
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
@@ -88,28 +163,7 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        const today = getTodayParts(countryConfig.timezone);
-        const monthStart = parseDateOnly(`${today.year}-${String(today.month).padStart(2, "0")}-01`, false, countryConfig.timezone);
-        const totalDaysInMonth = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
-        const monthEnd = parseDateOnly(`${today.year}-${String(today.month).padStart(2, "0")}-${String(totalDaysInMonth).padStart(2, "0")}`, true, countryConfig.timezone);
-
-        const monthStayWhere: Prisma.RoomStayWhereInput = {
-            hotel: { country },
-            status: { in: ["CHECKED_IN", "CHECKED_OUT"] },
-            OR: [
-                { actualCheckIn: { gte: monthStart, lte: monthEnd } },
-                {
-                    actualCheckIn: null,
-                    scheduledCheckIn: { gte: monthStart, lte: monthEnd },
-                },
-            ],
-        };
-
-        if (hotelIds.length) {
-            monthStayWhere.hotelId = { in: hotelIds };
-        }
-
-        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, targetHotels, monthStayRevenue] = await prisma.$transaction([
+        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, targetHotels] = await prisma.$transaction([
             prisma.hotel.count({ where: hotelFilter }),
             prisma.room.count({ where: roomHotelFilter }),
             prisma.room.count({ where: { status: RoomStatus.OCCUPIED, ...roomHotelFilter } }),
@@ -125,6 +179,8 @@ export async function GET(request: NextRequest) {
                 where: hotelFilter,
                 select: {
                     id: true,
+                    timezone: true,
+                    financialCycleStartDay: true,
                     monthlyPayrollCost: true,
                     monthlyRentCost: true,
                     monthlyUtilitiesCost: true,
@@ -132,11 +188,43 @@ export async function GET(request: NextRequest) {
                     monthlyOtherCost: true,
                 },
             }),
-            prisma.roomStay.aggregate({
-                where: monthStayWhere,
-                _sum: { amountPaid: true },
-            }),
         ]);
+
+        const cycleSummaries = targetHotels.map((hotel) => {
+            const timeZone = hotel.timezone || countryConfig.timezone;
+            return {
+                hotel,
+                timeZone,
+                window: getFinancialCycleWindow(timeZone, hotel.financialCycleStartDay ?? 1),
+            };
+        });
+
+        const cycleRevenueResults = cycleSummaries.length
+            ? await prisma.$transaction(
+                cycleSummaries.map(({ hotel, timeZone, window }) => prisma.roomStay.aggregate({
+                    where: {
+                        hotelId: hotel.id,
+                        status: { in: ["CHECKED_IN", "CHECKED_OUT"] },
+                        OR: [
+                            {
+                                actualCheckIn: {
+                                    gte: parseDateOnly(toDateKey(window.start), false, timeZone),
+                                    lte: parseDateOnly(toDateKey(window.end), true, timeZone),
+                                },
+                            },
+                            {
+                                actualCheckIn: null,
+                                scheduledCheckIn: {
+                                    gte: parseDateOnly(toDateKey(window.start), false, timeZone),
+                                    lte: parseDateOnly(toDateKey(window.end), true, timeZone),
+                                },
+                            },
+                        ],
+                    },
+                    _sum: { amountPaid: true },
+                }))
+            )
+            : [];
 
         const recentExpenses = await prisma.cashEntry.findMany({
             where: {
@@ -233,15 +321,49 @@ export async function GET(request: NextRequest) {
             monthlyCostPlan.utilities +
             monthlyCostPlan.supplies +
             monthlyCostPlan.other;
-        const monthRevenue = monthStayRevenue._sum.amountPaid ?? 0;
+        const cycleMetrics = cycleSummaries.map(({ hotel, window }, index) => {
+            const revenue = cycleRevenueResults[index]?._sum.amountPaid ?? 0;
+            const requiredRevenue =
+                (hotel.monthlyPayrollCost ?? 0) +
+                (hotel.monthlyRentCost ?? 0) +
+                (hotel.monthlyUtilitiesCost ?? 0) +
+                (hotel.monthlySuppliesCost ?? 0) +
+                (hotel.monthlyOtherCost ?? 0);
+            const remainingRevenue = Math.max(requiredRevenue - revenue, 0);
+            const currentAverage = window.elapsedDays > 0 ? Math.round(revenue / window.elapsedDays) : 0;
+            const requiredAverage = remainingRevenue > 0 && window.remainingDays > 0
+                ? Math.ceil(remainingRevenue / window.remainingDays)
+                : 0;
+
+            return {
+                label: window.label,
+                cycleStartDay: window.cycleStartDay,
+                totalDays: window.totalDays,
+                elapsedDays: window.elapsedDays,
+                remainingDays: window.remainingDays,
+                revenue,
+                currentAverage,
+                requiredAverage,
+                projectedRevenue: currentAverage * window.totalDays,
+            };
+        });
+        const periodLabels = Array.from(new Set(cycleMetrics.map((item) => item.label)));
+        const cycleDays = Array.from(new Set(cycleMetrics.map((item) => item.cycleStartDay)));
+        const sharedTimeline = cycleMetrics.length > 0 && periodLabels.length === 1;
+        const monthRevenue = cycleMetrics.reduce((sum, item) => sum + item.revenue, 0);
         const remainingToTarget = Math.max(monthlyRequiredRevenue - monthRevenue, 0);
         const coveredPct = monthlyRequiredRevenue > 0 ? Math.min(monthRevenue / monthlyRequiredRevenue, 1) : 0;
-        const currentDailyAverage = today.day > 0 ? Math.round(monthRevenue / today.day) : 0;
-        const remainingDays = Math.max(totalDaysInMonth - today.day, 0);
-        const requiredDailyAverage = remainingToTarget > 0 && remainingDays > 0
-            ? Math.ceil(remainingToTarget / remainingDays)
-            : 0;
-        const projectedRevenue = currentDailyAverage * totalDaysInMonth;
+        const currentDailyAverage = cycleMetrics.reduce((sum, item) => sum + item.currentAverage, 0);
+        const requiredDailyAverage = cycleMetrics.reduce((sum, item) => sum + item.requiredAverage, 0);
+        const projectedRevenue = cycleMetrics.reduce((sum, item) => sum + item.projectedRevenue, 0);
+        const elapsedDays = sharedTimeline ? cycleMetrics[0]?.elapsedDays ?? null : null;
+        const totalDays = sharedTimeline ? cycleMetrics[0]?.totalDays ?? null : null;
+        const remainingDays = sharedTimeline ? cycleMetrics[0]?.remainingDays ?? null : null;
+        const periodLabel = cycleMetrics.length === 0
+            ? "текущий расчетный период"
+            : sharedTimeline
+                ? periodLabels[0]
+                : "текущие расчетные периоды по каждому объекту";
 
         /* ── Daily series for line chart ── */
         const dailyConditions: string[] = [];
@@ -318,18 +440,16 @@ export async function GET(request: NextRequest) {
             },
             businessTarget: {
                 hotelsInScope: targetHotels.length,
-                monthLabel: new Intl.DateTimeFormat("ru-RU", {
-                    month: "long",
-                    year: "numeric",
-                    timeZone: countryConfig.timezone,
-                }).format(new Date()),
+                periodLabel,
+                cycleStartDay: cycleDays.length === 1 ? cycleDays[0] : null,
+                mixedCycleDays: cycleDays.length > 1 || !sharedTimeline,
                 costs: monthlyCostPlan,
                 monthlyRequiredRevenue,
                 monthRevenue,
                 remainingToTarget,
                 coveredPct,
-                elapsedDays: today.day,
-                totalDays: totalDaysInMonth,
+                elapsedDays,
+                totalDays,
                 remainingDays,
                 currentDailyAverage,
                 requiredDailyAverage,

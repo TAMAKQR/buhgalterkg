@@ -32,6 +32,7 @@ model Hotel {
   country         String            @default("KG")
   timezone        String            @default("Asia/Bishkek")
   currency        String            @default("KGS")
+  financialCycleStartDay Int        @default(1) @map("financial_cycle_start_day")
   managerSharePct Int?              @map("manager_share_pct")
   cleaningChatId  String?           @map("cleaning_chat_id")
   monthlyPayrollCost   Int          @default(0) @map("monthly_payroll_cost")

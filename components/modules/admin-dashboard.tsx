@@ -41,6 +41,7 @@ type AdminHotelSummary = {
     name: string;
     address?: string | null;
     country?: string | null;
+    financialCycleStartDay?: number | null;
     managerSharePct?: number | null;
     notes?: string | null;
     cleaningChatId?: string | null;
@@ -105,7 +106,9 @@ type AdminOverview = {
     };
     businessTarget?: {
         hotelsInScope: number;
-        monthLabel: string;
+        periodLabel: string;
+        cycleStartDay: number | null;
+        mixedCycleDays: boolean;
         costs: {
             payroll: number;
             rent: number;
@@ -117,9 +120,9 @@ type AdminOverview = {
         monthRevenue: number;
         remainingToTarget: number;
         coveredPct: number;
-        elapsedDays: number;
-        totalDays: number;
-        remainingDays: number;
+        elapsedDays: number | null;
+        totalDays: number | null;
+        remainingDays: number | null;
         currentDailyAverage: number;
         requiredDailyAverage: number;
         projectedRevenue: number;
@@ -155,6 +158,7 @@ interface CreateHotelPayload {
     cleaningChatId?: string;
     timezone?: string;
     currency?: string;
+    financialCycleStartDay?: number;
     monthlyPayrollCost?: number;
     monthlyRentCost?: number;
     monthlyUtilitiesCost?: number;
@@ -169,6 +173,7 @@ type HotelFormState = {
     cleaningChatId: string;
     timezone: string;
     currency: string;
+    financialCycleStartDay: string;
     monthlyPayrollCost: string;
     monthlyRentCost: string;
     monthlyUtilitiesCost: string;
@@ -197,6 +202,7 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     cleaningChatId: "",
     timezone: display.timezone,
     currency: display.currency,
+    financialCycleStartDay: "1",
     monthlyPayrollCost: "0",
     monthlyRentCost: "0",
     monthlyUtilitiesCost: "0",
@@ -213,6 +219,14 @@ const toMinorUnits = (value?: string | null) => {
     const parsed = Number(normalized.replace(",", "."));
     if (!Number.isFinite(parsed) || parsed < 0) return undefined;
     return Math.round(parsed * 100);
+};
+
+const toCycleDay = (value?: string | null) => {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    const parsed = Number(normalized);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) return undefined;
+    return parsed;
 };
 
 const fromMinorUnits = (value?: number | null) => {
@@ -333,13 +347,20 @@ function BusinessTargetCard({
                     </h3>
                     <p className="mt-1 text-sm text-slate-500 dark:text-white/45">
                         {hasPlan
-                            ? `Показывает, сколько нужно заработать в ${target.monthLabel}, чтобы закрыть основные ежемесячные затраты.`
+                            ? `Показывает, сколько нужно заработать за ${target.periodLabel}, чтобы закрыть основные ежемесячные затраты.`
                             : "Добавь ежемесячные затраты по объектам, и здесь появится ориентир по выручке и темпу."}
                     </p>
+                    {hasPlan ? (
+                        <p className="mt-2 text-xs text-slate-500 dark:text-white/40">
+                            {target.mixedCycleDays
+                                ? "У объектов разные даты начала расчетного месяца. Сводка считает каждый филиал по его собственному периоду."
+                                : `Расчетный месяц начинается ${target.cycleStartDay} числа.`}
+                        </p>
+                    ) : null}
                 </div>
                 {hasPlan ? (
                     <div className={`w-full rounded-2xl border px-4 py-3 text-left sm:max-w-xs sm:self-start sm:text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Статус месяца</p>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Статус периода</p>
                         <p className={`mt-1 text-base font-semibold ${target.onTrack ? "text-emerald-700 dark:text-emerald-200" : "text-amber-700 dark:text-amber-200"}`}>
                             {target.onTrack ? "Идем по темпу" : "Нужно ускориться"}
                         </p>
@@ -371,13 +392,19 @@ function BusinessTargetCard({
                                 style={{ width: `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` }}
                             />
                         </div>
-                        <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 dark:text-white/40 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                            <span>Прошло дней: {target.elapsedDays}/{target.totalDays}</span>
-                            <span>Осталось дней: {target.remainingDays}</span>
-                        </div>
+                        {target.elapsedDays != null && target.totalDays != null && target.remainingDays != null ? (
+                            <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 dark:text-white/40 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                                <span>Прошло дней: {target.elapsedDays}/{target.totalDays}</span>
+                                <span>Осталось дней: {target.remainingDays}</span>
+                            </div>
+                        ) : (
+                            <div className="mt-2 text-xs text-slate-500 dark:text-white/40">
+                                Сроки различаются по объектам, поэтому темп считается отдельно по каждому филиалу.
+                            </div>
+                        )}
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
                         {breakdown.map((item) => (
                             <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                 <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">{item.label}</p>
@@ -1104,6 +1131,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 cleaningChatId: target.cleaningChatId ?? "",
                 timezone: target.timezone ?? overviewDisplay.timezone,
                 currency: target.currency ?? overviewDisplay.currency,
+                financialCycleStartDay: String(target.financialCycleStartDay ?? 1),
                 monthlyPayrollCost: fromMinorUnits(target.monthlyPayrollCost),
                 monthlyRentCost: fromMinorUnits(target.monthlyRentCost),
                 monthlyUtilitiesCost: fromMinorUnits(target.monthlyUtilitiesCost),
@@ -1139,6 +1167,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             if (rawTimezone) payload.timezone = rawTimezone;
             const rawCurrency = (formData.get("currency") as string | null)?.trim();
             if (rawCurrency) payload.currency = rawCurrency;
+            payload.financialCycleStartDay = toCycleDay(formData.get("financialCycleStartDay") as string | null) ?? 1;
             payload.monthlyPayrollCost = toMinorUnits(formData.get("monthlyPayrollCost") as string | null);
             payload.monthlyRentCost = toMinorUnits(formData.get("monthlyRentCost") as string | null);
             payload.monthlyUtilitiesCost = toMinorUnits(formData.get("monthlyUtilitiesCost") as string | null);
@@ -1207,6 +1236,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     cleaningChatId: editForm.cleaningChatId.trim() ? editForm.cleaningChatId.trim() : null,
                     timezone: editForm.timezone || "Asia/Bishkek",
                     currency: editForm.currency || "KGS",
+                    financialCycleStartDay: toCycleDay(editForm.financialCycleStartDay) ?? 1,
                     monthlyPayrollCost: toMinorUnits(editForm.monthlyPayrollCost) ?? 0,
                     monthlyRentCost: toMinorUnits(editForm.monthlyRentCost) ?? 0,
                     monthlyUtilitiesCost: toMinorUnits(editForm.monthlyUtilitiesCost) ?? 0,
@@ -1707,6 +1737,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <option value="KZT">KZT (тенге)</option>
                                             </select>
                                         </Field>
+                                        <Field label="Начало расчетного месяца" htmlFor="financialCycleStartDay" hint="1-31">
+                                            <Input id="financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" defaultValue="1" placeholder="1" />
+                                        </Field>
                                     </div>
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                                         <Field label={`Зарплаты / мес (${overviewDisplay.currency})`} htmlFor="monthlyPayrollCost">
@@ -1801,7 +1834,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     Укажите Telegram-группу, куда отправлять задачи уборки.
                                                 </p>
                                             </Field>
-                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                                 <Field label="Часовой пояс" htmlFor="edit-timezone">
                                                     <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className={selectClassName}>
                                                         <option value="Asia/Bishkek">Бишкек (UTC+6)</option>
@@ -1813,6 +1846,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <option value="KGS">KGS (сом)</option>
                                                         <option value="KZT">KZT (тенге)</option>
                                                     </select>
+                                                </Field>
+                                                <Field label="Начало расчетного месяца" htmlFor="edit-financialCycleStartDay" hint="1-31">
+                                                    <Input id="edit-financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" value={editForm.financialCycleStartDay} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
                                             </div>
                                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
