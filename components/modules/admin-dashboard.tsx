@@ -296,9 +296,9 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
 
 function StatPill({ label, value }: { label: string; value: string }) {
     return (
-        <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+        <div className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
             <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/28">{label}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-white">{value}</p>
+            <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-800 dark:text-white">{value}</p>
         </div>
     );
 }
@@ -326,9 +326,9 @@ function BusinessTargetCard({
     return (
         <Card className="col-span-1 xs:col-span-2 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="max-w-3xl">
+                <div className="min-w-0 max-w-3xl">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Финансовый ориентир</p>
-                    <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                    <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
                         {hotelLabel ? `План для ${hotelLabel}` : `План по объектам: ${target.hotelsInScope}`}
                     </h3>
                     <p className="mt-1 text-sm text-slate-500 dark:text-white/45">
@@ -338,12 +338,12 @@ function BusinessTargetCard({
                     </p>
                 </div>
                 {hasPlan ? (
-                    <div className={`rounded-2xl border px-4 py-3 text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
+                    <div className={`w-full rounded-2xl border px-4 py-3 text-left sm:max-w-xs sm:self-start sm:text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
                         <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Статус месяца</p>
                         <p className={`mt-1 text-base font-semibold ${target.onTrack ? "text-emerald-700 dark:text-emerald-200" : "text-amber-700 dark:text-amber-200"}`}>
                             {target.onTrack ? "Идем по темпу" : "Нужно ускориться"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+                        <p className="mt-1 break-words text-xs text-slate-500 dark:text-white/45">
                             Прогноз: {formatCurrency(target.projectedRevenue, currency)}
                         </p>
                     </div>
@@ -352,7 +352,7 @@ function BusinessTargetCard({
 
             {hasPlan ? (
                 <>
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
                         <StatPill label="Нужно за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
                         <StatPill label="Уже заработано" value={formatCurrency(target.monthRevenue, currency)} />
                         <StatPill label="Осталось добрать" value={formatCurrency(target.remainingToTarget, currency)} />
@@ -361,7 +361,7 @@ function BusinessTargetCard({
                     </div>
 
                     <div className="mt-4 rounded-3xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                        <div className="flex items-center justify-between gap-3 text-sm">
+                        <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                             <span className="text-slate-600 dark:text-white/55">Покрытие плана</span>
                             <span className="font-semibold text-slate-900 dark:text-white">{formatPercentInt(target.coveredPct * 100)}</span>
                         </div>
@@ -371,17 +371,17 @@ function BusinessTargetCard({
                                 style={{ width: `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` }}
                             />
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-white/40">
+                        <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 dark:text-white/40 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                             <span>Прошло дней: {target.elapsedDays}/{target.totalDays}</span>
                             <span>Осталось дней: {target.remainingDays}</span>
                         </div>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-5">
+                    <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
                         {breakdown.map((item) => (
-                            <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                            <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                 <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">{item.label}</p>
-                                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
+                                <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
                             </div>
                         ))}
                     </div>
