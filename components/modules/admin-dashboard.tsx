@@ -373,7 +373,7 @@ function BusinessTargetCard({
 
             {hasPlan ? (
                 <>
-                    <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-5">
                         <StatPill label="Нужно за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
                         <StatPill label="Уже заработано" value={formatCurrency(target.monthRevenue, currency)} />
                         <StatPill label="Осталось добрать" value={formatCurrency(target.remainingToTarget, currency)} />
@@ -404,7 +404,7 @@ function BusinessTargetCard({
                         )}
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-5">
                         {breakdown.map((item) => (
                             <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                 <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">{item.label}</p>
