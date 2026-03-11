@@ -338,7 +338,7 @@ function BusinessTargetCard({
     const hasPlan = target.monthlyRequiredRevenue > 0;
 
     return (
-        <Card className="col-span-1 xs:col-span-2 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
+        <Card className="col-span-1 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 max-w-3xl">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Финансовый ориентир</p>
@@ -1523,7 +1523,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </Field>
                                 </div>
                             </SectionCard>
-                            <section className="grid grid-cols-1 gap-2 xs:grid-cols-2 lg:grid-cols-4">
+                            <section className="grid grid-cols-1 gap-2 lg:grid-cols-4">
                                 {overview ? (
                                     <>
                                         <BusinessTargetCard
