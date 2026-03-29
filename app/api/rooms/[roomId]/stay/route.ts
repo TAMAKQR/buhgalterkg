@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { notifyAdminAboutCheckIn, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 const staySchema = z.object({
     shiftId: z.string().cuid(),
-    intent: z.enum(['checkin', 'checkout']),
+    intent: z.enum(['checkin', 'checkout', 'extend']),
     guestName: z.string().optional(),
     scheduledCheckIn: z.string().datetime().optional(),
     scheduledCheckOut: z.string().datetime().optional(),
@@ -43,8 +43,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             ? await prisma.shift.findUnique({ where: { id: payload.shiftId } })
             : null;
 
-        if (payload.intent === 'checkin' && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
-            return new NextResponse('Нужна активная смена для заселения', { status: 400 });
+        if ((payload.intent === 'checkin' || payload.intent === 'extend') && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
+            return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
         }
 
         if (payload.intent === 'checkin') {
@@ -163,6 +163,92 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
 
         if (!currentStay) {
             return new NextResponse('Не найден активный гость', { status: 400 });
+        }
+
+        if (payload.intent === 'extend') {
+            if (!payload.scheduledCheckOut) {
+                return new NextResponse('Укажите новую дату выезда', { status: 400 });
+            }
+
+            const nextCheckOut = new Date(payload.scheduledCheckOut);
+            if (Number.isNaN(nextCheckOut.getTime())) {
+                return new NextResponse('Некорректная дата выезда', { status: 400 });
+            }
+
+            if (nextCheckOut <= currentStay.scheduledCheckOut) {
+                return new NextResponse('Новая дата выезда должна быть позже текущей', { status: 400 });
+            }
+
+            const cashAmount = payload.cashAmount ?? 0;
+            const cardAmount = payload.cardAmount ?? 0;
+            if (cashAmount < 0 || cardAmount < 0) {
+                return new NextResponse('Сумма не может быть отрицательной', { status: 400 });
+            }
+
+            const totalCashPaid = (currentStay.cashPaid ?? 0) + cashAmount;
+            const totalCardPaid = (currentStay.cardPaid ?? 0) + cardAmount;
+            const extraAmount = cashAmount + cardAmount;
+            const totalAmountPaid = (currentStay.amountPaid ?? 0) + extraAmount;
+            const detectedMethod =
+                totalCashPaid && totalCardPaid
+                    ? null
+                    : totalCashPaid
+                        ? PaymentMethod.CASH
+                        : totalCardPaid
+                            ? PaymentMethod.CARD
+                            : currentStay.paymentMethod;
+
+            const updatedStay = await prisma.roomStay.update({
+                where: { id: currentStay.id },
+                data: {
+                    scheduledCheckOut: nextCheckOut,
+                    amountPaid: totalAmountPaid,
+                    paymentMethod: detectedMethod,
+                    cashPaid: totalCashPaid,
+                    cardPaid: totalCardPaid
+                }
+            });
+
+            const ledgerPayloads = [
+                { amount: cashAmount, method: PaymentMethod.CASH },
+                { amount: cardAmount, method: PaymentMethod.CARD }
+            ].filter((entry) => entry.amount > 0);
+
+            for (const ledgerEntry of ledgerPayloads) {
+                await prisma.cashEntry.create({
+                    data: {
+                        hotelId: room.hotelId,
+                        shiftId: payload.shiftId,
+                        managerId: shift?.managerId ?? session.id,
+                        entryType: LedgerEntryType.CASH_IN,
+                        method: ledgerEntry.method,
+                        amount: ledgerEntry.amount,
+                        note: `Продление №${room.label}`
+                    }
+                });
+            }
+
+            try {
+                await notifyAdminAboutStayExtension({
+                    hotelName: room.hotel.name,
+                    roomLabel: room.label,
+                    guestName: updatedStay.guestName,
+                    previousCheckOut: currentStay.scheduledCheckOut.toISOString(),
+                    nextCheckOut: updatedStay.scheduledCheckOut.toISOString(),
+                    extraAmount,
+                    paymentDetails: {
+                        cashAmount,
+                        cardAmount,
+                    },
+                    timezone: room.hotel.timezone,
+                    currency: room.hotel.currency,
+                    managerName: session.displayName ?? session.username ?? null,
+                });
+            } catch (notificationError) {
+                console.error('Failed to send Telegram extension notification', notificationError);
+            }
+
+            return NextResponse.json(updatedStay);
         }
 
         const updatedStay = await prisma.roomStay.update({

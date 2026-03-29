@@ -28,7 +28,7 @@ type ExpenseEntry = {
     note?: string | null;
     categoryName?: string | null;
     recordedAt: string;
-    entryType: "CASH_OUT" | "MANAGER_PAYOUT";
+    entryType: "CASH_OUT" | "MANAGER_PAYOUT" | "ADJUSTMENT";
     managerName?: string | null;
     hotelId?: string;
     hotelName?: string;
@@ -238,9 +238,24 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 const paymentMethodLabel = (method: "CASH" | "CARD") => (method === "CASH" ? "нал" : "карта");
-const expenseTypeLabel = (entryType: "CASH_OUT" | "MANAGER_PAYOUT") => (entryType === "MANAGER_PAYOUT" ? "выплата" : "расход");
-const expenseReasonLabel = (entry: ExpenseEntry) => entry.categoryName?.trim() || entry.note?.trim() || (entry.entryType === "MANAGER_PAYOUT" ? "Выплата менеджеру" : "Без категории");
+const expenseTypeLabel = (entryType: ExpenseEntry["entryType"]) => {
+    if (entryType === "MANAGER_PAYOUT") return "выплата";
+    if (entryType === "ADJUSTMENT") return "корректировка";
+    return "расход";
+};
+const expenseReasonLabel = (entry: ExpenseEntry) => {
+    if (entry.categoryName?.trim()) return entry.categoryName.trim();
+    if (entry.note?.trim()) return entry.note.trim();
+    if (entry.entryType === "MANAGER_PAYOUT") return "Выплата менеджеру";
+    if (entry.entryType === "ADJUSTMENT") return "Корректировка";
+    return "Без категории";
+};
 const expenseNoteLabel = (entry: ExpenseEntry) => entry.note?.trim() || null;
+const expenseAmountPrefix = (entryType: ExpenseEntry["entryType"]) => (entryType === "ADJUSTMENT" ? "+" : "-");
+const expenseAmountTone = (entryType: ExpenseEntry["entryType"]) =>
+    entryType === "ADJUSTMENT"
+        ? "text-sky-600 dark:text-sky-300"
+        : "text-rose-500 dark:text-rose-300";
 
 const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
 
@@ -441,7 +456,7 @@ function ExpenseFeed({
         <Card className={`p-4 ${className ?? ""}`}>
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Расходы</p>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Операции</p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
                 </div>
                 <span className="text-[11px] text-slate-500 dark:text-white/35">{entries.length}</span>
@@ -466,7 +481,7 @@ function ExpenseFeed({
                                     {noteDetails && entry.categoryName ? <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{noteDetails}</p> : null}
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-semibold text-rose-500 dark:text-rose-300">-{formatCurrency(entry.amount, currency ?? undefined)}</p>
+                                    <p className={`text-sm font-semibold ${expenseAmountTone(entry.entryType)}`}>{expenseAmountPrefix(entry.entryType)}{formatCurrency(entry.amount, currency ?? undefined)}</p>
                                     <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{formatDT(entry.recordedAt, timezone ?? undefined)}</p>
                                 </div>
                             </div>
@@ -474,7 +489,7 @@ function ExpenseFeed({
                     );
                 }) : (
                     <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
-                        Нет расходов за выбранный период.
+                        Нет операций за выбранный период.
                     </p>
                 )}
             </div>
@@ -515,11 +530,11 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
                             <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{item.label}</p>
                             <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
                         </div>
-                        <p className="shrink-0 text-sm font-semibold text-rose-500 dark:text-rose-300">-{formatCurrency(item.amount, defaultCurrency)}</p>
+                        <p className="shrink-0 text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(item.amount, defaultCurrency)}</p>
                     </div>
                 )) : (
                     <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
-                        Нет расходов за выбранный период.
+                        Нет операций за выбранный период.
                     </p>
                 )}
             </div>
@@ -565,8 +580,8 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
         <Card className={`p-4 ${className ?? ""}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Журнал расходов</p>
-                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все расходы по фильтру</h3>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Журнал операций</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все операции по фильтру</h3>
                 </div>
                 <div className="w-full sm:max-w-xs">
                     <Input
@@ -607,8 +622,8 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                                         <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
                                             {formatDT(entry.recordedAt, timezone ?? undefined)}
                                         </td>
-                                        <td className="px-3 py-3 text-right font-semibold text-rose-500 dark:text-rose-300">
-                                            -{formatCurrency(entry.amount, currency)}
+                                        <td className={`px-3 py-3 text-right font-semibold ${expenseAmountTone(entry.entryType)}`}>
+                                            {expenseAmountPrefix(entry.entryType)}{formatCurrency(entry.amount, currency)}
                                         </td>
                                     </tr>
                                 );

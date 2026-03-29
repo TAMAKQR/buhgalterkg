@@ -35,6 +35,46 @@ export type CheckInNotificationPayload = {
     currency?: string;
 };
 
+export type StayExtensionNotificationPayload = {
+    hotelName: string;
+    roomLabel: string;
+    guestName?: string | null;
+    previousCheckOut: string;
+    nextCheckOut: string;
+    extraAmount: number;
+    paymentDetails?: {
+        cashAmount?: number;
+        cardAmount?: number;
+    };
+    timezone?: string;
+    currency?: string;
+    managerName?: string | null;
+};
+
+const formatPaymentDetails = (payload: {
+    amount: number;
+    paymentMethod?: PaymentMethod | null;
+    paymentDetails?: {
+        cashAmount?: number;
+        cardAmount?: number;
+    };
+    currency?: string;
+}) => {
+    const cash = payload.paymentDetails?.cashAmount ?? (payload.paymentMethod === PaymentMethod.CASH ? payload.amount : 0);
+    const card = payload.paymentDetails?.cardAmount ?? (payload.paymentMethod === PaymentMethod.CARD ? payload.amount : 0);
+
+    if (cash && card) {
+        return `Оплата: наличные ${formatAmount(cash, payload.currency)} + безнал ${formatAmount(card, payload.currency)}`;
+    }
+    if (cash) {
+        return `Оплата: наличные (${formatAmount(cash, payload.currency)})`;
+    }
+    if (card) {
+        return `Оплата: карта (${formatAmount(card, payload.currency)})`;
+    }
+    return payload.paymentMethod ? `Оплата: ${payload.paymentMethod}` : 'Оплата: не указано';
+};
+
 export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayload) => {
     if (!env.ADMIN_TELEGRAM_CHAT_ID) {
         return;
@@ -43,22 +83,6 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
     const tz = payload.timezone;
     const cur = payload.currency;
 
-    const paymentLines = (() => {
-        const cash = payload.paymentDetails?.cashAmount ?? (payload.paymentMethod === PaymentMethod.CASH ? payload.amount : 0);
-        const card = payload.paymentDetails?.cardAmount ?? (payload.paymentMethod === PaymentMethod.CARD ? payload.amount : 0);
-
-        if (cash && card) {
-            return `Оплата: наличные ${formatAmount(cash, cur)} + безнал ${formatAmount(card, cur)}`;
-        }
-        if (cash) {
-            return `Оплата: наличные (${formatAmount(cash, cur)})`;
-        }
-        if (card) {
-            return `Оплата: карта (${formatAmount(card, cur)})`;
-        }
-        return payload.paymentMethod ? `Оплата: ${payload.paymentMethod}` : 'Оплата: не указано';
-    })();
-
     const text = [
         "🛎 Новое заселение",
         `Отель: ${payload.hotelName}`,
@@ -66,7 +90,7 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         `Заезд: ${formatDate(payload.checkIn, tz)}`,
         `Выезд: ${formatDate(payload.checkOut, tz)}`,
         `Сумма: ${formatAmount(payload.amount, cur)}`,
-        paymentLines,
+        formatPaymentDetails(payload),
     ].join("\n");
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
@@ -81,6 +105,47 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
     if (!response.ok) {
         const detail = await response.text();
         throw new Error(`Failed to send Telegram notification: ${detail}`);
+    }
+};
+
+export const notifyAdminAboutStayExtension = async (payload: StayExtensionNotificationPayload) => {
+    if (!env.ADMIN_TELEGRAM_CHAT_ID) {
+        return;
+    }
+
+    const tz = payload.timezone;
+    const cur = payload.currency;
+
+    const text = [
+        '⏱ Продление номера',
+        `Отель: ${payload.hotelName}`,
+        `Номер: ${payload.roomLabel}`,
+        payload.guestName ? `Гость: ${payload.guestName}` : null,
+        `Было до: ${formatDate(payload.previousCheckOut, tz)}`,
+        `Продлено до: ${formatDate(payload.nextCheckOut, tz)}`,
+        `Доплата: ${formatAmount(payload.extraAmount, cur)}`,
+        formatPaymentDetails({
+            amount: payload.extraAmount,
+            paymentDetails: payload.paymentDetails,
+            currency: cur,
+        }),
+        payload.managerName ? `Менеджер: ${payload.managerName}` : null,
+    ]
+        .filter(Boolean)
+        .join('\n');
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: env.ADMIN_TELEGRAM_CHAT_ID,
+            text,
+        }),
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to send Telegram extension notification: ${detail}`);
     }
 };
 

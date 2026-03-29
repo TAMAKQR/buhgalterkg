@@ -16,8 +16,15 @@ export const EntryRouter = () => {
     const role = user?.role;
 
     const handleLogout = useCallback(async () => {
-        // Immediately set user to null to trigger re-render
-        await mutate({ user: null }, false);
+        try {
+            await fetch('/api/session/logout', {
+                method: 'POST',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+        } finally {
+            await mutate({ user: null }, false);
+        }
     }, [mutate]);
 
     const view = useMemo(() => {

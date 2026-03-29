@@ -612,7 +612,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 continue;
             }
             const note = entry.note?.toLowerCase() ?? '';
-            const target = note.startsWith('заселение') ? stays : cashbox;
+            const target = note.startsWith('заселение') || note.startsWith('продление') ? stays : cashbox;
             if (entry.method === 'CARD') {
                 target.card += entry.amount;
             } else {

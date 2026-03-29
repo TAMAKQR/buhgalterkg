@@ -146,10 +146,12 @@ interface ShiftHandoverForm {
 }
 
 interface CheckInModalState {
+    mode: 'checkin' | 'extend';
     roomId: string;
     label: string;
     guestName: string;
     checkIn: string;
+    currentCheckOut?: string;
     checkOut: string;
     cashAmount: string;
     cardAmount: string;
@@ -655,11 +657,37 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             : new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
 
         setCheckInModal({
+            mode: 'checkin',
             roomId: room.id,
             label: room.label,
             guestName: '',
             checkIn: formatDateInputValue(startDate),
+            currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
+            cashAmount: '',
+            cardAmount: ''
+        });
+        setCheckInError(null);
+    };
+
+    const showExtendModal = (room: ManagerStateResponse['rooms'][number]) => {
+        if (!data?.shift) {
+            toast('Сначала откройте смену, чтобы продлить проживание', 'error');
+            return;
+        }
+        if (!room.stay) {
+            toast('Нет активного проживания для продления', 'error');
+            return;
+        }
+
+        setCheckInModal({
+            mode: 'extend',
+            roomId: room.id,
+            label: room.label,
+            guestName: room.stay.guestName?.trim() || 'Гость',
+            checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
+            currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
+            checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             cashAmount: '',
             cardAmount: ''
         });
@@ -674,14 +702,26 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const scheduledCheckIn = parseInputValue(checkInModal.checkIn, hotelTz);
         const scheduledCheckOut = parseInputValue(checkInModal.checkOut, hotelTz);
 
-        if (!scheduledCheckIn || !scheduledCheckOut) {
-            setCheckInError('Укажите корректные даты заселения и выезда');
+        if (!scheduledCheckOut || (checkInModal.mode === 'checkin' && !scheduledCheckIn)) {
+            setCheckInError(checkInModal.mode === 'extend' ? 'Укажите корректную новую дату выезда' : 'Укажите корректные даты заселения и выезда');
             return;
         }
 
-        if (scheduledCheckOut <= scheduledCheckIn) {
-            setCheckInError('Время выезда должно быть позже заселения');
-            return;
+        if (checkInModal.mode === 'checkin') {
+            if (scheduledCheckOut <= scheduledCheckIn!) {
+                setCheckInError('Время выезда должно быть позже заселения');
+                return;
+            }
+        } else {
+            const currentCheckOut = checkInModal.currentCheckOut ? parseInputValue(checkInModal.currentCheckOut, hotelTz) : null;
+            if (!currentCheckOut) {
+                setCheckInError('Не удалось определить текущую дату выезда');
+                return;
+            }
+            if (scheduledCheckOut <= currentCheckOut) {
+                setCheckInError('Новая дата выезда должна быть позже текущей');
+                return;
+            }
         }
 
         const cashValue = Number(checkInModal.cashAmount || 0);
@@ -692,7 +732,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
-        if (cashValue === 0 && cardValue === 0) {
+        if (checkInModal.mode === 'checkin' && cashValue === 0 && cardValue === 0) {
             setCheckInError('Укажите оплату наличными и/или безналичными');
             return;
         }
@@ -705,9 +745,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             await request(`/api/rooms/${checkInModal.roomId}/stay`, {
                 body: {
                     shiftId: data.shift.id,
-                    intent: 'checkin',
-                    guestName: checkInModal.guestName.trim() || undefined,
-                    scheduledCheckIn: scheduledCheckIn.toISOString(),
+                    intent: checkInModal.mode,
+                    guestName: checkInModal.mode === 'checkin' ? checkInModal.guestName.trim() || undefined : undefined,
+                    scheduledCheckIn: checkInModal.mode === 'checkin' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     cashAmount: cashMinor,
                     cardAmount: cardMinor
@@ -715,10 +755,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             });
             setCheckInModal(null);
             setCheckInError(null);
+            toast(checkInModal.mode === 'extend' ? 'Проживание продлено' : 'Гость заселён', 'success');
             mutate();
         } catch (modalError) {
             console.error(modalError);
-            setCheckInError('Не удалось заселить гостя');
+            setCheckInError(checkInModal.mode === 'extend' ? 'Не удалось продлить проживание' : 'Не удалось заселить гостя');
         } finally {
             setIsSubmittingCheckIn(false);
         }
@@ -931,16 +972,28 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         />
                                                     </div>
                                                     {isOccupied ? (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
-                                                            disabled={!hasOpenShift}
-                                                            onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
-                                                        >
-                                                            Выселить
-                                                        </Button>
+                                                        <div className="flex shrink-0 items-center gap-1">
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="secondary"
+                                                                className="text-[11px]"
+                                                                disabled={!hasOpenShift}
+                                                                onClick={() => showExtendModal(room)}
+                                                            >
+                                                                Продлить
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
+                                                                disabled={!hasOpenShift}
+                                                                onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
+                                                            >
+                                                                Выселить
+                                                            </Button>
+                                                        </div>
                                                     ) : (
                                                         <Button
                                                             type="button"
@@ -1341,7 +1394,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
                             <div className="w-full max-w-sm rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
                                 <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-base font-semibold">Заселение № {checkInModal.label}</h3>
+                                    <h3 className="text-base font-semibold">{checkInModal.mode === 'extend' ? `Продление № ${checkInModal.label}` : `Заселение № ${checkInModal.label}`}</h3>
                                     <Button type="button" variant="ghost" size="sm" disabled={isSubmittingCheckIn} onClick={handleCloseModal}>
                                         ×
                                     </Button>
@@ -1352,44 +1405,75 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <Input
                                             id="modal-guest"
                                             type="text"
-                                            autoFocus
+                                            autoFocus={checkInModal.mode === 'checkin'}
                                             placeholder="Имя гостя"
                                             value={checkInModal.guestName}
                                             onChange={(event) =>
                                                 setCheckInModal((prev) => (prev ? { ...prev, guestName: event.target.value } : prev))
                                             }
                                             className="text-white"
+                                            readOnly={checkInModal.mode === 'extend'}
                                         />
                                     </div>
+                                    {checkInModal.mode === 'checkin' ? (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
+                                                <Input
+                                                    id="modal-checkin"
+                                                    type="datetime-local"
+                                                    value={checkInModal.checkIn}
+                                                    onChange={(event) =>
+                                                        setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
+                                                    }
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
+                                                <Input
+                                                    id="modal-checkout"
+                                                    type="datetime-local"
+                                                    value={checkInModal.checkOut}
+                                                    onChange={(event) =>
+                                                        setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
+                                                    }
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-current-checkout">Текущий выезд</label>
+                                                <Input
+                                                    id="modal-current-checkout"
+                                                    type="datetime-local"
+                                                    value={checkInModal.currentCheckOut ?? checkInModal.checkOut}
+                                                    className="text-white"
+                                                    readOnly
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-next-checkout">Новый выезд</label>
+                                                <Input
+                                                    id="modal-next-checkout"
+                                                    type="datetime-local"
+                                                    value={checkInModal.checkOut}
+                                                    onChange={(event) =>
+                                                        setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
+                                                    }
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                    {checkInModal.mode === 'extend' && (
+                                        <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
+                                    )}
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
-                                            <Input
-                                                id="modal-checkin"
-                                                type="datetime-local"
-                                                value={checkInModal.checkIn}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
-                                                }
-                                                className="text-white"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
-                                            <Input
-                                                id="modal-checkout"
-                                                type="datetime-local"
-                                                value={checkInModal.checkOut}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
-                                                }
-                                                className="text-white"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">Наличные</label>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
                                             <Input
                                                 id="modal-cash"
                                                 type="number"
@@ -1406,7 +1490,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">Безнал</label>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">{checkInModal.mode === 'extend' ? 'Доплата безнал' : 'Безнал'}</label>
                                             <Input
                                                 id="modal-card"
                                                 type="number"
@@ -1430,7 +1514,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         disabled={isSubmittingCheckIn}
                                         onClick={handleConfirmCheckIn}
                                     >
-                                        {isSubmittingCheckIn ? 'Сохраняем...' : 'Заселить'}
+                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'extend' ? 'Продлить' : 'Заселить'}
                                     </Button>
                                 </div>
                             </div>

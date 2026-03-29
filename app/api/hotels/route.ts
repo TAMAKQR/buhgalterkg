@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
             prisma.cashEntry.findMany({
                 where: {
                     ...ledgerWhere,
-                    entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT] },
+                    entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT, LedgerEntryType.ADJUSTMENT] },
                 },
                 orderBy: { recordedAt: 'desc' },
                 take: 120,
