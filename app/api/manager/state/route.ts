@@ -101,7 +101,10 @@ export async function GET(request: NextRequest) {
                 }),
                 prisma.cashEntry.groupBy({
                     by: ['method'],
-                    where: { shiftId: shift.id, entryType: LedgerEntryType.CASH_IN },
+                    where: {
+                        shiftId: shift.id,
+                        entryType: { in: [LedgerEntryType.CASH_IN, LedgerEntryType.ADJUSTMENT] }
+                    },
                     _sum: { amount: true }
                 }),
                 prisma.cashEntry.findMany({
