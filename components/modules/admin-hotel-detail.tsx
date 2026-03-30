@@ -36,6 +36,13 @@ interface RoomStayDetail {
     cardPaid?: number | null;
     onlinePaid?: number | null;
     bookingSource?: string | null;
+    transfers?: Array<{
+        id: string;
+        createdAt: string;
+        note?: string | null;
+        fromRoomLabel: string;
+        toRoomLabel: string;
+    }>;
     notes?: string | null;
 }
 
@@ -1685,6 +1692,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         return segments.join(' · ') || undefined;
                                                                                     })();
                                                                                     const sourceLabel = stayEntry.bookingSource?.trim() ? `источник ${stayEntry.bookingSource.trim()}` : undefined;
+                                                                                    const transferLabel = stayEntry.transfers?.length
+                                                                                        ? stayEntry.transfers
+                                                                                            .map((transfer) => `переселение ${transfer.fromRoomLabel}→${transfer.toRoomLabel}`)
+                                                                                            .join(' · ')
+                                                                                        : undefined;
 
                                                                                     return (
                                                                                         <div key={stayEntry.id} className="rounded-xl border border-slate-200/80 bg-white px-2.5 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -1707,6 +1719,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                     <> · {formatCurrency(stayEntry.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
                                                                                                 )}
                                                                                             </p>
+                                                                                            {transferLabel ? (
+                                                                                                <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">{transferLabel}</p>
+                                                                                            ) : null}
                                                                                         </div>
                                                                                     );
                                                                                 })}

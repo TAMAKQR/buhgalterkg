@@ -86,6 +86,8 @@ model Room {
   currentStay   RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
   hotel         Hotel      @relation(fields: [hotelId], references: [id])
   stays         RoomStay[] @relation("RoomStayHistory")
+  transfersFrom StayTransfer[] @relation("StayTransferFromRoom")
+  transfersTo   StayTransfer[] @relation("StayTransferToRoom")
 
   @@index([hotelId, label])
 }
@@ -114,6 +116,25 @@ model RoomStay {
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
   shift             Shift?         @relation(fields: [shiftId], references: [id])
+  transfers         StayTransfer[]
+}
+
+model StayTransfer {
+  id         String   @id @default(cuid())
+  stayId      String   @map("stay_id")
+  fromRoomId  String   @map("from_room_id")
+  toRoomId    String   @map("to_room_id")
+  shiftId     String?  @map("shift_id")
+  note        String?
+  createdAt   DateTime @default(now())
+  stay        RoomStay @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  fromRoom    Room     @relation("StayTransferFromRoom", fields: [fromRoomId], references: [id])
+  toRoom      Room     @relation("StayTransferToRoom", fields: [toRoomId], references: [id])
+  shift       Shift?   @relation(fields: [shiftId], references: [id])
+
+  @@index([stayId, createdAt])
+  @@index([fromRoomId, createdAt])
+  @@index([toRoomId, createdAt])
 }
 
 model Shift {
@@ -135,6 +156,7 @@ model Shift {
   number       Int         @default(0)
   ledger       CashEntry[]
   stays        RoomStay[]
+  transfers    StayTransfer[]
   hotel        Hotel       @relation(fields: [hotelId], references: [id])
   manager      User        @relation("ShiftManager", fields: [managerId], references: [id])
   handoverRecipient   User?      @relation("ShiftHandoverRecipient", fields: [handoverRecipientId], references: [id])

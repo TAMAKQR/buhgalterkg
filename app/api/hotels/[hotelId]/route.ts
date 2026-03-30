@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
+import { ExpenseCategory, HotelAssignment, LedgerEntryType, Prisma, Room, RoomStay, RoomStatus, Shift, ShiftStatus, User } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -11,6 +11,83 @@ import { calculateManagerPayout } from '@/lib/manager-payout';
 import { sanitizeExtranetNames } from '@/lib/stays';
 
 export const dynamic = 'force-dynamic';
+
+const hotelDetailInclude = {
+    expenseCategories: {
+        orderBy: { name: 'asc' }
+    },
+    rooms: {
+        orderBy: { label: 'asc' },
+        include: {
+            stays: {
+                orderBy: { scheduledCheckIn: 'desc' },
+                take: 20,
+                include: {
+                    transfers: {
+                        orderBy: { createdAt: 'asc' },
+                        include: {
+                            fromRoom: { select: { label: true } },
+                            toRoom: { select: { label: true } },
+                        }
+                    }
+                }
+            } as never
+        }
+    },
+    shifts: {
+        orderBy: { openedAt: 'desc' },
+        take: 20,
+        include: { manager: true }
+    },
+    assignments: {
+        where: { isActive: true },
+        include: { user: true }
+    }
+} as const;
+
+type HotelDetailRecord = {
+    id: string;
+    name: string;
+    address: string;
+    timezone: string;
+    currency: string;
+    financialCycleStartDay: number;
+    managerSharePct: number | null;
+    cleaningChatId: string | null;
+    notes: string | null;
+    usesExtranets: boolean;
+    extranetNames: string[];
+    expenseCategories: ExpenseCategory[];
+    assignments: Array<HotelAssignment & { user: User }>;
+    shifts: Array<Shift & { manager: User }>;
+    rooms: Array<
+        Room & {
+            stays: Array<
+                RoomStay & {
+                    transfers: Array<{
+                        id: string;
+                        createdAt: Date;
+                        note: string | null;
+                        fromRoom: { label: string };
+                        toRoom: { label: string };
+                    }>;
+                }
+            >;
+        }
+    >;
+};
+
+type HotelStayRecord = RoomStay & {
+    onlinePaid: number;
+    bookingSource: string | null;
+    transfers: Array<{
+        id: string;
+        createdAt: Date;
+        note: string | null;
+        fromRoom: { label: string };
+        toRoom: { label: string };
+    }>;
+};
 
 const cleaningChatIdSchema = z
     .string()
@@ -51,29 +128,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
             prisma.hotel.findFirst({
                 where: { id: params.hotelId, country },
-                include: {
-                    expenseCategories: {
-                        orderBy: { name: 'asc' }
-                    },
-                    rooms: {
-                        orderBy: { label: 'asc' },
-                        include: {
-                            stays: {
-                                orderBy: { scheduledCheckIn: 'desc' },
-                                take: 20
-                            }
-                        }
-                    },
-                    shifts: {
-                        orderBy: { openedAt: 'desc' },
-                        take: 20,
-                        include: { manager: true }
-                    },
-                    assignments: {
-                        where: { isActive: true },
-                        include: { user: true }
-                    }
-                }
+                include: hotelDetailInclude
             }),
             prisma.cashEntry.groupBy({
                 by: ['entryType'],
@@ -121,20 +176,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const hotelRecord = hotel as typeof hotel & {
-            usesExtranets: boolean;
-            extranetNames: string[];
-            rooms: Array<
-                (typeof hotel.rooms)[number] & {
-                    stays: Array<
-                        (typeof hotel.rooms)[number]['stays'][number] & {
-                            onlinePaid: number;
-                            bookingSource: string | null;
-                        }
-                    >;
-                }
-            >;
-        };
+        const hotelRecord = hotel as unknown as HotelDetailRecord;
 
         const ledgerTotals: Record<LedgerEntryType, number> = {
             [LedgerEntryType.CASH_IN]: 0,
@@ -175,7 +217,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             { shiftPayAmount: number | null | undefined; revenueSharePct: number | null | undefined }
         >();
 
-        for (const assignment of hotel.assignments) {
+        for (const assignment of hotelRecord.assignments) {
             assignmentComp.set(assignment.userId, {
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
@@ -209,11 +251,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return calculateBonusFromTiers(revenue, bonusTiers);
         };
 
-        const activeShiftRecord = hotel.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
+        const activeShiftRecord = hotelRecord.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
         const activeShiftBonus = activeShiftRecord ? computeShiftBonus(activeShiftRecord.id) : null;
         const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId, activeShiftBonus?.computed ?? 0) : null;
 
-        const shiftHistory = hotel.shifts
+        const shiftHistory = hotelRecord.shifts
             .filter((shift) => shift.status === ShiftStatus.CLOSED)
             .map((shift) => {
                 const shiftBonus = computeShiftBonus(shift.id);
@@ -255,7 +297,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             occupiedRooms: hotelRecord.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
             rooms: hotelRecord.rooms.map((room) => {
                 const stayHistory = room.stays.map((stay) => {
-                    const stayRecord = stay as typeof stay & { onlinePaid: number; bookingSource: string | null };
+                    const stayRecord = stay as HotelStayRecord;
                     return {
                         id: stay.id,
                         guestName: stay.guestName,
@@ -270,6 +312,13 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         cardPaid: stay.cardPaid,
                         onlinePaid: stayRecord.onlinePaid,
                         bookingSource: stayRecord.bookingSource,
+                        transfers: stayRecord.transfers.map((transfer) => ({
+                            id: transfer.id,
+                            createdAt: transfer.createdAt,
+                            note: transfer.note,
+                            fromRoomLabel: transfer.fromRoom.label,
+                            toRoomLabel: transfer.toRoom.label,
+                        })),
                         notes: stay.notes
                     };
                 });
@@ -286,7 +335,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     stays: stayHistory
                 };
             }),
-            managers: hotel.assignments.map((assignment) => ({
+            managers: hotelRecord.assignments.map((assignment) => ({
                 assignmentId: assignment.id,
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
@@ -333,7 +382,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 managerName: entry.manager?.displayName ?? null,
                 shiftNumber: entry.shift?.number ?? null
             })),
-            expenseCategories: hotel.expenseCategories.map((category) => ({
+            expenseCategories: hotelRecord.expenseCategories.map((category) => ({
                 id: category.id,
                 name: category.name
             })),

@@ -54,6 +54,16 @@ export type StayExtensionNotificationPayload = {
     managerName?: string | null;
 };
 
+export type StayTransferNotificationPayload = {
+    hotelName: string;
+    guestName?: string | null;
+    fromRoomLabel: string;
+    toRoomLabel: string;
+    currentCheckOut?: string | null;
+    timezone?: string;
+    managerName?: string | null;
+};
+
 const formatPaymentDetails = (payload: {
     amount: number;
     paymentMethod?: PaymentMethod | null;
@@ -156,6 +166,38 @@ export const notifyAdminAboutStayExtension = async (payload: StayExtensionNotifi
     if (!response.ok) {
         const detail = await response.text();
         throw new Error(`Failed to send Telegram extension notification: ${detail}`);
+    }
+};
+
+export const notifyAdminAboutStayTransfer = async (payload: StayTransferNotificationPayload) => {
+    if (!env.ADMIN_TELEGRAM_CHAT_ID) {
+        return;
+    }
+
+    const text = [
+        '🔁 Переселение гостя',
+        `Отель: ${payload.hotelName}`,
+        payload.guestName ? `Гость: ${payload.guestName}` : null,
+        `Из номера: ${payload.fromRoomLabel}`,
+        `В номер: ${payload.toRoomLabel}`,
+        payload.currentCheckOut ? `Текущий выезд: ${formatDate(payload.currentCheckOut, payload.timezone)}` : null,
+        payload.managerName ? `Менеджер: ${payload.managerName}` : null,
+    ]
+        .filter(Boolean)
+        .join('\n');
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: env.ADMIN_TELEGRAM_CHAT_ID,
+            text,
+        }),
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to send Telegram transfer notification: ${detail}`);
     }
 };
 

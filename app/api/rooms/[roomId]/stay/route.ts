@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyAdminAboutStayTransfer, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
@@ -13,9 +13,11 @@ export const dynamic = 'force-dynamic';
 
 const staySchema = z.object({
     shiftId: z.string().cuid(),
-    intent: z.enum(['checkin', 'checkout', 'extend']),
+    intent: z.enum(['checkin', 'checkout', 'extend', 'transfer']),
     guestName: z.string().optional(),
     bookingSource: z.string().max(80).optional().nullable(),
+    targetRoomId: z.string().cuid().optional(),
+    transferNote: z.string().trim().max(300).optional().nullable(),
     scheduledCheckIn: z.string().datetime().optional(),
     scheduledCheckOut: z.string().datetime().optional(),
     amountPaid: z.number().int().positive().optional(),
@@ -24,6 +26,11 @@ const staySchema = z.object({
     cardAmount: z.number().int().nonnegative().optional(),
     onlineAmount: z.number().int().nonnegative().optional()
 });
+
+const appendTransferNote = (existing: string | null | undefined, line: string) => {
+    const notes = [existing?.trim(), line.trim()].filter(Boolean).join('\n');
+    return notes.slice(0, 500);
+};
 
 export async function POST(request: NextRequest, { params }: { params: { roomId: string } }) {
     try {
@@ -46,7 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             ? await prisma.shift.findUnique({ where: { id: payload.shiftId } })
             : null;
 
-        if ((payload.intent === 'checkin' || payload.intent === 'extend') && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
+        if ((payload.intent === 'checkin' || payload.intent === 'extend' || payload.intent === 'transfer') && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
             return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
         }
 
@@ -255,6 +262,112 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram extension notification', notificationError);
+            }
+
+            return NextResponse.json(updatedStay);
+        }
+
+        if (payload.intent === 'transfer') {
+            if (!payload.targetRoomId) {
+                return new NextResponse('Укажите комнату, куда переселить гостя', { status: 400 });
+            }
+
+            if (payload.targetRoomId === room.id) {
+                return new NextResponse('Нужно выбрать другую комнату', { status: 400 });
+            }
+
+            const targetRoom = await prisma.room.findFirst({
+                where: {
+                    id: payload.targetRoomId,
+                    hotelId: room.hotelId,
+                    isActive: true,
+                },
+            });
+
+            if (!targetRoom) {
+                return new NextResponse('Целевая комната не найдена', { status: 404 });
+            }
+
+            if (targetRoom.status !== RoomStatus.AVAILABLE || targetRoom.currentStayId) {
+                return new NextResponse('Целевая комната должна быть свободной', { status: 400 });
+            }
+
+            const conflictingStay = await prisma.roomStay.findFirst({
+                where: {
+                    roomId: targetRoom.id,
+                    status: StayStatus.CHECKED_IN,
+                },
+                select: { id: true },
+            });
+
+            if (conflictingStay) {
+                return new NextResponse('В целевой комнате уже есть активное проживание', { status: 409 });
+            }
+
+            const transferLine = `Переселение: из №${room.label} в №${targetRoom.label}`;
+
+            const updatedStay = await prisma.$transaction(async (tx) => {
+                await tx.room.update({
+                    where: { id: room.id },
+                    data: {
+                        status: RoomStatus.DIRTY,
+                        currentStayId: null,
+                    },
+                });
+
+                await tx.room.update({
+                    where: { id: targetRoom.id },
+                    data: {
+                        status: RoomStatus.OCCUPIED,
+                        currentStayId: currentStay.id,
+                    },
+                });
+
+                await tx.stayTransfer.create({
+                    data: {
+                        stayId: currentStay.id,
+                        fromRoomId: room.id,
+                        toRoomId: targetRoom.id,
+                        shiftId: payload.shiftId,
+                        note: payload.transferNote?.trim() || null,
+                    },
+                });
+
+                return tx.roomStay.update({
+                    where: { id: currentStay.id },
+                    data: {
+                        roomId: targetRoom.id,
+                        notes: appendTransferNote(currentStay.notes, payload.transferNote?.trim() ? `${transferLine}. ${payload.transferNote.trim()}` : transferLine),
+                    },
+                });
+            });
+
+            try {
+                await notifyAdminAboutStayTransfer({
+                    hotelName: room.hotel.name,
+                    guestName: updatedStay.guestName,
+                    fromRoomLabel: room.label,
+                    toRoomLabel: targetRoom.label,
+                    currentCheckOut: updatedStay.scheduledCheckOut?.toISOString(),
+                    timezone: room.hotel.timezone,
+                    managerName: session.displayName ?? session.username ?? null,
+                });
+            } catch (notificationError) {
+                console.error('Failed to send Telegram transfer notification', notificationError);
+            }
+
+            try {
+                const roomSnapshotLines = await buildCleaningRoomSnapshotLines(room.hotelId, room.hotel.timezone);
+                await notifyCleaningCrew({
+                    chatId: room.hotel.cleaningChatId,
+                    roomId: room.id,
+                    hotelName: room.hotel.name,
+                    roomLabel: room.label,
+                    managerName: session.displayName ?? session.username ?? null,
+                    roomSnapshotLines,
+                });
+            } catch (notificationError) {
+                console.error('Failed to notify cleaning crew about transfer', notificationError);
             }
 
             return NextResponse.json(updatedStay);

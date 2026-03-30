@@ -150,11 +150,13 @@ interface ShiftHandoverForm {
 }
 
 interface CheckInModalState {
-    mode: 'checkin' | 'extend';
+    mode: 'checkin' | 'extend' | 'transfer';
     roomId: string;
     label: string;
     guestName: string;
     bookingSource: string;
+    targetRoomId: string;
+    transferNote: string;
     checkIn: string;
     currentCheckOut?: string;
     checkOut: string;
@@ -418,6 +420,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         );
     }, [data?.rooms]);
 
+    const availableTransferRooms = useMemo(
+        () => sortedRooms.filter((room) => room.status === 'AVAILABLE'),
+        [sortedRooms]
+    );
+
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
 
     const panelTabs: Array<{ id: PanelKey; label: string; hint?: string }> = [
@@ -668,6 +675,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             label: room.label,
             guestName: '',
             bookingSource: '',
+            targetRoomId: '',
+            transferNote: '',
             checkIn: formatDateInputValue(startDate),
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
@@ -694,6 +703,42 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             label: room.label,
             guestName: room.stay.guestName?.trim() || 'Гость',
             bookingSource: room.stay.bookingSource?.trim() || '',
+            targetRoomId: '',
+            transferNote: '',
+            checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
+            currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
+            checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
+            cashAmount: '',
+            cardAmount: '',
+            onlineAmount: ''
+        });
+        setCheckInError(null);
+    };
+
+    const showTransferModal = (room: ManagerStateResponse['rooms'][number]) => {
+        if (!data?.shift) {
+            toast('Сначала откройте смену, чтобы переселить гостя', 'error');
+            return;
+        }
+        if (!room.stay) {
+            toast('Нет активного проживания для переселения', 'error');
+            return;
+        }
+
+        const targetRoom = sortedRooms.find((candidate) => candidate.status === 'AVAILABLE' && candidate.id !== room.id);
+        if (!targetRoom) {
+            toast('Нет свободных комнат для переселения', 'error');
+            return;
+        }
+
+        setCheckInModal({
+            mode: 'transfer',
+            roomId: room.id,
+            label: room.label,
+            guestName: room.stay.guestName?.trim() || 'Гость',
+            bookingSource: room.stay.bookingSource?.trim() || '',
+            targetRoomId: targetRoom.id,
+            transferNote: '',
             checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
             currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
@@ -706,6 +751,36 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const handleConfirmCheckIn = async () => {
         if (!checkInModal || !data?.shift) {
+            return;
+        }
+
+        if (checkInModal.mode === 'transfer') {
+            if (!checkInModal.targetRoomId) {
+                setCheckInError('Выберите комнату для переселения');
+                return;
+            }
+
+            setIsSubmittingCheckIn(true);
+            try {
+                await request(`/api/rooms/${checkInModal.roomId}/stay`, {
+                    body: {
+                        shiftId: data.shift.id,
+                        intent: 'transfer',
+                        targetRoomId: checkInModal.targetRoomId,
+                        transferNote: checkInModal.transferNote.trim() || undefined,
+                    }
+                });
+                setCheckInModal(null);
+                setCheckInError(null);
+                toast('Гость переселён', 'success');
+                mutate();
+            } catch (modalError) {
+                console.error(modalError);
+                setCheckInError('Не удалось переселить гостя');
+            } finally {
+                setIsSubmittingCheckIn(false);
+            }
+
             return;
         }
 
@@ -990,6 +1065,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                     {isOccupied ? (
                                                         <div className="flex shrink-0 items-center gap-1">
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="secondary"
+                                                                className="text-[11px]"
+                                                                disabled={!hasOpenShift || !availableTransferRooms.length}
+                                                                onClick={() => showTransferModal(room)}
+                                                            >
+                                                                Переселить
+                                                            </Button>
                                                             <Button
                                                                 type="button"
                                                                 size="sm"
@@ -1411,7 +1496,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
                             <div className="w-full max-w-sm rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
                                 <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-base font-semibold">{checkInModal.mode === 'extend' ? `Продление № ${checkInModal.label}` : `Заселение № ${checkInModal.label}`}</h3>
+                                    <h3 className="text-base font-semibold">{checkInModal.mode === 'extend' ? `Продление № ${checkInModal.label}` : checkInModal.mode === 'transfer' ? `Переселение из № ${checkInModal.label}` : `Заселение № ${checkInModal.label}`}</h3>
                                     <Button type="button" variant="ghost" size="sm" disabled={isSubmittingCheckIn} onClick={handleCloseModal}>
                                         ×
                                     </Button>
@@ -1429,136 +1514,182 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 setCheckInModal((prev) => (prev ? { ...prev, guestName: event.target.value } : prev))
                                             }
                                             className="text-white"
-                                            readOnly={checkInModal.mode === 'extend'}
+                                            readOnly={checkInModal.mode !== 'checkin'}
                                         />
                                     </div>
-                                    {checkInModal.mode === 'checkin' && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-source">Источник брони</label>
-                                            <Select
-                                                id="modal-booking-source"
-                                                value={checkInModal.bookingSource}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) => (prev ? { ...prev, bookingSource: event.target.value } : prev))
-                                                }
-                                                className="text-white"
-                                            >
-                                                <option value="">Без экстранета / прямой заезд</option>
-                                                {(data.hotel.extranetNames ?? []).map((name) => (
-                                                    <option key={`modal-booking-source-${name}`} value={name}>{name}</option>
-                                                ))}
-                                            </Select>
-                                        </div>
-                                    )}
-                                    {checkInModal.mode === 'checkin' ? (
-                                        <div className="grid grid-cols-2 gap-2">
+                                    {checkInModal.mode === 'transfer' && (
+                                        <>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block">Текущий номер</label>
+                                                    <Input value={`№ ${checkInModal.label}`} className="text-white" readOnly />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-transfer-room">Новая комната</label>
+                                                    <Select
+                                                        id="modal-transfer-room"
+                                                        value={checkInModal.targetRoomId}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) => (prev ? { ...prev, targetRoomId: event.target.value } : prev))
+                                                        }
+                                                        className="text-white"
+                                                    >
+                                                        <option value="">Выберите свободную комнату</option>
+                                                        {availableTransferRooms.map((room) => (
+                                                            <option key={`transfer-room-${room.id}`} value={room.id}>{`№ ${room.label}`}</option>
+                                                        ))}
+                                                    </Select>
+                                                </div>
+                                            </div>
                                             <div>
-                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
-                                                <Input
-                                                    id="modal-checkin"
-                                                    type="datetime-local"
-                                                    value={checkInModal.checkIn}
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-transfer-note">Комментарий</label>
+                                                <TextArea
+                                                    id="modal-transfer-note"
+                                                    rows={3}
+                                                    placeholder="Причина переселения"
+                                                    value={checkInModal.transferNote}
                                                     onChange={(event) =>
-                                                        setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
+                                                        setCheckInModal((prev) => (prev ? { ...prev, transferNote: event.target.value } : prev))
                                                     }
                                                     className="text-white"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
-                                                <Input
-                                                    id="modal-checkout"
-                                                    type="datetime-local"
-                                                    value={checkInModal.checkOut}
-                                                    onChange={(event) =>
-                                                        setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
-                                                    }
-                                                    className="text-white"
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-current-checkout">Текущий выезд</label>
-                                                <Input
-                                                    id="modal-current-checkout"
-                                                    type="datetime-local"
-                                                    value={checkInModal.currentCheckOut ?? checkInModal.checkOut}
-                                                    className="text-white"
-                                                    readOnly
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-next-checkout">Новый выезд</label>
-                                                <Input
-                                                    id="modal-next-checkout"
-                                                    type="datetime-local"
-                                                    value={checkInModal.checkOut}
-                                                    onChange={(event) =>
-                                                        setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
-                                                    }
-                                                    className="text-white"
-                                                />
-                                            </div>
-                                        </div>
+                                            {checkInModal.currentCheckOut && (
+                                                <p className="text-[11px] text-white/45">Оплата и плановый выезд сохраняются. Текущий выезд: {checkInModal.currentCheckOut}</p>
+                                            )}
+                                        </>
                                     )}
-                                    {checkInModal.mode === 'extend' && (
-                                        <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
+                                    {checkInModal.mode !== 'transfer' && (
+                                        <>
+                                            {checkInModal.mode === 'checkin' && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-source">Источник брони</label>
+                                                    <Select
+                                                        id="modal-booking-source"
+                                                        value={checkInModal.bookingSource}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) => (prev ? { ...prev, bookingSource: event.target.value } : prev))
+                                                        }
+                                                        className="text-white"
+                                                    >
+                                                        <option value="">Без экстранета / прямой заезд</option>
+                                                        {(data.hotel.extranetNames ?? []).map((name) => (
+                                                            <option key={`modal-booking-source-${name}`} value={name}>{name}</option>
+                                                        ))}
+                                                    </Select>
+                                                </div>
+                                            )}
+                                            {checkInModal.mode === 'checkin' ? (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
+                                                        <Input
+                                                            id="modal-checkin"
+                                                            type="datetime-local"
+                                                            value={checkInModal.checkIn}
+                                                            onChange={(event) =>
+                                                                setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
+                                                            }
+                                                            className="text-white"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkout">Выезд</label>
+                                                        <Input
+                                                            id="modal-checkout"
+                                                            type="datetime-local"
+                                                            value={checkInModal.checkOut}
+                                                            onChange={(event) =>
+                                                                setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
+                                                            }
+                                                            className="text-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-current-checkout">Текущий выезд</label>
+                                                        <Input
+                                                            id="modal-current-checkout"
+                                                            type="datetime-local"
+                                                            value={checkInModal.currentCheckOut ?? checkInModal.checkOut}
+                                                            className="text-white"
+                                                            readOnly
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-next-checkout">Новый выезд</label>
+                                                        <Input
+                                                            id="modal-next-checkout"
+                                                            type="datetime-local"
+                                                            value={checkInModal.checkOut}
+                                                            onChange={(event) =>
+                                                                setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
+                                                            }
+                                                            className="text-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {checkInModal.mode === 'extend' && (
+                                                <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
+                                            )}
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
+                                                    <Input
+                                                        id="modal-cash"
+                                                        type="number"
+                                                        step="0.01"
+                                                        inputMode="decimal"
+                                                        value={checkInModal.cashAmount}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) =>
+                                                                prev ? { ...prev, cashAmount: event.target.value } : prev
+                                                            )
+                                                        }
+                                                        placeholder="0"
+                                                        className="text-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">{checkInModal.mode === 'extend' ? 'Доплата безнал' : 'Безнал'}</label>
+                                                    <Input
+                                                        id="modal-card"
+                                                        type="number"
+                                                        step="0.01"
+                                                        inputMode="decimal"
+                                                        value={checkInModal.cardAmount}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) =>
+                                                                prev ? { ...prev, cardAmount: event.target.value } : prev
+                                                            )
+                                                        }
+                                                        placeholder="0"
+                                                        className="text-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'extend' ? 'Доплата сайт' : 'На сайте'}</label>
+                                                    <Input
+                                                        id="modal-online"
+                                                        type="number"
+                                                        step="0.01"
+                                                        inputMode="decimal"
+                                                        value={checkInModal.onlineAmount}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) =>
+                                                                prev ? { ...prev, onlineAmount: event.target.value } : prev
+                                                            )
+                                                        }
+                                                        placeholder="0"
+                                                        className="text-white"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
                                     )}
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
-                                            <Input
-                                                id="modal-cash"
-                                                type="number"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={checkInModal.cashAmount}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) =>
-                                                        prev ? { ...prev, cashAmount: event.target.value } : prev
-                                                    )
-                                                }
-                                                placeholder="0"
-                                                className="text-white"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">{checkInModal.mode === 'extend' ? 'Доплата безнал' : 'Безнал'}</label>
-                                            <Input
-                                                id="modal-card"
-                                                type="number"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={checkInModal.cardAmount}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) =>
-                                                        prev ? { ...prev, cardAmount: event.target.value } : prev
-                                                    )
-                                                }
-                                                placeholder="0"
-                                                className="text-white"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'extend' ? 'Доплата сайт' : 'На сайте'}</label>
-                                            <Input
-                                                id="modal-online"
-                                                type="number"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={checkInModal.onlineAmount}
-                                                onChange={(event) =>
-                                                    setCheckInModal((prev) =>
-                                                        prev ? { ...prev, onlineAmount: event.target.value } : prev
-                                                    )
-                                                }
-                                                placeholder="0"
-                                                className="text-white"
-                                            />
-                                        </div>
-                                    </div>
                                     {checkInError && <p className="text-xs text-rose-300">{checkInError}</p>}
                                     <Button
                                         type="button"
@@ -1566,7 +1697,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         disabled={isSubmittingCheckIn}
                                         onClick={handleConfirmCheckIn}
                                     >
-                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'extend' ? 'Продлить' : 'Заселить'}
+                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'extend' ? 'Продлить' : checkInModal.mode === 'transfer' ? 'Переселить' : 'Заселить'}
                                     </Button>
                                 </div>
                             </div>
