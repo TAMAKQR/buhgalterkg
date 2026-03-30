@@ -126,7 +126,7 @@ model StayTransfer {
   toRoomId    String   @map("to_room_id")
   shiftId     String?  @map("shift_id")
   note        String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
   stay        RoomStay @relation(fields: [stayId], references: [id], onDelete: Cascade)
   fromRoom    Room     @relation("StayTransferFromRoom", fields: [fromRoomId], references: [id])
   toRoom      Room     @relation("StayTransferToRoom", fields: [toRoomId], references: [id])
