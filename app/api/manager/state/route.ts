@@ -270,7 +270,9 @@ export async function GET(request: NextRequest) {
                 name: hotel.name,
                 address: hotel.address,
                 timezone: hotel.timezone,
-                currency: hotel.currency
+                currency: hotel.currency,
+                usesExtranets: hotel.usesExtranets,
+                extranetNames: hotel.extranetNames
             },
             expenseCategories: hotel.expenseCategories.map((category) => ({
                 id: category.id,
@@ -297,7 +299,9 @@ export async function GET(request: NextRequest) {
                         amountPaid: room.stays[0].amountPaid,
                         paymentMethod: room.stays[0].paymentMethod,
                         cashPaid: room.stays[0].cashPaid,
-                        cardPaid: room.stays[0].cardPaid
+                        cardPaid: room.stays[0].cardPaid,
+                        onlinePaid: room.stays[0].onlinePaid,
+                        bookingSource: room.stays[0].bookingSource
                     }
                     : null
             })),

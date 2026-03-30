@@ -66,6 +66,8 @@ interface ObserverStateResponse {
         paymentMethod: string | null;
         cashPaid: number | null;
         cardPaid: number | null;
+        onlinePaid: number | null;
+        bookingSource: string | null;
     }>;
     ledger: Array<{
         id: string;
@@ -534,6 +536,12 @@ function StaysTab({
                         )}
                         {(s.cardPaid != null && s.cardPaid > 0) && (
                             <span className="text-white/30"> · карта {fmt(s.cardPaid)}</span>
+                        )}
+                        {(s.onlinePaid != null && s.onlinePaid > 0) && (
+                            <span className="text-white/30"> · сайт {fmt(s.onlinePaid)}</span>
+                        )}
+                        {s.bookingSource && (
+                            <span className="text-white/30"> · {s.bookingSource}</span>
                         )}
                     </div>
                 </Card>

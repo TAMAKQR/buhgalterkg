@@ -41,6 +41,8 @@ type AdminHotelSummary = {
     name: string;
     address?: string | null;
     country?: string | null;
+    usesExtranets?: boolean | null;
+    extranetNames?: string[];
     financialCycleStartDay?: number | null;
     managerSharePct?: number | null;
     notes?: string | null;
@@ -158,6 +160,8 @@ interface CreateHotelPayload {
     cleaningChatId?: string;
     timezone?: string;
     currency?: string;
+    usesExtranets?: boolean;
+    extranetNames?: string[];
     financialCycleStartDay?: number;
     monthlyPayrollCost?: number;
     monthlyRentCost?: number;
@@ -173,6 +177,8 @@ type HotelFormState = {
     cleaningChatId: string;
     timezone: string;
     currency: string;
+    usesExtranets: boolean;
+    extranetNames: string;
     financialCycleStartDay: string;
     monthlyPayrollCost: string;
     monthlyRentCost: string;
@@ -202,6 +208,8 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     cleaningChatId: "",
     timezone: display.timezone,
     currency: display.currency,
+    usesExtranets: false,
+    extranetNames: "",
     financialCycleStartDay: "1",
     monthlyPayrollCost: "0",
     monthlyRentCost: "0",
@@ -227,6 +235,15 @@ const toCycleDay = (value?: string | null) => {
     const parsed = Number(normalized);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) return undefined;
     return parsed;
+};
+
+const parseExtranetNamesText = (value?: string | null) => {
+    return (value ?? '')
+        .split(/[\n,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item, index, list) => list.findIndex((candidate) => candidate.toLocaleLowerCase('ru-RU') === item.toLocaleLowerCase('ru-RU')) === index)
+        .slice(0, 30);
 };
 
 const fromMinorUnits = (value?: number | null) => {
@@ -1146,6 +1163,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 cleaningChatId: target.cleaningChatId ?? "",
                 timezone: target.timezone ?? overviewDisplay.timezone,
                 currency: target.currency ?? overviewDisplay.currency,
+                usesExtranets: Boolean(target.usesExtranets),
+                extranetNames: (target.extranetNames ?? []).join('\n'),
                 financialCycleStartDay: String(target.financialCycleStartDay ?? 1),
                 monthlyPayrollCost: fromMinorUnits(target.monthlyPayrollCost),
                 monthlyRentCost: fromMinorUnits(target.monthlyRentCost),
@@ -1161,7 +1180,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = event.target;
-        setEditForm((prev) => ({ ...prev, [name]: value }));
+        const nextValue = event.target instanceof HTMLInputElement && event.target.type === 'checkbox'
+            ? event.target.checked
+            : value;
+        setEditForm((prev) => ({ ...prev, [name]: nextValue }));
     }, []);
 
     const handleCreateHotel = useCallback(
@@ -1182,6 +1204,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             if (rawTimezone) payload.timezone = rawTimezone;
             const rawCurrency = (formData.get("currency") as string | null)?.trim();
             if (rawCurrency) payload.currency = rawCurrency;
+            payload.usesExtranets = formData.get('usesExtranets') === 'on';
+            payload.extranetNames = parseExtranetNamesText(formData.get('extranetNames') as string | null);
             payload.financialCycleStartDay = toCycleDay(formData.get("financialCycleStartDay") as string | null) ?? 1;
             payload.monthlyPayrollCost = toMinorUnits(formData.get("monthlyPayrollCost") as string | null);
             payload.monthlyRentCost = toMinorUnits(formData.get("monthlyRentCost") as string | null);
@@ -1251,6 +1275,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     cleaningChatId: editForm.cleaningChatId.trim() ? editForm.cleaningChatId.trim() : null,
                     timezone: editForm.timezone || "Asia/Bishkek",
                     currency: editForm.currency || "KGS",
+                    usesExtranets: editForm.usesExtranets,
+                    extranetNames: parseExtranetNamesText(editForm.extranetNames),
                     financialCycleStartDay: toCycleDay(editForm.financialCycleStartDay) ?? 1,
                     monthlyPayrollCost: toMinorUnits(editForm.monthlyPayrollCost) ?? 0,
                     monthlyRentCost: toMinorUnits(editForm.monthlyRentCost) ?? 0,
@@ -1756,6 +1782,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input id="financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" defaultValue="1" placeholder="1" />
                                         </Field>
                                     </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input type="checkbox" name="usesExtranets" className="accent-emerald-500" />
+                                            Использовать экстранеты для этой точки
+                                        </label>
+                                        <div className="mt-3">
+                                            <Field label="Список экстранетов" htmlFor="extranetNames" hint="Booking, Agoda, Ostrovok">
+                                                <TextArea
+                                                    id="extranetNames"
+                                                    name="extranetNames"
+                                                    rows={4}
+                                                    placeholder="По одному в строке или через запятую"
+                                                />
+                                            </Field>
+                                        </div>
+                                    </div>
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                                         <Field label={`Зарплаты / мес (${overviewDisplay.currency})`} htmlFor="monthlyPayrollCost">
                                             <Input id="monthlyPayrollCost" name="monthlyPayrollCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
@@ -1865,6 +1907,32 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <Field label="Начало расчетного месяца" htmlFor="edit-financialCycleStartDay" hint="1-31">
                                                     <Input id="edit-financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" value={editForm.financialCycleStartDay} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                                    <input
+                                                        type="checkbox"
+                                                        name="usesExtranets"
+                                                        checked={editForm.usesExtranets}
+                                                        onChange={handleEditFieldChange}
+                                                        disabled={!selectedHotelId || isUpdatingHotel}
+                                                        className="accent-emerald-500"
+                                                    />
+                                                    Использовать экстранеты для этой точки
+                                                </label>
+                                                <div className="mt-3">
+                                                    <Field label="Список экстранетов" htmlFor="edit-extranetNames" hint="По одному в строке">
+                                                        <TextArea
+                                                            id="edit-extranetNames"
+                                                            name="extranetNames"
+                                                            rows={4}
+                                                            value={editForm.extranetNames}
+                                                            onChange={handleEditFieldChange}
+                                                            placeholder="Booking&#10;Agoda&#10;Ostrovok"
+                                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                                        />
+                                                    </Field>
+                                                </div>
                                             </div>
                                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                                                 <Field label={`Зарплаты / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyPayrollCost">

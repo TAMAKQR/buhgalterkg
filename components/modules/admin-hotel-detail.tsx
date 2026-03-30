@@ -18,7 +18,7 @@ import { formatDateTime, formatMoney } from '@/lib/timezone';
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
 type StayStatusValue = 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
-type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD';
+type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD' | 'ONLINE';
 type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
 type LedgerPaymentMethodValue = 'CASH' | 'CARD';
 
@@ -34,6 +34,8 @@ interface RoomStayDetail {
     paymentMethod?: string | null;
     cashPaid?: number | null;
     cardPaid?: number | null;
+    onlinePaid?: number | null;
+    bookingSource?: string | null;
     notes?: string | null;
 }
 
@@ -78,6 +80,8 @@ interface HotelDetailPayload {
     id: string;
     name: string;
     address: string;
+    usesExtranets?: boolean | null;
+    extranetNames?: string[];
     managerSharePct?: number | null;
     notes?: string | null;
     roomCount: number;
@@ -187,8 +191,10 @@ interface StayEditForm {
     status: StayStatusValue;
     cashPaid: number;
     cardPaid: number;
+    onlinePaid: number;
     totalPaid: number;
     paymentMethod: PaymentMethodValue;
+    bookingSource: string;
     notes: string;
 }
 
@@ -204,8 +210,10 @@ const createStayEditDefaults = (): StayEditForm => ({
     status: 'SCHEDULED',
     cashPaid: 0,
     cardPaid: 0,
+    onlinePaid: 0,
     totalPaid: 0,
     paymentMethod: 'AUTO',
+    bookingSource: '',
     notes: ''
 });
 
@@ -233,7 +241,8 @@ const stayStatusTone: Record<StayStatusValue, 'default' | 'success' | 'warning' 
 const stayPaymentOptions: Array<{ value: PaymentMethodValue; label: string }> = [
     { value: 'AUTO', label: 'Определить автоматически' },
     { value: 'CASH', label: 'Наличные' },
-    { value: 'CARD', label: 'Безнал' }
+    { value: 'CARD', label: 'Безнал' },
+    { value: 'ONLINE', label: 'На сайте / онлайн' }
 ];
 
 const ledgerEntryTypeLabels: Record<LedgerEntryTypeValue, string> = {
@@ -438,10 +447,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const hasStaySelection = Boolean(stayFormValues.stayId);
     const roomPaymentPreview = useMemo(
         () => ({
-            totalBreakdown: (Number.isFinite(stayFormValues.cashPaid) ? stayFormValues.cashPaid || 0 : 0) + (Number.isFinite(stayFormValues.cardPaid) ? stayFormValues.cardPaid || 0 : 0),
+            totalBreakdown:
+                (Number.isFinite(stayFormValues.cashPaid) ? stayFormValues.cashPaid || 0 : 0) +
+                (Number.isFinite(stayFormValues.cardPaid) ? stayFormValues.cardPaid || 0 : 0) +
+                (Number.isFinite(stayFormValues.onlinePaid) ? stayFormValues.onlinePaid || 0 : 0),
             totalField: Number.isFinite(stayFormValues.totalPaid) ? stayFormValues.totalPaid || 0 : 0
         }),
-        [stayFormValues.cashPaid, stayFormValues.cardPaid, stayFormValues.totalPaid]
+        [stayFormValues.cashPaid, stayFormValues.cardPaid, stayFormValues.onlinePaid, stayFormValues.totalPaid]
     );
 
     const selectedManagerId = updateManagerForm.watch('assignmentId');
@@ -989,8 +1001,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             status: stay.status as StayStatusValue,
             cashPaid: (stay.cashPaid ?? 0) / 100,
             cardPaid: (stay.cardPaid ?? 0) / 100,
-            totalPaid: (stay.amountPaid ?? (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0)) / 100,
-            paymentMethod: stay.paymentMethod ? (stay.paymentMethod as PaymentMethodValue) : 'AUTO',
+            onlinePaid: (stay.onlinePaid ?? 0) / 100,
+            totalPaid: (stay.amountPaid ?? (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0) + (stay.onlinePaid ?? 0)) / 100,
+            paymentMethod:
+                (stay.onlinePaid ?? 0) > 0 && !(stay.cashPaid ?? 0) && !(stay.cardPaid ?? 0)
+                    ? 'ONLINE'
+                    : stay.paymentMethod
+                        ? (stay.paymentMethod as PaymentMethodValue)
+                        : 'AUTO',
+            bookingSource: stay.bookingSource ?? '',
             notes: stay.notes ?? ''
         });
     };
@@ -1008,6 +1027,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
         const cashMinor = toOptionalMinorValue(values.cashPaid);
         const cardMinor = toOptionalMinorValue(values.cardPaid);
+        const onlineMinor = toOptionalMinorValue(values.onlinePaid);
         const totalMinor = toOptionalMinorValue(values.totalPaid);
 
         try {
@@ -1023,8 +1043,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     status: values.status,
                     cashPaid: cashMinor,
                     cardPaid: cardMinor,
+                    onlinePaid: onlineMinor,
                     amountPaid: totalMinor,
-                    paymentMethod: values.paymentMethod === 'AUTO' ? null : values.paymentMethod
+                    paymentMethod: values.paymentMethod === 'AUTO' || values.paymentMethod === 'ONLINE' ? null : values.paymentMethod,
+                    bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined
                 }
             });
 
@@ -1651,15 +1673,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     const checkOutLabel = formatStayDate(stayEntry.actualCheckOut ?? stayEntry.scheduledCheckOut);
                                                                                     const cashPortion = stayEntry.cashPaid ?? 0;
                                                                                     const cardPortion = stayEntry.cardPaid ?? 0;
+                                                                                    const onlinePortion = stayEntry.onlinePaid ?? 0;
                                                                                     const paymentLabel = (() => {
                                                                                         const segments: string[] = [];
                                                                                         if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
                                                                                         if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
+                                                                                        if (onlinePortion) segments.push(`сайт ${formatCurrency(onlinePortion)}`);
                                                                                         if (!segments.length && stayEntry.paymentMethod) {
                                                                                             return stayEntry.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
                                                                                         }
                                                                                         return segments.join(' · ') || undefined;
                                                                                     })();
+                                                                                    const sourceLabel = stayEntry.bookingSource?.trim() ? `источник ${stayEntry.bookingSource.trim()}` : undefined;
 
                                                                                     return (
                                                                                         <div key={stayEntry.id} className="rounded-xl border border-slate-200/80 bg-white px-2.5 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -1679,7 +1704,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                                                                                                 {checkInLabel} — {checkOutLabel}
                                                                                                 {stayEntry.amountPaid != null && (
-                                                                                                    <> · {formatCurrency(stayEntry.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}</>
+                                                                                                    <> · {formatCurrency(stayEntry.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
                                                                                                 )}
                                                                                             </p>
                                                                                         </div>
@@ -1971,6 +1996,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             </div>
                             <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
                                 <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                                {data?.usesExtranets && (data.extranetNames?.length ?? 0) > 0 && (
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Источник брони</label>
+                                        <Select {...stayEditForm.register('bookingSource')}>
+                                            <option value="">Без экстранета / прямой заезд</option>
+                                            {(data.extranetNames ?? []).map((name) => (
+                                                <option key={`booking-source-${name}`} value={name}>{name}</option>
+                                            ))}
+                                        </Select>
+                                    </div>
+                                )}
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>Планируемый заезд</label>
@@ -2015,7 +2051,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </Select>
                                     </div>
                                 </div>
-                                <div className="grid gap-3 md:grid-cols-3">
+                                <div className="grid gap-3 md:grid-cols-4">
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>{`Наличные (${hotelCur || 'KGS'})`}</label>
                                         <Input
@@ -2032,6 +2068,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             step="0.01"
                                             min="0"
                                             {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`На сайте (${hotelCur || 'KGS'})`}</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...stayEditForm.register('onlinePaid', { valueAsNumber: true })}
                                         />
                                     </div>
                                     <div className="space-y-1">

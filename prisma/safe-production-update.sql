@@ -97,5 +97,53 @@ DROP TABLE IF EXISTS "ProductCategory" CASCADE;
 DROP TYPE IF EXISTS "ProductSaleType";
 DROP TYPE IF EXISTS "ProductInventoryAdjustmentType";
 
+-- 7. Hotel: добавить настройки экстранетов (если нет)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Hotel' AND column_name = 'uses_extranets'
+    ) THEN
+        ALTER TABLE "Hotel" ADD COLUMN "uses_extranets" BOOLEAN NOT NULL DEFAULT false;
+        RAISE NOTICE 'Added Hotel.uses_extranets';
+    ELSE
+        RAISE NOTICE 'Hotel.uses_extranets already exists — skipped';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Hotel' AND column_name = 'extranet_names'
+    ) THEN
+        ALTER TABLE "Hotel" ADD COLUMN "extranet_names" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+        RAISE NOTICE 'Added Hotel.extranet_names';
+    ELSE
+        RAISE NOTICE 'Hotel.extranet_names already exists — skipped';
+    END IF;
+END $$;
+
+-- 8. RoomStay: добавить источник брони и онлайн-оплату (если нет)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'RoomStay' AND column_name = 'booking_source'
+    ) THEN
+        ALTER TABLE "RoomStay" ADD COLUMN "booking_source" TEXT;
+        RAISE NOTICE 'Added RoomStay.booking_source';
+    ELSE
+        RAISE NOTICE 'RoomStay.booking_source already exists — skipped';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'RoomStay' AND column_name = 'online_paid'
+    ) THEN
+        ALTER TABLE "RoomStay" ADD COLUMN "online_paid" INTEGER NOT NULL DEFAULT 0;
+        RAISE NOTICE 'Added RoomStay.online_paid';
+    ELSE
+        RAISE NOTICE 'RoomStay.online_paid already exists — skipped';
+    END IF;
+END $$;
+
 -- Готово!
 DO $$ BEGIN RAISE NOTICE '✅ Обновление завершено успешно!'; END $$;

@@ -43,22 +43,24 @@ async function createRooms(hotelId, rooms) {
     return map;
 }
 
-async function createStay({ room, shift, guestName, cashPaid = 0, cardPaid = 0, checkIn, checkOut, note }) {
+async function createStay({ room, shift, guestName, cashPaid = 0, cardPaid = 0, onlinePaid = 0, bookingSource = null, checkIn, checkOut, note }) {
     const stay = await prisma.roomStay.create({
         data: {
             roomId: room.id,
             hotelId: room.hotelId,
             shiftId: shift?.id ?? null,
             guestName,
+            bookingSource,
             scheduledCheckIn: checkIn,
             scheduledCheckOut: checkOut,
             actualCheckIn: checkIn,
             status: StayStatus.CHECKED_IN,
             cashPaid,
             cardPaid,
-            amountPaid: cashPaid + cardPaid,
+            onlinePaid,
+            amountPaid: cashPaid + cardPaid + onlinePaid,
             paymentMethod:
-                cashPaid && cardPaid
+                onlinePaid || (cashPaid && cardPaid)
                     ? null
                     : cashPaid
                         ? PaymentMethod.CASH

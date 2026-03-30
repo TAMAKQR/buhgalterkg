@@ -21,6 +21,8 @@ interface ManagerStateResponse {
         address: string;
         timezone?: string;
         currency?: string;
+        usesExtranets?: boolean;
+        extranetNames?: string[];
     };
     shift?: {
         id: string;
@@ -78,6 +80,8 @@ interface ManagerStateResponse {
             paymentMethod?: 'CASH' | 'CARD' | null;
             cashPaid?: number | null;
             cardPaid?: number | null;
+            onlinePaid?: number | null;
+            bookingSource?: string | null;
         } | null;
     }>;
     compensation?: {
@@ -150,11 +154,13 @@ interface CheckInModalState {
     roomId: string;
     label: string;
     guestName: string;
+    bookingSource: string;
     checkIn: string;
     currentCheckOut?: string;
     checkOut: string;
     cashAmount: string;
     cardAmount: string;
+    onlineAmount: string;
 }
 
 type PanelKey = 'rooms' | 'shift' | 'cash';
@@ -661,11 +667,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             roomId: room.id,
             label: room.label,
             guestName: '',
+            bookingSource: '',
             checkIn: formatDateInputValue(startDate),
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
             cashAmount: '',
-            cardAmount: ''
+            cardAmount: '',
+            onlineAmount: ''
         });
         setCheckInError(null);
     };
@@ -685,11 +693,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             roomId: room.id,
             label: room.label,
             guestName: room.stay.guestName?.trim() || 'Гость',
+            bookingSource: room.stay.bookingSource?.trim() || '',
             checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
             currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             cashAmount: '',
-            cardAmount: ''
+            cardAmount: '',
+            onlineAmount: ''
         });
         setCheckInError(null);
     };
@@ -726,19 +736,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         const cashValue = Number(checkInModal.cashAmount || 0);
         const cardValue = Number(checkInModal.cardAmount || 0);
+        const onlineValue = Number(checkInModal.onlineAmount || 0);
 
-        if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0) {
+        if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0 || !Number.isFinite(onlineValue) || onlineValue < 0) {
             setCheckInError('Сумма не может быть отрицательной или пустой');
             return;
         }
 
-        if (checkInModal.mode === 'checkin' && cashValue === 0 && cardValue === 0) {
-            setCheckInError('Укажите оплату наличными и/или безналичными');
+        if (checkInModal.mode === 'checkin' && cashValue === 0 && cardValue === 0 && onlineValue === 0) {
+            setCheckInError('Укажите оплату наличными, безналичными и/или на сайте');
             return;
         }
 
         const cashMinor = toMinor(cashValue);
         const cardMinor = toMinor(cardValue);
+        const onlineMinor = toMinor(onlineValue);
 
         setIsSubmittingCheckIn(true);
         try {
@@ -747,10 +759,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     shiftId: data.shift.id,
                     intent: checkInModal.mode,
                     guestName: checkInModal.mode === 'checkin' ? checkInModal.guestName.trim() || undefined : undefined,
+                    bookingSource: checkInModal.mode === 'checkin' && data.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
                     scheduledCheckIn: checkInModal.mode === 'checkin' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     cashAmount: cashMinor,
-                    cardAmount: cardMinor
+                    cardAmount: cardMinor,
+                    onlineAmount: onlineMinor
                 }
             });
             setCheckInModal(null);
@@ -951,15 +965,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
                                         const cashPortion = room.stay?.cashPaid ?? 0;
                                         const cardPortion = room.stay?.cardPaid ?? 0;
+                                        const onlinePortion = room.stay?.onlinePaid ?? 0;
                                         const paymentLabel = (() => {
                                             const segments = [] as string[];
                                             if (cashPortion) segments.push(`нал ${formatKgs(cashPortion)}`);
                                             if (cardPortion) segments.push(`безнал ${formatKgs(cardPortion)}`);
+                                            if (onlinePortion) segments.push(`сайт ${formatKgs(onlinePortion)}`);
                                             if (!segments.length && room.stay?.paymentMethod) {
                                                 return room.stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
                                             }
                                             return segments.join(' · ') || null;
                                         })();
+                                        const bookingSourceLabel = room.stay?.bookingSource?.trim() ? `источник ${room.stay.bookingSource.trim()}` : null;
 
                                         return (
                                             <article key={room.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:shadow dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none">
@@ -1013,7 +1030,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         {' · '}
                                                         {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
                                                         {room.stay.amountPaid != null && (
-                                                            <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}</>
+                                                            <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{bookingSourceLabel ? ` · ${bookingSourceLabel}` : ''}</>
                                                         )}
                                                     </div>
                                                 )}
@@ -1415,6 +1432,24 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             readOnly={checkInModal.mode === 'extend'}
                                         />
                                     </div>
+                                    {checkInModal.mode === 'checkin' && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-source">Источник брони</label>
+                                            <Select
+                                                id="modal-booking-source"
+                                                value={checkInModal.bookingSource}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) => (prev ? { ...prev, bookingSource: event.target.value } : prev))
+                                                }
+                                                className="text-white"
+                                            >
+                                                <option value="">Без экстранета / прямой заезд</option>
+                                                {(data.hotel.extranetNames ?? []).map((name) => (
+                                                    <option key={`modal-booking-source-${name}`} value={name}>{name}</option>
+                                                ))}
+                                            </Select>
+                                        </div>
+                                    )}
                                     {checkInModal.mode === 'checkin' ? (
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
@@ -1471,7 +1506,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     {checkInModal.mode === 'extend' && (
                                         <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
                                     )}
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                                         <div>
                                             <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
                                             <Input
@@ -1500,6 +1535,23 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 onChange={(event) =>
                                                     setCheckInModal((prev) =>
                                                         prev ? { ...prev, cardAmount: event.target.value } : prev
+                                                    )
+                                                }
+                                                placeholder="0"
+                                                className="text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'extend' ? 'Доплата сайт' : 'На сайте'}</label>
+                                            <Input
+                                                id="modal-online"
+                                                type="number"
+                                                step="0.01"
+                                                inputMode="decimal"
+                                                value={checkInModal.onlineAmount}
+                                                onChange={(event) =>
+                                                    setCheckInModal((prev) =>
+                                                        prev ? { ...prev, onlineAmount: event.target.value } : prev
                                                     )
                                                 }
                                                 placeholder="0"

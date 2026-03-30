@@ -7,6 +7,7 @@ import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyCleaningC
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
+import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,12 +15,14 @@ const staySchema = z.object({
     shiftId: z.string().cuid(),
     intent: z.enum(['checkin', 'checkout', 'extend']),
     guestName: z.string().optional(),
+    bookingSource: z.string().max(80).optional().nullable(),
     scheduledCheckIn: z.string().datetime().optional(),
     scheduledCheckOut: z.string().datetime().optional(),
     amountPaid: z.number().int().positive().optional(),
     paymentMethod: z.nativeEnum(PaymentMethod).optional(),
     cashAmount: z.number().int().nonnegative().optional(),
-    cardAmount: z.number().int().nonnegative().optional()
+    cardAmount: z.number().int().nonnegative().optional(),
+    onlineAmount: z.number().int().nonnegative().optional()
 });
 
 export async function POST(request: NextRequest, { params }: { params: { roomId: string } }) {
@@ -48,34 +51,40 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
         }
 
         if (payload.intent === 'checkin') {
+            const normalizedBookingSource = normalizeBookingSource(payload.bookingSource);
+            const resolvedBookingSource = normalizedBookingSource
+                ? resolveBookingSource(normalizedBookingSource, room.hotel.extranetNames)
+                : null;
+
+            if (normalizedBookingSource && (!room.hotel.usesExtranets || !resolvedBookingSource)) {
+                return new NextResponse('Выбранный экстранет не настроен для этой точки', { status: 400 });
+            }
+
             const cashAmount =
                 payload.cashAmount ??
                 (payload.paymentMethod === PaymentMethod.CASH ? payload.amountPaid ?? 0 : 0);
             const cardAmount =
                 payload.cardAmount ??
                 (payload.paymentMethod === PaymentMethod.CARD ? payload.amountPaid ?? 0 : 0);
+            const onlineAmount = payload.onlineAmount ?? 0;
 
-            if (!cashAmount && !cardAmount) {
-                return new NextResponse('Укажите сумму оплаты (наличные и/или безналичные)', { status: 400 });
+            if (!cashAmount && !cardAmount && !onlineAmount) {
+                return new NextResponse('Укажите сумму оплаты (наличные, безналичные и/или на сайте)', { status: 400 });
             }
 
-            if (cashAmount < 0 || cardAmount < 0) {
+            if (cashAmount < 0 || cardAmount < 0 || onlineAmount < 0) {
                 return new NextResponse('Сумма не может быть отрицательной', { status: 400 });
             }
 
-            const totalAmount = cashAmount + cardAmount;
-            const detectedMethod =
-                cashAmount && cardAmount
-                    ? null
-                    : cashAmount
-                        ? PaymentMethod.CASH
-                        : PaymentMethod.CARD;
+            const totalAmount = sumStayPayments({ cashPaid: cashAmount, cardPaid: cardAmount, onlinePaid: onlineAmount });
+            const detectedMethod = detectStayPaymentMethod({ cashPaid: cashAmount, cardPaid: cardAmount, onlinePaid: onlineAmount });
 
             const stay = await prisma.roomStay.create({
                 data: {
                     roomId: room.id,
                     shiftId: payload.shiftId,
                     hotelId: room.hotelId,
+                    bookingSource: resolvedBookingSource,
                     scheduledCheckIn: payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : new Date(),
                     scheduledCheckOut: payload.scheduledCheckOut
                         ? new Date(payload.scheduledCheckOut)
@@ -86,7 +95,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     amountPaid: totalAmount,
                     paymentMethod: detectedMethod,
                     cashPaid: cashAmount,
-                    cardPaid: cardAmount
+                    cardPaid: cardAmount,
+                    onlinePaid: onlineAmount
                 }
             });
 
@@ -129,10 +139,12 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     paymentMethod: detectedMethod,
                     paymentDetails: {
                         cashAmount,
-                        cardAmount
+                        cardAmount,
+                        onlineAmount
                     },
                     timezone: room.hotel.timezone,
                     currency: room.hotel.currency,
+                    bookingSource: resolvedBookingSource,
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram notification', notificationError);
@@ -181,22 +193,17 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
 
             const cashAmount = payload.cashAmount ?? 0;
             const cardAmount = payload.cardAmount ?? 0;
-            if (cashAmount < 0 || cardAmount < 0) {
+            const onlineAmount = payload.onlineAmount ?? 0;
+            if (cashAmount < 0 || cardAmount < 0 || onlineAmount < 0) {
                 return new NextResponse('Сумма не может быть отрицательной', { status: 400 });
             }
 
             const totalCashPaid = (currentStay.cashPaid ?? 0) + cashAmount;
             const totalCardPaid = (currentStay.cardPaid ?? 0) + cardAmount;
-            const extraAmount = cashAmount + cardAmount;
+            const totalOnlinePaid = (currentStay.onlinePaid ?? 0) + onlineAmount;
+            const extraAmount = sumStayPayments({ cashPaid: cashAmount, cardPaid: cardAmount, onlinePaid: onlineAmount });
             const totalAmountPaid = (currentStay.amountPaid ?? 0) + extraAmount;
-            const detectedMethod =
-                totalCashPaid && totalCardPaid
-                    ? null
-                    : totalCashPaid
-                        ? PaymentMethod.CASH
-                        : totalCardPaid
-                            ? PaymentMethod.CARD
-                            : currentStay.paymentMethod;
+            const detectedMethod = detectStayPaymentMethod({ cashPaid: totalCashPaid, cardPaid: totalCardPaid, onlinePaid: totalOnlinePaid });
 
             const updatedStay = await prisma.roomStay.update({
                 where: { id: currentStay.id },
@@ -205,7 +212,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     amountPaid: totalAmountPaid,
                     paymentMethod: detectedMethod,
                     cashPaid: totalCashPaid,
-                    cardPaid: totalCardPaid
+                    cardPaid: totalCardPaid,
+                    onlinePaid: totalOnlinePaid
                 }
             });
 
@@ -239,6 +247,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     paymentDetails: {
                         cashAmount,
                         cardAmount,
+                        onlineAmount,
                     },
                     timezone: room.hotel.timezone,
                     currency: room.hotel.currency,

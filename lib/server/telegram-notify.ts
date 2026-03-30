@@ -27,9 +27,11 @@ export type CheckInNotificationPayload = {
     checkOut?: string | null;
     amount: number;
     paymentMethod?: PaymentMethod | null;
+    bookingSource?: string | null;
     paymentDetails?: {
         cashAmount?: number;
         cardAmount?: number;
+        onlineAmount?: number;
     };
     timezone?: string;
     currency?: string;
@@ -45,6 +47,7 @@ export type StayExtensionNotificationPayload = {
     paymentDetails?: {
         cashAmount?: number;
         cardAmount?: number;
+        onlineAmount?: number;
     };
     timezone?: string;
     currency?: string;
@@ -57,20 +60,26 @@ const formatPaymentDetails = (payload: {
     paymentDetails?: {
         cashAmount?: number;
         cardAmount?: number;
+        onlineAmount?: number;
     };
     currency?: string;
 }) => {
     const cash = payload.paymentDetails?.cashAmount ?? (payload.paymentMethod === PaymentMethod.CASH ? payload.amount : 0);
     const card = payload.paymentDetails?.cardAmount ?? (payload.paymentMethod === PaymentMethod.CARD ? payload.amount : 0);
+    const online = payload.paymentDetails?.onlineAmount ?? 0;
+    const segments: string[] = [];
 
-    if (cash && card) {
-        return `Оплата: наличные ${formatAmount(cash, payload.currency)} + безнал ${formatAmount(card, payload.currency)}`;
-    }
     if (cash) {
-        return `Оплата: наличные (${formatAmount(cash, payload.currency)})`;
+        segments.push(`наличные ${formatAmount(cash, payload.currency)}`);
     }
     if (card) {
-        return `Оплата: карта (${formatAmount(card, payload.currency)})`;
+        segments.push(`безнал ${formatAmount(card, payload.currency)}`);
+    }
+    if (online) {
+        segments.push(`сайт ${formatAmount(online, payload.currency)}`);
+    }
+    if (segments.length) {
+        return `Оплата: ${segments.join(' + ')}`;
     }
     return payload.paymentMethod ? `Оплата: ${payload.paymentMethod}` : 'Оплата: не указано';
 };
@@ -90,8 +99,9 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
         `Заезд: ${formatDate(payload.checkIn, tz)}`,
         `Выезд: ${formatDate(payload.checkOut, tz)}`,
         `Сумма: ${formatAmount(payload.amount, cur)}`,
+        payload.bookingSource ? `Источник: ${payload.bookingSource}` : null,
         formatPaymentDetails(payload),
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",

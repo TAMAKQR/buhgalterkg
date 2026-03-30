@@ -32,6 +32,8 @@ model Hotel {
   country         String            @default("KG")
   timezone        String            @default("Asia/Bishkek")
   currency        String            @default("KGS")
+  usesExtranets   Boolean           @default(false) @map("uses_extranets")
+  extranetNames   String[]          @default([]) @map("extranet_names")
   financialCycleStartDay Int        @default(1) @map("financial_cycle_start_day")
   managerSharePct Int?              @map("manager_share_pct")
   cleaningChatId  String?           @map("cleaning_chat_id")
@@ -94,6 +96,7 @@ model RoomStay {
   hotelId           String
   shiftId           String?
   guestName         String?
+  bookingSource     String?        @map("booking_source")
   scheduledCheckIn  DateTime
   scheduledCheckOut DateTime
   actualCheckIn     DateTime?
@@ -106,6 +109,7 @@ model RoomStay {
   paymentMethod     PaymentMethod?
   cashPaid          Int            @default(0)
   cardPaid          Int            @default(0)
+  onlinePaid        Int            @default(0) @map("online_paid")
   currentRoom       Room?          @relation("RoomCurrentStay")
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])

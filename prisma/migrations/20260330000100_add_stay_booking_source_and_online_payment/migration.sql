@@ -1,0 +1,7 @@
+ALTER TABLE "Hotel"
+ADD COLUMN "uses_extranets" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "extranet_names" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+
+ALTER TABLE "RoomStay"
+ADD COLUMN "booking_source" TEXT,
+ADD COLUMN "online_paid" INTEGER NOT NULL DEFAULT 0;

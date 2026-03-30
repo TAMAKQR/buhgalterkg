@@ -8,6 +8,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { getCountryFromRequest } from '@/lib/server/request-country';
+import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,9 +20,11 @@ const updateStaySchema = z
         actualCheckIn: z.string().datetime().optional().nullable(),
         actualCheckOut: z.string().datetime().optional().nullable(),
         status: z.nativeEnum(StayStatus).optional(),
+        bookingSource: z.string().max(80).optional().nullable(),
         amountPaid: z.number().int().min(0).optional(),
         cashPaid: z.number().int().min(0).optional(),
         cardPaid: z.number().int().min(0).optional(),
+        onlinePaid: z.number().int().min(0).optional(),
         paymentMethod: z.nativeEnum(PaymentMethod).optional().nullable(),
         notes: z.string().max(500).optional().nullable()
     })
@@ -66,7 +69,20 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             return new NextResponse('Stay not found', { status: 404 });
         }
 
-        const updateData: Prisma.RoomStayUpdateInput = {};
+        const stayRecord = stay as typeof stay & {
+            onlinePaid: number;
+            room: typeof stay.room & {
+                hotel: typeof stay.room.hotel & {
+                    usesExtranets: boolean;
+                    extranetNames: string[];
+                };
+            };
+        };
+
+        const updateData = {} as Prisma.RoomStayUpdateInput & {
+            onlinePaid?: number;
+            bookingSource?: string | null;
+        };
 
         if (payload.guestName !== undefined) {
             const trimmed = payload.guestName?.trim();
@@ -136,13 +152,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             updateData.status = payload.status;
         }
 
-        const nextCash = payload.cashPaid ?? stay.cashPaid;
-        const nextCard = payload.cardPaid ?? stay.cardPaid;
+        const nextCash = payload.cashPaid ?? stayRecord.cashPaid;
+        const nextCard = payload.cardPaid ?? stayRecord.cardPaid;
+        const nextOnline = payload.onlinePaid ?? stayRecord.onlinePaid;
 
         if (payload.amountPaid !== undefined) {
             updateData.amountPaid = payload.amountPaid;
-        } else if (payload.cashPaid !== undefined || payload.cardPaid !== undefined) {
-            updateData.amountPaid = nextCash + nextCard;
+        } else if (payload.cashPaid !== undefined || payload.cardPaid !== undefined || payload.onlinePaid !== undefined) {
+            updateData.amountPaid = sumStayPayments({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
         }
 
         if (payload.cashPaid !== undefined) {
@@ -153,14 +170,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             updateData.cardPaid = payload.cardPaid;
         }
 
+        if (payload.onlinePaid !== undefined) {
+            updateData.onlinePaid = payload.onlinePaid;
+        }
+
+        if (payload.bookingSource !== undefined) {
+            const normalized = normalizeBookingSource(payload.bookingSource);
+            if (!normalized) {
+                updateData.bookingSource = null;
+            } else {
+                const resolved = resolveBookingSource(normalized, stayRecord.room.hotel.extranetNames);
+                if (!stayRecord.room.hotel.usesExtranets || !resolved) {
+                    return new NextResponse('Выбранный экстранет не настроен для этой точки', { status: 400 });
+                }
+                updateData.bookingSource = resolved;
+            }
+        }
+
         if (payload.paymentMethod !== undefined) {
             updateData.paymentMethod = payload.paymentMethod ?? null;
-        } else if (
-            (payload.cashPaid !== undefined || payload.cardPaid !== undefined) &&
-            (payload.cashPaid ?? nextCash) &&
-            (payload.cardPaid ?? nextCard)
-        ) {
-            updateData.paymentMethod = null;
+        } else if (payload.cashPaid !== undefined || payload.cardPaid !== undefined || payload.onlinePaid !== undefined) {
+            updateData.paymentMethod = detectStayPaymentMethod({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
         }
 
         const updatedStay = await prisma.$transaction(async (tx) => {

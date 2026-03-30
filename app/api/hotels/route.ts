@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getCountryConfig } from '@/lib/country';
+import { sanitizeExtranetNames } from '@/lib/stays';
 import { getSessionUser } from '@/lib/server/session';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { parseDateOnly, parseInputValue } from '@/lib/timezone';
@@ -24,6 +25,8 @@ const createHotelSchema = z.object({
     country: z.string().length(2).optional(),
     timezone: z.string().min(1).max(50).optional(),
     currency: z.string().min(1).max(10).optional(),
+    usesExtranets: z.boolean().optional(),
+    extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
     financialCycleStartDay: z.number().int().min(1).max(31).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
     monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -192,6 +195,8 @@ export async function GET(request: NextRequest) {
             country: hotel.country,
             timezone: hotel.timezone,
             currency: hotel.currency,
+            usesExtranets: hotel.usesExtranets,
+            extranetNames: hotel.extranetNames,
             financialCycleStartDay: hotel.financialCycleStartDay,
             managerSharePct: hotel.managerSharePct,
             monthlyPayrollCost: hotel.monthlyPayrollCost,
@@ -260,6 +265,8 @@ export async function POST(request: NextRequest) {
         const hotel = await prisma.hotel.create({
             data: {
                 ...payload,
+                usesExtranets: payload.usesExtranets ?? false,
+                extranetNames: sanitizeExtranetNames(payload.extranetNames ?? []),
                 country
             }
         });

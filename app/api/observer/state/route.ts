@@ -16,6 +16,23 @@ function assertObserver(user: { role: string }) {
 
 export async function GET(request: NextRequest) {
     try {
+        type ObserverStayRecord = {
+            id: string;
+            guestName: string | null;
+            scheduledCheckIn: Date;
+            scheduledCheckOut: Date;
+            actualCheckIn: Date | null;
+            actualCheckOut: Date | null;
+            status: string;
+            amountPaid: number | null;
+            paymentMethod: string | null;
+            cashPaid: number | null;
+            cardPaid: number | null;
+            onlinePaid: number;
+            bookingSource: string | null;
+            room?: { label: string } | null;
+        };
+
         const session = await getSessionUser(request);
         assertObserver(session);
 
@@ -63,6 +80,23 @@ export async function GET(request: NextRequest) {
             };
         }
 
+        const staySelect = {
+            id: true,
+            guestName: true,
+            scheduledCheckIn: true,
+            scheduledCheckOut: true,
+            actualCheckIn: true,
+            actualCheckOut: true,
+            status: true,
+            amountPaid: true,
+            paymentMethod: true,
+            cashPaid: true,
+            cardPaid: true,
+            onlinePaid: true,
+            bookingSource: true,
+            room: { select: { label: true } },
+        } as const;
+
         const [hotel, ledgerGroups, ledgerEntries, shifts, stays, rooms] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: hotelId },
@@ -104,20 +138,7 @@ export async function GET(request: NextRequest) {
                 where: stayWhere,
                 orderBy: { scheduledCheckIn: 'desc' },
                 take: 200,
-                select: {
-                    id: true,
-                    guestName: true,
-                    scheduledCheckIn: true,
-                    scheduledCheckOut: true,
-                    actualCheckIn: true,
-                    actualCheckOut: true,
-                    status: true,
-                    amountPaid: true,
-                    paymentMethod: true,
-                    cashPaid: true,
-                    cardPaid: true,
-                    room: { select: { label: true } },
-                },
+                select: staySelect as never,
             }),
             prisma.room.findMany({
                 where: { hotelId, isActive: true },
@@ -134,6 +155,8 @@ export async function GET(request: NextRequest) {
         if (!hotel) {
             return new NextResponse('Отель не найден', { status: 404 });
         }
+
+        const stayRecords = stays as ObserverStayRecord[];
 
         /* ── Aggregate totals with payment breakdown ── */
         const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
@@ -256,7 +279,7 @@ export async function GET(request: NextRequest) {
                 openingCash: s.openingCash,
                 closingCash: s.closingCash,
             })),
-            stays: stays.map((s) => ({
+            stays: stayRecords.map((s) => ({
                 id: s.id,
                 guestName: s.guestName,
                 room: s.room?.label ?? '—',
@@ -269,6 +292,8 @@ export async function GET(request: NextRequest) {
                 paymentMethod: s.paymentMethod,
                 cashPaid: s.cashPaid,
                 cardPaid: s.cardPaid,
+                onlinePaid: s.onlinePaid,
+                bookingSource: s.bookingSource,
             })),
             ledger: ledgerEntries.map((e) => ({
                 id: e.id,

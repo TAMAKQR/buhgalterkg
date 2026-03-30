@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LedgerEntryType, RoomStatus, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -8,6 +8,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { calculateManagerPayout } from '@/lib/manager-payout';
+import { sanitizeExtranetNames } from '@/lib/stays';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,8 @@ const updateHotelSchema = z
         country: z.string().length(2).optional(),
         timezone: z.string().min(1).max(50).optional(),
         currency: z.string().min(1).max(10).optional(),
+        usesExtranets: z.boolean().optional(),
+        extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -117,6 +120,21 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         if (!hotel) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
+
+        const hotelRecord = hotel as typeof hotel & {
+            usesExtranets: boolean;
+            extranetNames: string[];
+            rooms: Array<
+                (typeof hotel.rooms)[number] & {
+                    stays: Array<
+                        (typeof hotel.rooms)[number]['stays'][number] & {
+                            onlinePaid: number;
+                            bookingSource: string | null;
+                        }
+                    >;
+                }
+            >;
+        };
 
         const ledgerTotals: Record<LedgerEntryType, number> = {
             [LedgerEntryType.CASH_IN]: 0,
@@ -222,32 +240,39 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             });
 
         const payload = {
-            id: hotel.id,
-            name: hotel.name,
-            address: hotel.address,
-            timezone: hotel.timezone,
-            currency: hotel.currency,
-            financialCycleStartDay: hotel.financialCycleStartDay,
-            managerSharePct: hotel.managerSharePct,
-            cleaningChatId: hotel.cleaningChatId,
-            notes: hotel.notes,
-            roomCount: hotel.rooms.length,
-            occupiedRooms: hotel.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
-            rooms: hotel.rooms.map((room) => {
-                const stayHistory = room.stays.map((stay) => ({
-                    id: stay.id,
-                    guestName: stay.guestName,
-                    status: stay.status,
-                    scheduledCheckIn: stay.scheduledCheckIn,
-                    scheduledCheckOut: stay.scheduledCheckOut,
-                    actualCheckIn: stay.actualCheckIn,
-                    actualCheckOut: stay.actualCheckOut,
-                    amountPaid: stay.amountPaid,
-                    paymentMethod: stay.paymentMethod,
-                    cashPaid: stay.cashPaid,
-                    cardPaid: stay.cardPaid,
-                    notes: stay.notes
-                }));
+            id: hotelRecord.id,
+            name: hotelRecord.name,
+            address: hotelRecord.address,
+            timezone: hotelRecord.timezone,
+            currency: hotelRecord.currency,
+            usesExtranets: hotelRecord.usesExtranets,
+            extranetNames: hotelRecord.extranetNames,
+            financialCycleStartDay: hotelRecord.financialCycleStartDay,
+            managerSharePct: hotelRecord.managerSharePct,
+            cleaningChatId: hotelRecord.cleaningChatId,
+            notes: hotelRecord.notes,
+            roomCount: hotelRecord.rooms.length,
+            occupiedRooms: hotelRecord.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
+            rooms: hotelRecord.rooms.map((room) => {
+                const stayHistory = room.stays.map((stay) => {
+                    const stayRecord = stay as typeof stay & { onlinePaid: number; bookingSource: string | null };
+                    return {
+                        id: stay.id,
+                        guestName: stay.guestName,
+                        status: stay.status,
+                        scheduledCheckIn: stay.scheduledCheckIn,
+                        scheduledCheckOut: stay.scheduledCheckOut,
+                        actualCheckIn: stay.actualCheckIn,
+                        actualCheckOut: stay.actualCheckOut,
+                        amountPaid: stay.amountPaid,
+                        paymentMethod: stay.paymentMethod,
+                        cashPaid: stay.cashPaid,
+                        cardPaid: stay.cardPaid,
+                        onlinePaid: stayRecord.onlinePaid,
+                        bookingSource: stayRecord.bookingSource,
+                        notes: stay.notes
+                    };
+                });
                 const latestStay = stayHistory[0] ?? null;
 
                 return {
@@ -356,7 +381,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
 
         const hotel = await prisma.hotel.update({
             where: { id: params.hotelId },
-            data: payload
+            data: {
+                ...payload,
+                extranetNames: payload.extranetNames ? sanitizeExtranetNames(payload.extranetNames) : undefined
+            } as Prisma.HotelUpdateInput
         });
 
         return NextResponse.json(hotel);
