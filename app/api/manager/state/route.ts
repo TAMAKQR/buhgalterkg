@@ -9,6 +9,11 @@ import { calculateManagerPayout } from '@/lib/manager-payout';
 
 export const dynamic = 'force-dynamic';
 
+const isStayIncomeNote = (note: string | null) => {
+    const normalized = note?.trim().toLocaleLowerCase('ru-RU') ?? '';
+    return normalized.startsWith('заселение') || normalized.startsWith('продление');
+};
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
@@ -226,12 +231,13 @@ export async function GET(request: NextRequest) {
             recordedAt: entry.recordedAt.toISOString()
         }));
 
-        const shiftStayRevenue = shift
-            ? (await prisma.roomStay.aggregate({
-                where: { shiftId: shift.id, hotelId },
-                _sum: { amountPaid: true }
-            }))._sum.amountPaid ?? 0
-            : 0;
+        const shiftStayRevenue = shiftLedger.reduce((total, entry) => {
+            if (entry.entryType !== LedgerEntryType.CASH_IN) {
+                return total;
+            }
+
+            return isStayIncomeNote(entry.note) ? total + entry.amount : total;
+        }, 0);
 
         const shiftBonus = shift && shiftStayRevenue > 0
             ? calculateBonusFromTiers(shiftStayRevenue, bonusTiers)
