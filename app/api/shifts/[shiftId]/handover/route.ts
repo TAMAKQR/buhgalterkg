@@ -10,8 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const handoverSchema = z.object({
     note: z.string().optional(),
-    pinCode: z.string().regex(/^\d{6}$/).optional(),
-    handoverRecipientId: z.string().cuid().optional()
+    pinCode: z.string().regex(/^\d{6}$/).optional()
 });
 
 export async function POST(request: NextRequest, { params }: { params: { shiftId: string } }) {
@@ -21,23 +20,6 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
         const payload = handoverSchema.parse(body);
 
         const shift = await ensureShiftOwnership(params.shiftId, session, { pinCode: payload.pinCode });
-
-        let handoverRecipientId: string | null = null;
-        if (payload.handoverRecipientId) {
-            const recipientAssignment = await prisma.hotelAssignment.findFirst({
-                where: {
-                    hotelId: shift.hotelId,
-                    userId: payload.handoverRecipientId,
-                    isActive: true
-                }
-            });
-
-            if (!recipientAssignment) {
-                return new NextResponse('Выбранный менеджер не назначен на эту точку', { status: 400 });
-            }
-
-            handoverRecipientId = payload.handoverRecipientId;
-        }
 
         const ledgerGroups = await prisma.cashEntry.groupBy({
             by: ['entryType'],
@@ -69,7 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
                 closingCash: computedCash,
                 handoverCash: computedCash,
                 closingNote: payload.note,
-                handoverRecipientId,
+                handoverRecipientId: null,
                 status: 'CLOSED',
                 closedAt: new Date()
             }

@@ -30,7 +30,6 @@ interface ManagerStateResponse {
         openingCash: number;
         handoverCash?: number | null;
         closingCash?: number | null;
-        handoverRecipientId?: string | null;
         number: number;
     } | null;
     shiftCash?: number | null;
@@ -93,11 +92,6 @@ interface ManagerStateResponse {
         bonus?: number | null;
         bonusThreshold?: number | null;
     } | null;
-    handoverManagers?: Array<{
-        id: string;
-        displayName: string;
-        username?: string | null;
-    }>;
 }
 
 interface ManagerProfileResponse {
@@ -146,7 +140,6 @@ interface ShiftOpenForm {
 interface ShiftHandoverForm {
     note?: string;
     pinCode: string;
-    handoverRecipientId: string;
 }
 
 interface CheckInModalState {
@@ -235,7 +228,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '' } });
     const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, pinCode: '', note: '' } });
-    const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '', handoverRecipientId: '' } });
+    const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
     const [checkInError, setCheckInError] = useState<string | null>(null);
@@ -554,8 +547,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         if (data?.shift) {
             handoverForm.reset({
                 note: '',
-                pinCode: '',
-                handoverRecipientId: data.shift.handoverRecipientId ?? ''
+                pinCode: ''
             });
         }
     }, [data?.shift, handoverForm]);
@@ -606,17 +598,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const cashToReport = shiftCashValue;
         await request(`/api/shifts/${data.shift.id}/handover`, {
             body: {
-                handoverCash: cashToReport,
-                closingCash: cashToReport,
                 note: values.note,
-                pinCode: values.pinCode,
-                handoverRecipientId: values.handoverRecipientId || undefined
+                pinCode: values.pinCode
             }
         });
         handoverForm.reset({
             note: '',
-            pinCode: '',
-            handoverRecipientId: ''
+            pinCode: ''
         });
         mutate();
     });
@@ -984,7 +972,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </svg>
                                             </Button>
                                             <Button type="button" size="sm" variant="ghost" className="h-8 rounded-xl px-2.5 text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
-                                                Сдать смену
+                                                Закрыть смену
                                             </Button>
                                             <ThemeToggle />
                                             <button
@@ -1128,7 +1116,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                         {activePanel === 'shift' && (
                             <Card>
-                                <CardHeader title="Сдача смены" />
+                                <CardHeader title="Закрытие смены" />
                                 {isLoading && <p className="text-sm text-slate-600 dark:text-white/60">Загружаем...</p>}
                                 {error && <p className="text-sm text-rose-300">{String(error)}</p>}
                                 {data?.shift && (
@@ -1150,7 +1138,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-white/[0.06]">
-                                            <span className="text-slate-600 dark:text-white/60">К передаче (нал)</span>
+                                            <span className="text-slate-600 dark:text-white/60">Наличные к закрытию</span>
                                             <span className="text-lg font-bold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span>
                                         </div>
                                         <div className="flex items-center justify-between px-1 text-xs text-slate-600 dark:text-white/40">
@@ -1185,7 +1173,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <p className="text-xs text-rose-300">{handoverForm.formState.errors.pinCode.message}</p>
                                         )}
                                         <Button type="submit" className="w-full" variant="secondary">
-                                            Сдать смену
+                                            Закрыть смену
                                         </Button>
                                     </form>
                                 ) : (
@@ -1446,7 +1434,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         <div className="mt-3 grid gap-2 text-xs text-white/60 sm:grid-cols-3">
                                                             <span>Старт: {formatKgs(selectedShift.openingCash)}</span>
                                                             <span>Факт: {selectedShift.closingCash != null ? formatKgs(selectedShift.closingCash) : '—'}</span>
-                                                            <span>Передано: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
+                                                            <span>Итог наличных: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
                                                         </div>
                                                         <p className="mt-2 text-xs text-white/70">
                                                             Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}

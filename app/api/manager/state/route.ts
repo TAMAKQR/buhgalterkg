@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { LedgerEntryType, PaymentMethod, ShiftStatus, UserRole } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
@@ -48,22 +48,10 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const [assignment, managerAssignments, bonusTiers] = await Promise.all([
+        const [assignment, bonusTiers] = await Promise.all([
             prisma.hotelAssignment.findFirst({
                 where: { hotelId, userId: session.id, isActive: true },
                 select: { shiftPayAmount: true, revenueSharePct: true }
-            }),
-            prisma.hotelAssignment.findMany({
-                where: { hotelId, isActive: true, role: UserRole.MANAGER },
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            displayName: true,
-                            username: true
-                        }
-                    }
-                }
             }),
             prisma.bonusTier.findMany({
                 where: { hotelId },
@@ -256,20 +244,6 @@ export async function GET(request: NextRequest) {
             });
         })();
 
-        const handoverManagers = managerAssignments
-            .map((assignment) => assignment.user)
-            .filter((user): user is NonNullable<typeof user> => Boolean(user?.id))
-            .sort((first, second) =>
-                first.displayName.localeCompare(second.displayName, 'ru', {
-                    sensitivity: 'base'
-                })
-            )
-            .map((user) => ({
-                id: user.id,
-                displayName: user.displayName,
-                username: user.username
-            }));
-
         const response = {
             hotel: {
                 id: hotel.id,
@@ -321,8 +295,7 @@ export async function GET(request: NextRequest) {
                     bonus: shiftBonus?.computed ?? null,
                     bonusThreshold: shiftBonus?.threshold ?? null
                 }
-                : null,
-            handoverManagers
+                : null
         };
 
         return NextResponse.json(response);
