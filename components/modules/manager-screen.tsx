@@ -595,7 +595,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const handleCloseShift = handoverForm.handleSubmit(async (values) => {
         if (!data?.shift) return;
-        const cashToReport = shiftCashValue;
         await request(`/api/shifts/${data.shift.id}/handover`, {
             body: {
                 note: values.note,
