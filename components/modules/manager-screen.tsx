@@ -605,7 +605,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             note: '',
             pinCode: ''
         });
-        mutate();
+
+        if (onLogout) {
+            await onLogout();
+            return;
+        }
+
+        await fetch('/api/session/logout', { method: 'POST' });
     });
 
     const handleExpense = expenseForm.handleSubmit(async (values) => {
