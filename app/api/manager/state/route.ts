@@ -268,6 +268,7 @@ export async function GET(request: NextRequest) {
             rooms: hotel.rooms.map((room) => ({
                 id: room.id,
                 label: room.label,
+                floor: room.floor,
                 status: room.status,
                 stay: room.stays[0]
                     ? {

@@ -68,6 +68,7 @@ interface ManagerStateResponse {
     rooms: Array<{
         id: string;
         label: string;
+        floor?: string | null;
         status: string;
         stay?: {
             id: string;
@@ -160,22 +161,6 @@ interface CheckInModalState {
 
 type PanelKey = 'rooms' | 'shift' | 'cash';
 
-type RoomShareSection = {
-    title: string;
-    min: number;
-    max: number;
-};
-
-const ROOM_SHARE_SECTIONS: RoomShareSection[] = [
-    { title: '1-й этаж (№1-9)', min: 1, max: 9 },
-    { title: '2-й этаж (№10-18)', min: 10, max: 18 },
-    { title: 'Во дворе (№19-22)', min: 19, max: 22 },
-];
-
-const roomNumberFromLabel = (label: string) => {
-    const match = label.match(/\d+/);
-    return match ? Number(match[0]) : Number.NaN;
-};
 
 const formatShareDate = (value: string, timeZone?: string) => {
     const date = new Date(value);
@@ -432,15 +417,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
 
         const sectionMap = new Map<string, string[]>();
-        const otherRooms: string[] = [];
+        const floorOrder: string[] = [];
         const now = new Date();
 
-        for (const section of ROOM_SHARE_SECTIONS) {
-            sectionMap.set(section.title, []);
-        }
-
         for (const room of sortedRooms) {
-            const roomNumber = roomNumberFromLabel(room.label);
             const statusText = (() => {
                 if (room.status !== 'OCCUPIED' || !room.stay?.scheduledCheckOut) {
                     if (room.status === 'DIRTY') return 'уборка';
@@ -461,25 +441,19 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             })();
 
             const line = `${room.label} комната ${statusText}`;
-            const section = ROOM_SHARE_SECTIONS.find((item) => roomNumber >= item.min && roomNumber <= item.max);
-            if (section) {
-                sectionMap.get(section.title)?.push(line);
-            } else {
-                otherRooms.push(line);
+            const floorName = room.floor?.trim() || 'Общий список';
+            if (!sectionMap.has(floorName)) {
+                sectionMap.set(floorName, []);
+                floorOrder.push(floorName);
             }
+            sectionMap.get(floorName)?.push(line);
         }
 
-        const blocks = ROOM_SHARE_SECTIONS
-            .map((section) => {
-                const lines = sectionMap.get(section.title) ?? [];
-                if (!lines.length) return null;
-                return [section.title, ...lines].join('\n');
-            })
-            .filter(Boolean) as string[];
-
-        if (otherRooms.length) {
-            blocks.push(['Другие комнаты', ...otherRooms].join('\n'));
-        }
+        const blocks = floorOrder.map((floorName) => {
+            const lines = sectionMap.get(floorName) ?? [];
+            if (!lines.length) return null;
+            return [floorName, ...lines].join('\n');
+        }).filter(Boolean) as string[];
 
         return [
             ...blocks,
