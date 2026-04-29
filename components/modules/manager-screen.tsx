@@ -437,10 +437,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     }).format(new Date(room.stay.scheduledCheckOut))
                     : formatShareDate(room.stay.scheduledCheckOut, hotelTz);
 
-                return `до ${checkoutLabel}`;
+                const guestName = room.stay.guestName?.trim();
+                return guestName ? `до ${checkoutLabel} - ${guestName}` : `до ${checkoutLabel}`;
             })();
 
-            const line = `${room.label} комната ${statusText}`;
+            const line = `${room.label} ${statusText}`;
             const floorName = room.floor?.trim() || 'Общий список';
             if (!sectionMap.has(floorName)) {
                 sectionMap.set(floorName, []);
