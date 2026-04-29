@@ -442,12 +442,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             })();
 
             const line = `${room.label} ${statusText}`;
+            const shareLine = room.status === 'AVAILABLE' || room.status === 'DIRTY'
+                ? `*${line}*`
+                : line;
             const floorName = room.floor?.trim() || 'Общий список';
             if (!sectionMap.has(floorName)) {
                 sectionMap.set(floorName, []);
                 floorOrder.push(floorName);
             }
-            sectionMap.get(floorName)?.push(line);
+            sectionMap.get(floorName)?.push(shareLine);
         }
 
         const blocks = floorOrder.map((floorName) => {
