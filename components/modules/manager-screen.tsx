@@ -159,7 +159,7 @@ interface CheckInModalState {
     onlineAmount: string;
 }
 
-type PanelKey = 'rooms' | 'shift' | 'cash';
+type PanelKey = 'rooms' | 'shift' | 'cash' | 'history';
 
 
 const formatShareDate = (value: string, timeZone?: string) => {
@@ -187,6 +187,15 @@ const isSameDayInTimeZone = (first: string | Date, second: string | Date, timeZo
     });
 
     return formatter.format(new Date(first)) === formatter.format(new Date(second));
+};
+
+const isPastDate = (value?: string | null, now = new Date()) => {
+    if (!value) {
+        return false;
+    }
+
+    const date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date < now;
 };
 
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
@@ -232,7 +241,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         isLoading: isProfileLoading,
         error: profileError
     } = useSWR<ManagerProfileResponse>(
-        isProfileOpen ? 'manager-profile' : null,
+        isProfileOpen || activePanel === 'history' ? 'manager-profile' : null,
         () => get<ManagerProfileResponse>('/api/manager/profile')
     );
     const ExitButton = () => (
@@ -404,11 +413,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     );
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
+    const overdueCount = useMemo(() => {
+        const now = new Date();
+        return sortedRooms.filter((room) => room.status === 'OCCUPIED' && isPastDate(room.stay?.scheduledCheckOut, now)).length;
+    }, [sortedRooms]);
 
     const panelTabs: Array<{ id: PanelKey; label: string; hint?: string }> = [
         { id: 'rooms', label: 'Номера', hint: `${occupiedCount}/${sortedRooms.length}` },
         { id: 'shift', label: data?.shift ? `Смена №${data.shift.number}` : 'Принять смену' },
-        { id: 'cash', label: 'Касса' }
+        { id: 'cash', label: 'Касса' },
+        { id: 'history', label: 'История' }
     ];
 
     const shareMessage = useMemo(() => {
@@ -438,7 +452,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     : formatShareDate(room.stay.scheduledCheckOut, hotelTz);
 
                 const guestName = room.stay.guestName?.trim();
-                return guestName ? `до ${checkoutLabel} - ${guestName}` : `до ${checkoutLabel}`;
+                const prefix = isPastDate(room.stay.scheduledCheckOut, now) ? 'просрочено с' : 'до';
+                return guestName ? `${prefix} ${checkoutLabel} - ${guestName}` : `${prefix} ${checkoutLabel}`;
             })();
 
             const line = `${room.label} ${statusText}`;
@@ -969,11 +984,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <ExitButton />
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
                                         <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Касса <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCashValue)}</span></span>
                                         <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftCardValue)}</span></span>
                                         <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Расход <span className="font-semibold text-light-text dark:text-white">{formatKgs(shiftExpensesTotal)}</span></span>
                                         <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-700 dark:bg-white/[0.05] dark:text-white/50">Занято <span className="font-semibold text-light-text dark:text-white">{occupiedCount}/{sortedRooms.length}</span></span>
+                                        <span className={`rounded-lg px-2 py-1 ${overdueCount ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-slate-100 text-slate-700 dark:bg-white/[0.05] dark:text-white/50'}`}>Просрочено <span className="font-semibold">{overdueCount}</span></span>
                                     </div>
                                 </div>
                             ) : (
@@ -1008,6 +1024,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                     {sortedRooms.map((room) => {
                                         const isOccupied = room.status === 'OCCUPIED';
+                                        const isOverdue = isOccupied && isPastDate(room.stay?.scheduledCheckOut);
                                         const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
                                         const cashPortion = room.stay?.cashPaid ?? 0;
                                         const cardPortion = room.stay?.cardPaid ?? 0;
@@ -1030,8 +1047,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     <div className="flex items-center gap-2 min-w-0">
                                                         <span className="text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
                                                         <Badge
-                                                            label={isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
-                                                            tone={isOccupied ? 'warning' : 'success'}
+                                                            label={isOverdue ? 'Просрочено' : isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
+                                                            tone={isOverdue ? 'danger' : isOccupied ? 'warning' : 'success'}
                                                         />
                                                     </div>
                                                     {isOccupied ? (
@@ -1081,10 +1098,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     )}
                                                 </div>
                                                 {room.stay && (
-                                                    <div className="mt-1 text-[11px] text-slate-600 dark:text-white/40">
+                                                    <div className={`mt-1 text-[11px] ${isOverdue ? 'text-rose-700 dark:text-rose-300' : 'text-slate-600 dark:text-white/40'}`}>
                                                         <span className="font-medium text-slate-800 dark:text-white/60">{guestLabel}</span>
                                                         {' · '}
-                                                        {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
+                                                        {formatDateTime(room.stay.scheduledCheckIn, hotelTz)} — {isOverdue ? 'просрочено с ' : ''}{formatDateTime(room.stay.scheduledCheckOut, hotelTz)}
                                                         {room.stay.amountPaid != null && (
                                                             <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{bookingSourceLabel ? ` · ${bookingSourceLabel}` : ''}</>
                                                         )}
@@ -1249,6 +1266,84 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 )}
                                             </div>
                                         )}
+                                    </div>
+                                )}
+                            </Card>
+                        )}
+
+                        {activePanel === 'history' && (
+                            <Card>
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <CardHeader title="История смен" />
+                                    <Button type="button" size="sm" variant="ghost" onClick={() => refreshProfile()} disabled={isProfileLoading}>
+                                        Обновить
+                                    </Button>
+                                </div>
+                                {profileError && <p className="text-sm text-rose-600 dark:text-rose-300">Не удалось загрузить историю смен.</p>}
+                                {isProfileLoading && !profileData && <p className="text-sm text-slate-600 dark:text-white/60">Загружаем историю...</p>}
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <Select
+                                        value={historyStatus}
+                                        onChange={(event) => setHistoryStatus(event.target.value as 'ALL' | 'OPEN' | 'CLOSED')}
+                                    >
+                                        <option value="ALL">Все смены</option>
+                                        <option value="OPEN">Активные</option>
+                                        <option value="CLOSED">Архив</option>
+                                    </Select>
+                                    <Input
+                                        type="date"
+                                        value={historyFromDate}
+                                        onChange={(event) => setHistoryFromDate(event.target.value)}
+                                    />
+                                    <Input
+                                        type="date"
+                                        value={historyToDate}
+                                        onChange={(event) => setHistoryToDate(event.target.value)}
+                                    />
+                                </div>
+                                {selectedShift ? (
+                                    <div className="mt-4 rounded-xl bg-slate-100 p-4 text-sm text-slate-700 dark:bg-white/[0.04] dark:text-white/80">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-white/40">Смена №{selectedShift.number}</p>
+                                                <p className="font-medium text-light-text dark:text-white">{formatDateTime(selectedShift.openedAt, hotelTz)}</p>
+                                                {selectedShift.closedAt && (
+                                                    <p className="text-xs text-slate-500 dark:text-white/50">Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}</p>
+                                                )}
+                                            </div>
+                                            <Badge label={selectedShift.status === 'OPEN' ? 'Активная' : 'Архив'} tone={selectedShift.status === 'OPEN' ? 'warning' : 'success'} />
+                                        </div>
+                                        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                                            <span>Старт: {formatKgs(selectedShift.openingCash)}</span>
+                                            <span>Факт: {selectedShift.closingCash != null ? formatKgs(selectedShift.closingCash) : '—'}</span>
+                                            <span>Итог наличных: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
+                                        </div>
+                                        <p className="mt-2 text-xs">
+                                            Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="mt-4 text-sm text-slate-600 dark:text-white/60">Нет смен, подходящих под фильтр.</p>
+                                )}
+                                {filteredProfileShifts.length > 0 && (
+                                    <div className="mt-4 max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                                        {filteredProfileShifts.map((shift) => (
+                                            <button
+                                                key={shift.id}
+                                                type="button"
+                                                onClick={() => setSelectedShiftId(shift.id)}
+                                                className={`w-full rounded-xl border p-3 text-left text-sm transition ${selectedShift?.id === shift.id
+                                                    ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-300/80 dark:bg-amber-400/10 dark:text-amber-50'
+                                                    : 'border-slate-200 text-slate-700 hover:border-slate-300 dark:border-white/10 dark:text-white/70 dark:hover:border-white/30'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <span className="font-semibold">№{shift.number}</span>
+                                                    <span className="text-xs uppercase tracking-widest">{shift.status === 'OPEN' ? 'Активная' : 'Архив'}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 dark:text-white/60">{formatDateTime(shift.openedAt, hotelTz)}</p>
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </Card>
