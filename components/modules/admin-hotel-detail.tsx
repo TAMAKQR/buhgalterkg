@@ -98,6 +98,7 @@ interface HotelDetailPayload {
         id: string;
         displayName: string;
         telegramId?: string | null;
+        loginName?: string | null;
         username?: string | null;
         pinCode?: string | null;
         shiftPayAmount?: number | null;
@@ -139,6 +140,7 @@ interface HotelDetailPayload {
 
 interface AddManagerForm {
     displayName: string;
+    loginName: string;
     username?: string;
     pinCode: string;
     shiftPayAmount?: number;
@@ -148,6 +150,7 @@ interface AddManagerForm {
 interface UpdateManagerForm {
     assignmentId: string;
     displayName: string;
+    loginName: string;
     username: string;
     pinCode: string;
     shiftPayAmount?: number;
@@ -375,12 +378,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const formatStayDate = (value?: string | null) => formatDateTime(value, hotelTz, undefined, '—');
 
     const managerForm = useForm<AddManagerForm>({
-        defaultValues: { displayName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined }
+        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined }
     });
     const updateManagerForm = useForm<UpdateManagerForm>({
         defaultValues: {
             assignmentId: '',
             displayName: '',
+            loginName: '',
             username: '',
             pinCode: '',
             shiftPayAmount: undefined,
@@ -1106,13 +1110,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             body: {
                 hotelId,
                 displayName: values.displayName.trim(),
+                loginName: values.loginName.trim().toLowerCase(),
                 username: values.username?.trim() || undefined,
                 pinCode: values.pinCode,
                 shiftPayAmount: shiftPayAmount ?? undefined,
                 revenueSharePct: revenueSharePct ?? undefined
             }
         });
-        managerForm.reset({ displayName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined });
+        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined });
         mutate();
     });
 
@@ -1123,6 +1128,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const payload = {
             assignmentId: values.assignmentId,
             displayName: values.displayName.trim() || undefined,
+            loginName: values.loginName.trim().toLowerCase() || undefined,
             username: values.username.trim() || undefined,
             pinCode: values.pinCode.trim() || undefined,
             shiftPayAmount: shiftPayAmount ?? undefined,
@@ -1131,6 +1137,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
         const hasUpdates =
             Boolean(payload.displayName) ||
+            Boolean(payload.loginName) ||
             Boolean(payload.username) ||
             Boolean(payload.pinCode) ||
             shiftPayAmount !== null ||
@@ -1153,6 +1160,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             updateManagerForm.reset({
                 assignmentId: values.assignmentId,
                 displayName: '',
+                loginName: '',
                 username: '',
                 pinCode: '',
                 shiftPayAmount: undefined,
@@ -1173,6 +1181,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         updateManagerForm.reset({
             assignmentId,
             displayName: '',
+            loginName: '',
             username: '',
             pinCode: '',
             shiftPayAmount: target?.shiftPayAmount != null ? toMajorValue(target.shiftPayAmount) : undefined,
@@ -2160,6 +2169,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         <div>
                                                             <p className="text-sm font-medium text-slate-900 dark:text-white">{manager.displayName}</p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
+                                                                Логин: {manager.loginName ?? 'не задан'}
+                                                            </p>
+                                                            <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 {manager.username ? `@${manager.username} • ` : ''}
                                                                 PIN {manager.pinCode ?? 'не задан'}
                                                             </p>
@@ -2200,7 +2212,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div>
                                                     <p className="text-sm font-semibold text-slate-900 dark:text-white">Добавление менеджера</p>
-                                                    <p className="text-xs text-slate-500 dark:text-white/60">Имя, PIN и @username</p>
+                                                    <p className="text-xs text-slate-500 dark:text-white/60">Имя, логин, PIN и @username</p>
                                                 </div>
                                                 <Button
                                                     type="button"
@@ -2218,6 +2230,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: 'Укажите имя менеджера' })} />
                                                         {managerForm.formState.errors.displayName && (
                                                             <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
+                                                        )}
+                                                        <Input
+                                                            placeholder="Логин для входа"
+                                                            autoComplete="off"
+                                                            {...managerForm.register('loginName', {
+                                                                required: 'Укажите логин',
+                                                                minLength: { value: 3, message: 'Минимум 3 символа' },
+                                                                maxLength: { value: 50, message: 'Максимум 50 символов' },
+                                                                pattern: { value: /^[a-zA-Z0-9_]+$/, message: 'Только латиница, цифры и _' },
+                                                                setValueAs: (value) => String(value ?? '').trim().toLowerCase()
+                                                            })}
+                                                        />
+                                                        {managerForm.formState.errors.loginName && (
+                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.loginName.message}</p>
                                                         )}
                                                         <Input
                                                             placeholder="PIN (6 цифр)"
@@ -2297,6 +2323,25 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             placeholder={selectedManager ? `Новое имя (сейчас ${selectedManager.displayName})` : 'Новое имя менеджера'}
                                                             {...updateManagerForm.register('displayName')}
                                                         />
+                                                        <Input
+                                                            placeholder={selectedManager?.loginName ? `Логин (сейчас ${selectedManager.loginName})` : 'Новый логин для входа'}
+                                                            autoComplete="off"
+                                                            {...updateManagerForm.register('loginName', {
+                                                                validate: (value) => {
+                                                                    const normalized = value.trim();
+                                                                    if (!normalized) {
+                                                                        return true;
+                                                                    }
+                                                                    return /^[a-zA-Z0-9_]{3,50}$/.test(normalized) || 'Только латиница, цифры и _, 3-50 символов';
+                                                                },
+                                                                setValueAs: (value) => String(value ?? '').trim().toLowerCase()
+                                                            })}
+                                                        />
+                                                        {updateManagerForm.formState.errors.loginName && (
+                                                            <p className="text-xs text-rose-300">
+                                                                {updateManagerForm.formState.errors.loginName.message}
+                                                            </p>
+                                                        )}
                                                         <Input
                                                             placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
                                                             {...updateManagerForm.register('username')}

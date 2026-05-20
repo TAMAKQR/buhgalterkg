@@ -340,6 +340,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
                 telegramId: assignment.user.telegramId,
+                loginName: assignment.user.loginName,
                 username: assignment.user.username,
                 pinCode: assignment.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,

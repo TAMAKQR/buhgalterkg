@@ -212,6 +212,7 @@ export async function GET(request: NextRequest) {
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
                 telegramId: assignment.user.telegramId,
+                loginName: assignment.user.loginName,
                 username: assignment.user.username,
                 role: assignment.role,
                 pinCode: assignment.pinCode,

@@ -66,66 +66,19 @@ const clearAttempts = (key: string) => {
 };
 
 const pinSchema = z.object({
-    managerId: z.string().cuid().optional(),
-    hotelId: z.string().cuid().optional(),
+    login: z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_]+$/, "Логин может содержать только латиницу, цифры и _"),
     pinCode: z.string().regex(/^\d{6}$/, "Код состоит из 6 цифр"),
 });
 
-export async function GET(request: NextRequest) {
+export async function GET() {
     try {
         if (!manualSessionAvailable()) {
             return new NextResponse("Веб-доступ отключён", { status: 503 });
         }
-
-        const country = getCountryFromRequest(request);
-
-        const managers = await prisma.user.findMany({
-            where: {
-                role: UserRole.MANAGER,
-                assignments: {
-                    some: {
-                        isActive: true,
-                        hotel: { country },
-                    },
-                },
-            },
-            select: {
-                id: true,
-                displayName: true,
-                username: true,
-                assignments: {
-                    where: {
-                        isActive: true,
-                        hotel: { country },
-                    },
-                    select: {
-                        hotel: {
-                            select: {
-                                id: true,
-                                name: true,
-                                address: true,
-                            },
-                        },
-                    },
-                },
-            },
-            orderBy: [
-                { displayName: "asc" },
-                { id: "asc" },
-            ],
-        });
-
-        return NextResponse.json(
-            managers.map((manager) => ({
-                id: manager.id,
-                displayName: manager.displayName,
-                username: manager.username,
-                hotels: manager.assignments.map((assignment) => assignment.hotel),
-            })),
-        );
+        return new NextResponse("Список менеджеров недоступен", { status: 405 });
     } catch (error) {
         console.error(error);
-        return new NextResponse("Не удалось загрузить список менеджеров", { status: 500 });
+        return new NextResponse("Не удалось выполнить запрос", { status: 500 });
     }
 }
 
@@ -148,78 +101,34 @@ export async function POST(request: NextRequest) {
         const country = getCountryFromRequest(request);
 
         const body = await request.json();
-        const { managerId, hotelId, pinCode } = pinSchema.parse(body);
+        const { login, pinCode } = pinSchema.parse(body);
+        const normalizedLogin = login.trim().toLowerCase();
 
-        const managerRecord = managerId
-            ? await prisma.user.findFirst({
-                where: {
-                    id: managerId,
-                    role: UserRole.MANAGER,
-                    assignments: {
-                        some: {
-                            isActive: true,
-                            pinCode,
-                            hotel: { country },
-                        },
+        const managerRecord = await prisma.user.findUnique({
+            where: { loginName: normalizedLogin },
+            include: {
+                assignments: {
+                    where: {
+                        isActive: true,
+                        pinCode,
+                        hotel: { country },
                     },
+                    include: { hotel: true },
+                    orderBy: { createdAt: "asc" },
                 },
-                include: {
-                    assignments: {
-                        where: {
-                            isActive: true,
-                            hotel: { country },
-                        },
-                        include: { hotel: true },
-                    },
-                },
-            })
-            : await prisma.user.findFirst({
-                where: {
-                    role: UserRole.MANAGER,
-                    assignments: {
-                        some: {
-                            isActive: true,
-                            pinCode,
-                            hotel: { country },
-                        },
-                    },
-                },
-                include: {
-                    assignments: {
-                        where: {
-                            isActive: true,
-                            hotel: { country },
-                        },
-                        include: { hotel: true },
-                    },
-                },
-                orderBy: { displayName: "asc" },
-            });
+            },
+        });
 
-        if (!managerRecord) {
+        if (!managerRecord || managerRecord.role !== UserRole.MANAGER) {
             registerFailure(fingerprint);
-            return new NextResponse(managerId ? "Неверное имя или PIN" : "Неверный PIN", { status: 401 });
+            return new NextResponse("Неверный логин или PIN", { status: 401 });
         }
 
-        const activeAssignments = hotelId
-            ? managerRecord.assignments.filter((assignment) => assignment.hotelId === hotelId)
-            : managerRecord.assignments;
-
-        if (activeAssignments.length === 0) {
-            registerFailure(fingerprint);
-            return new NextResponse("Выберите корректный объект", { status: 403 });
-        }
-
-        if (!hotelId && activeAssignments.length > 1) {
-            registerFailure(fingerprint);
-            return new NextResponse("Выберите объект", { status: 400 });
-        }
-
-        const selectedAssignment = activeAssignments[0];
+        const selectedAssignment = managerRecord.assignments[0];
 
         if (!selectedAssignment) {
             registerFailure(fingerprint);
-            return new NextResponse("У менеджера нет активных точек", { status: 403 });
+            return new NextResponse("Неверный логин или PIN", { status: 401 });
         }
 
         const sessionUser: SessionUser = {

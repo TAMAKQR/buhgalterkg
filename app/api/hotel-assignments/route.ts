@@ -11,9 +11,17 @@ export const dynamic = 'force-dynamic';
 const MANUAL_TELEGRAM_PREFIX = 'manual-';
 const PIN_CONFLICT_MESSAGE = 'Этот PIN уже используется другим менеджером';
 const PIN_SPLIT_MESSAGE = 'PIN назначен нескольким людям. Обновите существующие назначения';
+const LOGIN_CONFLICT_MESSAGE = 'Этот логин уже используется другим пользователем';
+const loginNameSchema = z
+    .string()
+    .trim()
+    .min(3)
+    .max(50)
+    .regex(/^[a-zA-Z0-9_]+$/, 'Логин может содержать только латиницу, цифры и _');
 const assignmentSchema = z.object({
     hotelId: z.string().cuid(),
     displayName: z.string().min(2).max(64),
+    loginName: loginNameSchema,
     username: z.string().min(3).max(32).optional(),
     pinCode: z.string().regex(/^[\d]{6}$/),
     telegramId: z.string().min(3).max(32).optional(),
@@ -25,6 +33,7 @@ const updateAssignmentSchema = z
     .object({
         assignmentId: z.string().cuid(),
         displayName: z.string().min(2).max(64).optional(),
+        loginName: loginNameSchema.optional(),
         username: z.string().min(3).max(32).optional(),
         pinCode: z.string().regex(/^[\d]{6}$/).optional(),
         shiftPayAmount: z.number().int().nonnegative().optional(),
@@ -33,6 +42,7 @@ const updateAssignmentSchema = z
     .refine(
         (values) =>
             values.displayName !== undefined ||
+            values.loginName !== undefined ||
             values.username !== undefined ||
             values.pinCode !== undefined ||
             values.shiftPayAmount !== undefined ||
@@ -46,6 +56,8 @@ const deleteAssignmentSchema = z.object({
     assignmentId: z.string().cuid()
 });
 
+const normalizeLoginName = (value: string) => value.trim().toLowerCase();
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -54,6 +66,7 @@ export async function POST(request: NextRequest) {
 
         const payload = assignmentSchema.parse(body);
         const managerName = payload.displayName.trim();
+        const normalizedLoginName = normalizeLoginName(payload.loginName);
         const normalizedUsername = payload.username?.trim();
         const normalizedTelegramId = payload.telegramId?.trim();
 
@@ -63,9 +76,19 @@ export async function POST(request: NextRequest) {
         }
 
         let user;
+        const loginOwner = await prisma.user.findUnique({
+            where: { loginName: normalizedLoginName },
+            select: { id: true, telegramId: true }
+        });
+
         if (normalizedTelegramId) {
+            if (loginOwner && loginOwner.telegramId !== normalizedTelegramId) {
+                return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
+            }
+
             const upsertUpdate: Prisma.UserUpdateInput = {
                 displayName: managerName,
+                loginName: normalizedLoginName,
                 role: UserRole.MANAGER
             };
             if (normalizedUsername !== undefined) {
@@ -78,6 +101,7 @@ export async function POST(request: NextRequest) {
                 create: {
                     telegramId: normalizedTelegramId,
                     displayName: managerName,
+                    loginName: normalizedLoginName,
                     username: normalizedUsername ?? null,
                     role: UserRole.MANAGER
                 }
@@ -93,8 +117,15 @@ export async function POST(request: NextRequest) {
             }
 
             const activeOwner = pinAssignments[0]?.user;
+            if (loginOwner && (!activeOwner || loginOwner.id !== activeOwner.id)) {
+                return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
+            }
+
             if (activeOwner) {
-                const userUpdates: Prisma.UserUpdateInput = { displayName: managerName };
+                const userUpdates: Prisma.UserUpdateInput = {
+                    displayName: managerName,
+                    loginName: normalizedLoginName
+                };
                 if (normalizedUsername !== undefined) {
                     userUpdates.username = normalizedUsername;
                 }
@@ -107,6 +138,7 @@ export async function POST(request: NextRequest) {
                     data: {
                         telegramId: `${MANUAL_TELEGRAM_PREFIX}${randomUUID()}`,
                         displayName: managerName,
+                        loginName: normalizedLoginName,
                         username: normalizedUsername ?? null,
                         role: UserRole.MANAGER
                     }
@@ -159,6 +191,7 @@ export async function POST(request: NextRequest) {
                 id: user.id,
                 displayName: user.displayName,
                 telegramId: user.telegramId,
+                loginName: user.loginName,
                 username: user.username,
                 pinCode: payload.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,
@@ -190,10 +223,26 @@ export async function PATCH(request: NextRequest) {
             return new NextResponse('Assignment not found', { status: 404 });
         }
 
-        const userUpdates: { displayName?: string; username?: string | null } = {};
+        const userUpdates: { displayName?: string; loginName?: string; username?: string | null } = {};
 
         if (payload.displayName) {
             userUpdates.displayName = payload.displayName.trim();
+        }
+        if (payload.loginName) {
+            const normalizedLoginName = normalizeLoginName(payload.loginName);
+            const loginConflict = await prisma.user.findFirst({
+                where: {
+                    loginName: normalizedLoginName,
+                    NOT: { id: assignment.userId }
+                },
+                select: { id: true }
+            });
+
+            if (loginConflict) {
+                return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
+            }
+
+            userUpdates.loginName = normalizedLoginName;
         }
         if (payload.username) {
             userUpdates.username = payload.username.trim();
@@ -269,6 +318,7 @@ export async function PATCH(request: NextRequest) {
                 id: updated.user.id,
                 displayName: updated.user.displayName,
                 telegramId: updated.user.telegramId,
+                loginName: updated.user.loginName,
                 username: updated.user.username,
                 pinCode: updated.pinCode,
                 shiftPayAmount: updated.shiftPayAmount,
