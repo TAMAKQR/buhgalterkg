@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/types";
 import { createManualSession, manualSessionAvailable } from "@/lib/server/manual-session";
 import { getCountryFromRequest } from "@/lib/server/request-country";
+import { verifyPin } from "@/lib/pin";
 
 const PIN_ATTEMPT_LIMIT = Math.max(1, Number(process.env.MANAGER_PIN_ATTEMPTS ?? process.env.ADMIN_LOGIN_ATTEMPTS ?? "5"));
 const PIN_WINDOW_MINUTES = Math.max(1, Number(process.env.MANAGER_PIN_WINDOW_MINUTES ?? process.env.ADMIN_LOGIN_WINDOW_MINUTES ?? "15"));
@@ -110,7 +111,6 @@ export async function POST(request: NextRequest) {
                 assignments: {
                     where: {
                         isActive: true,
-                        pinCode,
                         hotel: { country },
                     },
                     include: { hotel: true },
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
             return new NextResponse("Неверный логин или PIN", { status: 401 });
         }
 
-        const selectedAssignment = managerRecord.assignments[0];
+        const selectedAssignment = managerRecord.assignments.find((assignment) => verifyPin(pinCode, assignment));
 
         if (!selectedAssignment) {
             registerFailure(fingerprint);

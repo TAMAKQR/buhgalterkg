@@ -71,7 +71,7 @@ npm run build
 ## Render Deployment Notes
 
 1. **Services**
-   - Web Service: Deploy this Next.js app (Node 18 runtime). Set `NODE_VERSION=18`. Enable `npm run build` for build command and `npm start` for start.
+   - Web Service: Deploy this Next.js app (Node 18 runtime). Set `NODE_VERSION=18`. Use `npm run render:build` for build command and `npm start` for start.
    - PostgreSQL: Provision a managed PostgreSQL instance and supply its URL via `DATABASE_URL`.
 
 2. **Environment Variables**
@@ -94,6 +94,8 @@ npm run build
 | --- | --- |
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
+| `npm run render:build` | Apply production migrations, generate Prisma Client, and build for Render |
+| `npm run data:hash-manager-pins` | One-time data migration to hash legacy manager PINs after deploy |
 | `npm start` | Start Next.js in production mode |
 | `npm run lint` | ESLint checks |
 | `npm run prisma:generate` | Re-generate Prisma client |

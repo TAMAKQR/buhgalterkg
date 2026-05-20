@@ -215,7 +215,7 @@ export async function GET(request: NextRequest) {
                 loginName: assignment.user.loginName,
                 username: assignment.user.username,
                 role: assignment.role,
-                pinCode: assignment.pinCode,
+                pinConfigured: Boolean(assignment.pinHash || assignment.pinCode),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             })),

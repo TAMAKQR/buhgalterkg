@@ -29,6 +29,19 @@ const hotelDetailInclude = {
                             fromRoom: { select: { label: true } },
                             toRoom: { select: { label: true } },
                         }
+                    },
+                    ledgerEntries: {
+                        orderBy: { recordedAt: 'asc' },
+                        select: {
+                            id: true,
+                            entryType: true,
+                            method: true,
+                            amount: true,
+                            note: true,
+                            recordedAt: true,
+                            shift: { select: { number: true } },
+                            manager: { select: { displayName: true } }
+                        }
                     }
                 }
             } as never
@@ -86,6 +99,16 @@ type HotelStayRecord = RoomStay & {
         note: string | null;
         fromRoom: { label: string };
         toRoom: { label: string };
+    }>;
+    ledgerEntries: Array<{
+        id: string;
+        entryType: LedgerEntryType;
+        method: 'CASH' | 'CARD';
+        amount: number;
+        note: string | null;
+        recordedAt: Date;
+        shift: { number: number } | null;
+        manager: { displayName: string } | null;
     }>;
 };
 
@@ -323,6 +346,16 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                             fromRoomLabel: transfer.fromRoom.label,
                             toRoomLabel: transfer.toRoom.label,
                         })),
+                        ledgerEntries: stayRecord.ledgerEntries.map((entry) => ({
+                            id: entry.id,
+                            entryType: entry.entryType,
+                            method: entry.method,
+                            amount: entry.amount,
+                            note: entry.note,
+                            recordedAt: entry.recordedAt,
+                            shiftNumber: entry.shift?.number ?? null,
+                            managerName: entry.manager?.displayName ?? null
+                        })),
                         notes: stay.notes
                     };
                 });
@@ -346,7 +379,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 telegramId: assignment.user.telegramId,
                 loginName: assignment.user.loginName,
                 username: assignment.user.username,
-                pinCode: assignment.pinCode,
+                pinConfigured: Boolean(assignment.pinHash || assignment.pinCode),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             })),

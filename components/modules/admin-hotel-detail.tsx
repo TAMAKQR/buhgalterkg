@@ -43,6 +43,16 @@ interface RoomStayDetail {
         fromRoomLabel: string;
         toRoomLabel: string;
     }>;
+    ledgerEntries?: Array<{
+        id: string;
+        entryType: LedgerEntryTypeValue;
+        method: LedgerPaymentMethodValue;
+        amount: number;
+        note?: string | null;
+        recordedAt: string;
+        shiftNumber?: number | null;
+        managerName?: string | null;
+    }>;
     notes?: string | null;
 }
 
@@ -100,7 +110,7 @@ interface HotelDetailPayload {
         telegramId?: string | null;
         loginName?: string | null;
         username?: string | null;
-        pinCode?: string | null;
+        pinConfigured?: boolean;
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
     }>;
@@ -343,6 +353,26 @@ const formatPercentage = (value?: number | null) => {
     return `${value}%`;
 };
 
+const loginTransliteration: Record<string, string> = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+    к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u',
+    ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e',
+    ю: 'yu', я: 'ya', і: 'i', ғ: 'g', қ: 'k', ң: 'n', ө: 'o', ұ: 'u', ү: 'u', һ: 'h', ә: 'a'
+};
+
+const createLoginSuggestion = (value?: string | null) => {
+    const source = (value ?? '').trim().toLowerCase();
+    let result = '';
+    for (const char of source) {
+        result += loginTransliteration[char] ?? char;
+    }
+    result = result
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_+/g, '_');
+    return result.length >= 3 ? result.slice(0, 50) : '';
+};
+
 const stayStartTimestamp = (stay: RoomStayDetail) => {
     const reference = stay.actualCheckIn ?? stay.scheduledCheckIn;
     if (!reference) {
@@ -456,6 +486,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const stayFormValues = stayEditForm.watch();
     const hasStaySelection = Boolean(stayFormValues.stayId);
+    const selectedStayForEditor = useMemo(() => {
+        if (!data || !stayFormValues.stayId || !stayFormValues.roomId) {
+            return null;
+        }
+        const room = data.rooms.find((candidate) => candidate.id === stayFormValues.roomId);
+        return room?.stays.find((stay) => stay.id === stayFormValues.stayId) ?? null;
+    }, [data, stayFormValues.roomId, stayFormValues.stayId]);
     const roomPaymentPreview = useMemo(
         () => ({
             totalBreakdown:
@@ -480,6 +517,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             updateManagerForm.setFocus('pinCode');
         }
     }, [isUpdateManagerExpanded, selectedManagerId, updateManagerForm]);
+
+    const handleGenerateManagerLogin = () => {
+        const suggestion = createLoginSuggestion(managerForm.getValues('displayName'));
+        if (!suggestion) {
+            managerForm.setError('loginName', {
+                type: 'manual',
+                message: 'Сначала укажите имя менеджера'
+            });
+            return;
+        }
+        managerForm.clearErrors('loginName');
+        managerForm.setValue('loginName', suggestion, { shouldDirty: true, shouldValidate: true });
+    };
 
     const shiftList = useMemo<ShiftListItem[]>(() => {
         if (!data) {
@@ -1787,7 +1837,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || `PIN ${manager.pinCode}`} (PIN: {manager.pinCode})
+                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -1910,7 +1960,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || `PIN ${manager.pinCode}`} (PIN: {manager.pinCode})
+                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -2121,6 +2171,33 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     })}{' '}
                                     {hotelCur || 'KGS'}
                                 </div>
+                                <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                    <p className={modalLabelClass}>Кассовые записи по проживанию</p>
+                                    {selectedStayForEditor?.ledgerEntries?.length ? (
+                                        <div className="mt-3 space-y-2">
+                                            {selectedStayForEditor.ledgerEntries.map((entry) => (
+                                                <div key={entry.id} className="flex flex-col gap-1 rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
+                                                    <div className="min-w-0">
+                                                        <p className="font-medium text-slate-900 dark:text-white">
+                                                            {entry.entryType === 'CASH_IN' ? 'Поступление' : ledgerEntryTypeLabels[entry.entryType]} · {entry.method === 'CASH' ? 'наличные' : 'безнал'}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500 dark:text-white/45">
+                                                            {formatDateTime(entry.recordedAt, hotelTz)}
+                                                            {entry.shiftNumber ? ` · смена №${entry.shiftNumber}` : ''}
+                                                            {entry.managerName ? ` · ${entry.managerName}` : ''}
+                                                            {entry.note ? ` · ${entry.note}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    <p className="font-semibold text-emerald-600 dark:text-emerald-300">{formatCurrency(entry.amount)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-xs text-slate-500 dark:text-white/45">
+                                            Связанных кассовых записей пока нет. Новые заселения и продления будут связываться автоматически.
+                                        </p>
+                                    )}
+                                </div>
                                 <div className="space-y-1">
                                     <label className={modalLabelClass}>Комментарий для администратора</label>
                                     <TextArea rows={3} placeholder="Важные детали по гостю или оплате" {...stayEditForm.register('notes')} />
@@ -2173,7 +2250,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 {manager.username ? `@${manager.username} • ` : ''}
-                                                                PIN {manager.pinCode ?? 'не задан'}
+                                                                PIN {manager.pinConfigured ? 'задан' : 'не задан'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
@@ -2231,17 +2308,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {managerForm.formState.errors.displayName && (
                                                             <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
                                                         )}
-                                                        <Input
-                                                            placeholder="Логин для входа"
-                                                            autoComplete="off"
-                                                            {...managerForm.register('loginName', {
-                                                                required: 'Укажите логин',
-                                                                minLength: { value: 3, message: 'Минимум 3 символа' },
-                                                                maxLength: { value: 50, message: 'Максимум 50 символов' },
-                                                                pattern: { value: /^[a-zA-Z0-9_]+$/, message: 'Только латиница, цифры и _' },
-                                                                setValueAs: (value) => String(value ?? '').trim().toLowerCase()
-                                                            })}
-                                                        />
+                                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                                            <Input
+                                                                placeholder="Логин для входа"
+                                                                autoComplete="off"
+                                                                className="flex-1"
+                                                                {...managerForm.register('loginName', {
+                                                                    required: 'Укажите логин',
+                                                                    minLength: { value: 3, message: 'Минимум 3 символа' },
+                                                                    maxLength: { value: 50, message: 'Максимум 50 символов' },
+                                                                    pattern: { value: /^[a-zA-Z0-9_]+$/, message: 'Только латиница, цифры и _' },
+                                                                    setValueAs: (value) => String(value ?? '').trim().toLowerCase()
+                                                                })}
+                                                            />
+                                                            <Button type="button" variant="secondary" onClick={handleGenerateManagerLogin}>
+                                                                Сгенерировать
+                                                            </Button>
+                                                        </div>
                                                         {managerForm.formState.errors.loginName && (
                                                             <p className="text-xs text-rose-300">{managerForm.formState.errors.loginName.message}</p>
                                                         )}
@@ -2347,7 +2430,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             {...updateManagerForm.register('username')}
                                                         />
                                                         <Input
-                                                            placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
+                                                            placeholder={selectedManager?.pinConfigured ? 'Новый PIN (сейчас задан)' : 'Новый PIN (6 цифр)'}
                                                             maxLength={6}
                                                             inputMode="numeric"
                                                             {...updateManagerForm.register('pinCode', {

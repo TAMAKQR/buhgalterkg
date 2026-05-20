@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         const [assignment, shifts, bonusTiers] = await Promise.all([
             prisma.hotelAssignment.findFirst({
                 where: { hotelId, userId: session.id, isActive: true },
-                select: { shiftPayAmount: true, revenueSharePct: true, createdAt: true, pinCode: true }
+                select: { shiftPayAmount: true, revenueSharePct: true, createdAt: true, pinCode: true, pinHash: true }
             }),
             prisma.shift.findMany({
                 where: { hotelId, managerId: session.id },
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
                     shiftPayAmount: assignment.shiftPayAmount,
                     revenueSharePct: assignment.revenueSharePct,
                     createdAt: assignment.createdAt,
-                    pinCode: assignment.pinCode
+                    pinConfigured: Boolean(assignment.pinHash || assignment.pinCode)
                 }
                 : null,
             shifts: shiftHistory

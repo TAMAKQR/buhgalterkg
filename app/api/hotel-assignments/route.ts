@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { Prisma, UserRole } from '@prisma/client';
+import { hashPin, verifyPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
 const MANUAL_TELEGRAM_PREFIX = 'manual-';
@@ -108,15 +109,16 @@ export async function POST(request: NextRequest) {
             });
         } else {
             const pinAssignments = await prisma.hotelAssignment.findMany({
-                where: { pinCode: payload.pinCode, isActive: true },
+                where: { isActive: true },
                 include: { user: true }
             });
-            const uniqueUsers = new Set(pinAssignments.map((assignment) => assignment.userId));
+            const matchingPinAssignments = pinAssignments.filter((assignment) => verifyPin(payload.pinCode, assignment));
+            const uniqueUsers = new Set(matchingPinAssignments.map((assignment) => assignment.userId));
             if (uniqueUsers.size > 1) {
                 return new NextResponse(PIN_SPLIT_MESSAGE, { status: 409 });
             }
 
-            const activeOwner = pinAssignments[0]?.user;
+            const activeOwner = matchingPinAssignments[0]?.user;
             if (loginOwner && (!activeOwner || loginOwner.id !== activeOwner.id)) {
                 return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
             }
@@ -146,18 +148,17 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        const pinConflict = await prisma.hotelAssignment.findFirst({
+        const otherActiveAssignments = await prisma.hotelAssignment.findMany({
             where: {
-                pinCode: payload.pinCode,
                 isActive: true,
                 NOT: {
                     userId: user.id
                 }
             },
-            select: { id: true }
+            select: { id: true, pinCode: true, pinHash: true }
         });
 
-        if (pinConflict) {
+        if (otherActiveAssignments.some((assignment) => verifyPin(payload.pinCode, assignment))) {
             return new NextResponse(PIN_CONFLICT_MESSAGE, { status: 409 });
         }
 
@@ -171,7 +172,8 @@ export async function POST(request: NextRequest) {
             update: {
                 isActive: true,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode,
+                pinCode: null,
+                pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null
             },
@@ -179,7 +181,8 @@ export async function POST(request: NextRequest) {
                 hotelId: payload.hotelId,
                 userId: user.id,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode,
+                pinCode: null,
+                pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null
             }
@@ -193,7 +196,7 @@ export async function POST(request: NextRequest) {
                 telegramId: user.telegramId,
                 loginName: user.loginName,
                 username: user.username,
-                pinCode: payload.pinCode,
+                pinConfigured: true,
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             }
@@ -261,14 +264,14 @@ export async function PATCH(request: NextRequest) {
         }
 
         if (payload.pinCode) {
-            const pinConflict = await prisma.hotelAssignment.findFirst({
+            const activeAssignments = await prisma.hotelAssignment.findMany({
                 where: {
-                    pinCode: payload.pinCode,
                     isActive: true,
                     NOT: { userId: assignment.userId }
                 },
-                select: { id: true }
+                select: { id: true, pinCode: true, pinHash: true }
             });
+            const pinConflict = activeAssignments.some((candidate) => verifyPin(payload.pinCode as string, candidate));
 
             if (pinConflict) {
                 return new NextResponse(PIN_CONFLICT_MESSAGE, { status: 409 });
@@ -277,7 +280,10 @@ export async function PATCH(request: NextRequest) {
             operations.push(
                 prisma.hotelAssignment.updateMany({
                     where: { userId: assignment.userId },
-                    data: { pinCode: payload.pinCode }
+                    data: {
+                        pinCode: null,
+                        pinHash: hashPin(payload.pinCode)
+                    }
                 })
             );
         }
@@ -320,7 +326,7 @@ export async function PATCH(request: NextRequest) {
                 telegramId: updated.user.telegramId,
                 loginName: updated.user.loginName,
                 username: updated.user.username,
-                pinCode: updated.pinCode,
+                pinConfigured: Boolean(updated.pinHash || updated.pinCode),
                 shiftPayAmount: updated.shiftPayAmount,
                 revenueSharePct: updated.revenueSharePct
             }
@@ -350,7 +356,8 @@ export async function DELETE(request: NextRequest) {
             where: { id: assignment.id },
             data: {
                 isActive: false,
-                pinCode: null
+                pinCode: null,
+                pinHash: null
             }
         });
 

@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
 import { ensureNoActiveShift } from '@/lib/shifts';
 import { handleApiError } from '@/lib/server/errors';
+import { verifyPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,14 +32,14 @@ export async function POST(request: NextRequest) {
 
         let managerId = session.id;
         if (payload.pinCode) {
-            const assignment = await prisma.hotelAssignment.findFirst({
+            const assignments = await prisma.hotelAssignment.findMany({
                 where: {
                     hotelId: payload.hotelId,
-                    pinCode: payload.pinCode,
                     isActive: true
                 },
                 include: { user: true }
             });
+            const assignment = assignments.find((candidate) => verifyPin(payload.pinCode as string, candidate));
 
             if (!assignment) {
                 return new NextResponse('Неверный код менеджера', { status: 401 });

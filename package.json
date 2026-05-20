@@ -5,13 +5,15 @@
     "scripts": {
         "dev": "next dev",
         "build": "prisma generate && next build",
+        "render:build": "prisma migrate deploy && prisma generate && next build",
         "start": "next start",
         "lint": "next lint",
         "prisma:generate": "prisma generate",
         "prisma:push": "prisma db push",
         "prisma:migrate": "prisma migrate dev",
         "prisma:studio": "prisma studio",
-        "prisma:seed": "prisma db seed"
+        "prisma:seed": "prisma db seed",
+        "data:hash-manager-pins": "node scripts/hash-manager-pins.mjs"
     },
     "dependencies": {
         "@hookform/resolvers": "^3.5.0",

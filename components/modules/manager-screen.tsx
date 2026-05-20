@@ -105,7 +105,7 @@ interface ManagerProfileResponse {
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
         createdAt?: string;
-        pinCode?: string | null;
+        pinConfigured?: boolean;
     } | null;
     shifts: Array<{
         id: string;
@@ -1408,7 +1408,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     <div className="rounded-xl bg-white/[0.04] p-3">
                                                         <p className="text-xs uppercase tracking-widest text-white/40">PIN</p>
                                                         <p className="text-base font-semibold text-white">
-                                                            {profileData.assignment?.pinCode ?? '—'}
+                                                            {profileData.assignment?.pinConfigured ? 'Задан' : '—'}
                                                         </p>
                                                     </div>
                                                 </div>

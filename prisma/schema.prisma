@@ -63,6 +63,7 @@ model HotelAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   pinCode   String?  @map("pin_code") @db.VarChar(6)
+  pinHash   String?  @map("pin_hash")
   shiftPayAmount Int? @map("shift_pay_amount")
   revenueSharePct Int? @map("revenue_share_pct")
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
