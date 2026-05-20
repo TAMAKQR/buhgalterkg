@@ -112,6 +112,7 @@ model RoomStay {
   cashPaid          Int            @default(0)
   cardPaid          Int            @default(0)
   onlinePaid        Int            @default(0) @map("online_paid")
+  ledgerEntries     CashEntry[]
   currentRoom       Room?          @relation("RoomCurrentStay")
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
@@ -168,6 +169,7 @@ model Shift {
 model CashEntry {
   id         String          @id @default(cuid())
   shiftId    String?
+  stayId     String?         @map("stay_id")
   hotelId    String
   managerId  String?
   categoryId String?         @map("expense_category_id")
@@ -178,9 +180,12 @@ model CashEntry {
   meta       Json?
   recordedAt DateTime        @default(now())
   expenseCategory ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  stay       RoomStay?       @relation(fields: [stayId], references: [id], onDelete: SetNull)
   hotel      Hotel           @relation(fields: [hotelId], references: [id])
   manager    User?           @relation(fields: [managerId], references: [id])
   shift      Shift?          @relation(fields: [shiftId], references: [id])
+
+  @@index([stayId])
 }
 
 model ExpenseCategory {

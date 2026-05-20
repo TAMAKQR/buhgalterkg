@@ -126,10 +126,17 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         hotelId: room.hotelId,
                         shiftId: payload.shiftId,
                         managerId: shift?.managerId ?? session.id,
+                        stayId: stay.id,
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerEntry.method,
                         amount: ledgerEntry.amount,
-                        note: `Заселение №${room.label}`
+                        note: `Заселение №${room.label}`,
+                        meta: {
+                            source: 'room_stay',
+                            kind: 'checkin',
+                            stayId: stay.id,
+                            roomId: room.id
+                        }
                     }
                 });
             }
@@ -235,10 +242,17 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         hotelId: room.hotelId,
                         shiftId: payload.shiftId,
                         managerId: shift?.managerId ?? session.id,
+                        stayId: currentStay.id,
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerEntry.method,
                         amount: ledgerEntry.amount,
-                        note: `Продление №${room.label}`
+                        note: `Продление №${room.label}`,
+                        meta: {
+                            source: 'room_stay',
+                            kind: 'extension',
+                            stayId: currentStay.id,
+                            roomId: room.id
+                        }
                     }
                 });
             }

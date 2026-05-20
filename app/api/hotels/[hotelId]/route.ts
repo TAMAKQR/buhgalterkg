@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ExpenseCategory, HotelAssignment, LedgerEntryType, Prisma, Room, RoomStay, RoomStatus, Shift, ShiftStatus, User } from '@prisma/client';
+import { ExpenseCategory, HotelAssignment, LedgerEntryType, Prisma, Room, RoomStay, RoomStatus, Shift, ShiftStatus, StayStatus, User } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -167,7 +167,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             prisma.roomStay.groupBy({
                 by: ['shiftId'],
                 orderBy: { shiftId: 'asc' },
-                where: { hotelId: params.hotelId, shiftId: { not: null } },
+                where: {
+                    hotelId: params.hotelId,
+                    shiftId: { not: null },
+                    status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] }
+                },
                 _sum: { amountPaid: true }
             })
         ]);
