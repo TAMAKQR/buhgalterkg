@@ -12,8 +12,7 @@
         "prisma:push": "prisma db push",
         "prisma:migrate": "prisma migrate dev",
         "prisma:studio": "prisma studio",
-        "prisma:seed": "prisma db seed",
-        "data:hash-manager-pins": "node scripts/hash-manager-pins.mjs"
+        "prisma:seed": "prisma db seed"
     },
     "dependencies": {
         "@hookform/resolvers": "^3.5.0",

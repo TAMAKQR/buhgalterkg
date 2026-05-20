@@ -62,7 +62,7 @@ type AdminHotelSummary = {
         telegramId?: string | null;
         username?: string | null;
         role: string;
-        pinConfigured?: boolean | null;
+        pinCode?: string | null;
     }>;
     activeShift: null | {
         manager?: string | null;
@@ -1698,7 +1698,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <span
                                                             key={m.id}
                                                             className="flex h-8 w-8 items-center justify-center rounded-2xl border border-slate-200/80 bg-white text-[10px] font-semibold text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.08] dark:text-white/70"
-                                                            title={`${m.displayName} · PIN ${m.pinConfigured ? 'задан' : 'не задан'}`}
+                                                            title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
                                                         >
                                                             {m.displayName?.slice(0, 2).toUpperCase() || "??"}
                                                         </span>

@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
             update: {
                 isActive: true,
                 role: UserRole.MANAGER,
-                pinCode: null,
+                pinCode: payload.pinCode,
                 pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
                 hotelId: payload.hotelId,
                 userId: user.id,
                 role: UserRole.MANAGER,
-                pinCode: null,
+                pinCode: payload.pinCode,
                 pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
                 telegramId: user.telegramId,
                 loginName: user.loginName,
                 username: user.username,
-                pinConfigured: true,
+                pinCode: assignment.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             }
@@ -281,7 +281,7 @@ export async function PATCH(request: NextRequest) {
                 prisma.hotelAssignment.updateMany({
                     where: { userId: assignment.userId },
                     data: {
-                        pinCode: null,
+                        pinCode: payload.pinCode,
                         pinHash: hashPin(payload.pinCode)
                     }
                 })
@@ -326,7 +326,7 @@ export async function PATCH(request: NextRequest) {
                 telegramId: updated.user.telegramId,
                 loginName: updated.user.loginName,
                 username: updated.user.username,
-                pinConfigured: Boolean(updated.pinHash || updated.pinCode),
+                pinCode: updated.pinCode,
                 shiftPayAmount: updated.shiftPayAmount,
                 revenueSharePct: updated.revenueSharePct
             }

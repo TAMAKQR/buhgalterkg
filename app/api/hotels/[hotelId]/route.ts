@@ -379,7 +379,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 telegramId: assignment.user.telegramId,
                 loginName: assignment.user.loginName,
                 username: assignment.user.username,
-                pinConfigured: Boolean(assignment.pinHash || assignment.pinCode),
+                pinCode: assignment.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             })),

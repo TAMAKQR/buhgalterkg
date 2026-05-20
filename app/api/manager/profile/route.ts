@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
                     shiftPayAmount: assignment.shiftPayAmount,
                     revenueSharePct: assignment.revenueSharePct,
                     createdAt: assignment.createdAt,
-                    pinConfigured: Boolean(assignment.pinHash || assignment.pinCode)
+                    pinCode: assignment.pinCode
                 }
                 : null,
             shifts: shiftHistory

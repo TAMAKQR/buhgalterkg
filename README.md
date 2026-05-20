@@ -95,7 +95,6 @@ npm run build
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
 | `npm run render:build` | Apply production migrations, generate Prisma Client, and build for Render |
-| `npm run data:hash-manager-pins` | One-time data migration to hash legacy manager PINs after deploy |
 | `npm start` | Start Next.js in production mode |
 | `npm run lint` | ESLint checks |
 | `npm run prisma:generate` | Re-generate Prisma client |

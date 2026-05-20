@@ -110,7 +110,7 @@ interface HotelDetailPayload {
         telegramId?: string | null;
         loginName?: string | null;
         username?: string | null;
-        pinConfigured?: boolean;
+        pinCode?: string | null;
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
     }>;
@@ -1837,7 +1837,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
+                                                {manager.displayName || manager.username || manager.loginName || (manager.pinCode ? `PIN ${manager.pinCode}` : 'Менеджер')}
                                             </option>
                                         ))}
                                     </Select>
@@ -1960,7 +1960,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
+                                                {manager.displayName || manager.username || manager.loginName || (manager.pinCode ? `PIN ${manager.pinCode}` : 'Менеджер')}
                                             </option>
                                         ))}
                                     </Select>
@@ -2250,7 +2250,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 {manager.username ? `@${manager.username} • ` : ''}
-                                                                PIN {manager.pinConfigured ? 'задан' : 'не задан'}
+                                                                PIN {manager.pinCode ?? 'не задан'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
@@ -2430,7 +2430,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             {...updateManagerForm.register('username')}
                                                         />
                                                         <Input
-                                                            placeholder={selectedManager?.pinConfigured ? 'Новый PIN (сейчас задан)' : 'Новый PIN (6 цифр)'}
+                                                            placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
                                                             maxLength={6}
                                                             inputMode="numeric"
                                                             {...updateManagerForm.register('pinCode', {
