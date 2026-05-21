@@ -13,6 +13,7 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import type { SessionUser } from '@/lib/types';
 import { useCookieApi } from '@/hooks/useCookieApi';
 import { formatDateTime, formatInputValue, parseInputValue, formatMoney } from '@/lib/timezone';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 interface ManagerStateResponse {
     hotel: {
@@ -349,9 +350,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         <li><span>Поступило безналом</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
         <li><span>Расходы за смену</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
     </ul>
-    ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').length > 0 ? `
+    ${shiftLedger.filter(e => e.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(e)).length > 0 ? `
     <ul class="expenses">
-        ${shiftLedger.filter(e => e.entryType === 'CASH_OUT').map(e =>
+        ${shiftLedger.filter(e => e.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(e)).map(e =>
             `<li><span style="padding-left:16px;color:#64748b">↳ ${[e.category?.name?.trim(), e.note?.trim()].filter(Boolean).join(' · ') || 'Расход'} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${formatKgs(e.amount)}</strong></li>`
         ).join('')}
     </ul>` : ''}

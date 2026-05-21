@@ -8,6 +8,7 @@ import { getSessionUser } from "@/lib/server/session";
 import { parseDateOnly, parseInputValue } from "@/lib/timezone";
 import { handleApiError } from "@/lib/server/errors";
 import { getCountryFromRequest } from "@/lib/server/request-country";
+import { isCollectionLedgerEntry } from "@/lib/ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, targetHotels] = await prisma.$transaction([
+        const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, collectionEntries, targetHotels] = await prisma.$transaction([
             prisma.hotel.count({ where: hotelFilter }),
             prisma.room.count({ where: roomHotelFilter }),
             prisma.room.count({ where: { status: RoomStatus.OCCUPIED, ...roomHotelFilter } }),
@@ -174,6 +175,21 @@ export async function GET(request: NextRequest) {
                 orderBy: { entryType: "asc" },
                 _sum: { amount: true },
                 where: ledgerWhere,
+            }),
+            prisma.cashEntry.findMany({
+                where: {
+                    ...ledgerWhere,
+                    entryType: LedgerEntryType.CASH_OUT,
+                },
+                select: {
+                    amount: true,
+                    method: true,
+                    note: true,
+                    entryType: true,
+                    expenseCategory: {
+                        select: { name: true },
+                    },
+                },
             }),
             prisma.hotel.findMany({
                 where: hotelFilter,
@@ -277,6 +293,19 @@ export async function GET(request: NextRequest) {
                 bucket.cash += amount;
             } else if (group.method === PaymentMethod.CARD) {
                 bucket.card += amount;
+            }
+        }
+
+        for (const entry of collectionEntries) {
+            if (!isCollectionLedgerEntry(entry)) {
+                continue;
+            }
+            const bucket = ledgerTotals[LedgerEntryType.CASH_OUT];
+            bucket.total -= entry.amount;
+            if (entry.method === PaymentMethod.CASH) {
+                bucket.cash -= entry.amount;
+            } else if (entry.method === PaymentMethod.CARD) {
+                bucket.card -= entry.amount;
             }
         }
 
@@ -457,20 +486,22 @@ export async function GET(request: NextRequest) {
                 onTrack: monthlyRequiredRevenue > 0 ? projectedRevenue >= monthlyRequiredRevenue : false,
             },
             dailySeries,
-            recentExpenses: recentExpenses.map((entry) => ({
-                id: entry.id,
-                hotelId: entry.hotelId,
-                hotelName: entry.hotel.name,
-                amount: entry.amount,
-                method: entry.method,
-                note: entry.note,
-                categoryName: entry.expenseCategory?.name ?? null,
-                recordedAt: entry.recordedAt,
-                entryType: entry.entryType,
-                managerName: entry.manager?.displayName ?? null,
-                currency: entry.hotel.currency,
-                timezone: entry.hotel.timezone,
-            })),
+            recentExpenses: recentExpenses
+                .filter((entry) => !isCollectionLedgerEntry(entry))
+                .map((entry) => ({
+                    id: entry.id,
+                    hotelId: entry.hotelId,
+                    hotelName: entry.hotel.name,
+                    amount: entry.amount,
+                    method: entry.method,
+                    note: entry.note,
+                    categoryName: entry.expenseCategory?.name ?? null,
+                    recordedAt: entry.recordedAt,
+                    entryType: entry.entryType,
+                    managerName: entry.manager?.displayName ?? null,
+                    currency: entry.hotel.currency,
+                    timezone: entry.hotel.timezone,
+                })),
         });
     } catch (error) {
         return handleApiError(error, "Failed to load overview");

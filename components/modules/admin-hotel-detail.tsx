@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useApi } from '@/hooks/useApi';
 import { formatDateTime, formatMoney } from '@/lib/timezone';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -700,8 +701,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         if (!selectedShift) {
             return [];
         }
-        return selectedShiftTransactions.filter((entry) => entry.entryType === 'CASH_OUT');
+        return selectedShiftTransactions.filter((entry) => entry.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(entry));
     }, [selectedShift, selectedShiftTransactions]);
+
+    const selectedShiftExpenseOut = useMemo(
+        () => selectedShiftOutflows.reduce((total, entry) => total + entry.amount, 0),
+        [selectedShiftOutflows]
+    );
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
@@ -1344,7 +1350,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             },
             {
                 label: 'Списания',
-                value: formatCurrency(selectedShiftCash.cashOut),
+                value: formatCurrency(selectedShiftExpenseOut),
                 valueClass: 'text-rose-300'
             }
         ]
@@ -1537,7 +1543,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             disabled={!selectedShiftOutflows.length}
                                                         >
                                                             <span>Списания</span>
-                                                            <span>{formatCurrency(selectedShiftCash?.cashOut ?? 0)}</span>
+                                                            <span>{formatCurrency(selectedShiftExpenseOut)}</span>
                                                         </button>
                                                         <p className="flex items-center justify-between">
                                                             <span>Выплаты</span>
@@ -2847,7 +2853,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Детализация расходов</p>
                                     <h3 className="text-base font-semibold text-slate-900 dark:text-white">Списания №{selectedShift?.number ?? '—'}</h3>
-                                    <p className="text-sm font-semibold text-rose-300">{formatCurrency(selectedShiftCash?.cashOut ?? 0)}</p>
+                                    <p className="text-sm font-semibold text-rose-300">{formatCurrency(selectedShiftExpenseOut)}</p>
                                 </div>
                                 <Button type="button" variant="ghost" size="sm" className="border border-slate-200/80 dark:border-white/10" onClick={closeOutflowModal}>
                                     ×

@@ -6,6 +6,7 @@ import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest) {
             shiftExpenses = ledgerEntries.reduce(
                 (totals, entry) => {
                     if (
-                        entry.entryType === LedgerEntryType.CASH_OUT ||
+                        (entry.entryType === LedgerEntryType.CASH_OUT && !isCollectionLedgerEntry(entry)) ||
                         entry.entryType === LedgerEntryType.MANAGER_PAYOUT
                     ) {
                         totals.total += entry.amount;

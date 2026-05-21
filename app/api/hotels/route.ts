@@ -9,6 +9,7 @@ import { parseDateOnly, parseInputValue } from '@/lib/timezone';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
                 : {}),
         };
 
-        const [hotels, ledgerGroups, recentExpenseEntries] = await Promise.all([
+        const [hotels, ledgerGroups, collectionEntries, recentExpenseEntries] = await Promise.all([
             prisma.hotel.findMany({
                 where: hotelWhere,
                 include: {
@@ -104,6 +105,22 @@ export async function GET(request: NextRequest) {
                 by: ['hotelId', 'entryType', 'method'],
                 _sum: { amount: true },
                 where: ledgerWhere
+            }),
+            prisma.cashEntry.findMany({
+                where: {
+                    ...ledgerWhere,
+                    entryType: LedgerEntryType.CASH_OUT,
+                },
+                select: {
+                    hotelId: true,
+                    amount: true,
+                    method: true,
+                    note: true,
+                    entryType: true,
+                    expenseCategory: {
+                        select: { name: true },
+                    },
+                },
             }),
             prisma.cashEntry.findMany({
                 where: {
@@ -160,6 +177,24 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        for (const entry of collectionEntries) {
+            if (!isCollectionLedgerEntry(entry)) {
+                continue;
+            }
+            const summary = ledgerMap.get(entry.hotelId) ?? (() => {
+                const fresh = defaultLedger();
+                ledgerMap.set(entry.hotelId, fresh);
+                return fresh;
+            })();
+            const bucket = summary[LedgerEntryType.CASH_OUT];
+            bucket.total -= entry.amount;
+            if (entry.method === PaymentMethod.CASH) {
+                bucket.cash -= entry.amount;
+            } else if (entry.method === PaymentMethod.CARD) {
+                bucket.card -= entry.amount;
+            }
+        }
+
         const recentExpensesMap = new Map<string, Array<{
             id: string;
             amount: number;
@@ -172,6 +207,9 @@ export async function GET(request: NextRequest) {
         }>>();
 
         for (const entry of recentExpenseEntries) {
+            if (isCollectionLedgerEntry(entry)) {
+                continue;
+            }
             const bucket = recentExpensesMap.get(entry.hotelId) ?? [];
             if (bucket.length < 3) {
                 bucket.push({
