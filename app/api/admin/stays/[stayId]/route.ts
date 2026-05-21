@@ -157,6 +157,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             updateData.status = payload.status;
         }
 
+        const isCancellingStay = payload.status === StayStatus.CANCELLED;
         const nextCash = payload.cashPaid ?? stayRecord.cashPaid;
         const nextCard = payload.cardPaid ?? stayRecord.cardPaid;
         const nextOnline = payload.onlinePaid ?? stayRecord.onlinePaid;
@@ -198,6 +199,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             updateData.paymentMethod = detectStayPaymentMethod({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
         }
 
+        if (isCancellingStay) {
+            updateData.amountPaid = 0;
+            updateData.cashPaid = 0;
+            updateData.cardPaid = 0;
+            updateData.onlinePaid = 0;
+            updateData.paymentMethod = null;
+        }
+
         const updatedStay = await prisma.$transaction(async (tx) => {
             const result = await tx.roomStay.update({
                 where: { id: params.stayId },
@@ -227,43 +236,65 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
 
                 let legacyEntryIds: string[] = [];
                 if (payload.status === StayStatus.CANCELLED && linkedLedgerEntries.length === 0) {
-                    const stayStart = stay.actualCheckIn ?? stay.scheduledCheckIn;
-                    const legacyCandidates = await tx.cashEntry.findMany({
+                    const legacyMetaCandidates = await tx.cashEntry.findMany({
                         where: {
                             stayId: null,
                             hotelId: stay.hotelId,
                             shiftId: stay.shiftId,
                             entryType: LedgerEntryType.CASH_IN,
-                            recordedAt: {
-                                gte: new Date(stayStart.getTime() - 15 * 60 * 1000),
-                                lte: new Date()
-                            },
-                            OR: [
-                                { note: `Заселение №${stay.room.label}` },
-                                { note: `Продление №${stay.room.label}` }
-                            ]
+                            meta: {
+                                path: ['stayId'],
+                                equals: stay.id
+                            }
                         },
                         select: {
-                            id: true,
-                            method: true,
-                            amount: true
+                            id: true
                         }
                     });
 
-                    const legacyTotals = legacyCandidates.reduce(
-                        (totals, entry) => {
-                            if (entry.method === PaymentMethod.CASH) {
-                                totals.cash += entry.amount;
-                            } else if (entry.method === PaymentMethod.CARD) {
-                                totals.card += entry.amount;
-                            }
-                            return totals;
-                        },
-                        { cash: 0, card: 0 }
-                    );
+                    if (legacyMetaCandidates.length > 0) {
+                        legacyEntryIds = legacyMetaCandidates.map((entry) => entry.id);
+                    }
 
-                    if (legacyTotals.cash === stayRecord.cashPaid && legacyTotals.card === stayRecord.cardPaid) {
-                        legacyEntryIds = legacyCandidates.map((entry) => entry.id);
+                    if (legacyEntryIds.length === 0) {
+                        const stayStart = stay.actualCheckIn ?? stay.scheduledCheckIn;
+                        const legacyCandidates = await tx.cashEntry.findMany({
+                            where: {
+                                stayId: null,
+                                hotelId: stay.hotelId,
+                                shiftId: stay.shiftId,
+                                entryType: LedgerEntryType.CASH_IN,
+                                recordedAt: {
+                                    gte: new Date(stayStart.getTime() - 15 * 60 * 1000),
+                                    lte: new Date()
+                                },
+                                OR: [
+                                    { note: `Заселение №${stay.room.label}` },
+                                    { note: `Продление №${stay.room.label}` }
+                                ]
+                            },
+                            select: {
+                                id: true,
+                                method: true,
+                                amount: true
+                            }
+                        });
+
+                        const legacyTotals = legacyCandidates.reduce(
+                            (totals, entry) => {
+                                if (entry.method === PaymentMethod.CASH) {
+                                    totals.cash += entry.amount;
+                                } else if (entry.method === PaymentMethod.CARD) {
+                                    totals.card += entry.amount;
+                                }
+                                return totals;
+                            },
+                            { cash: 0, card: 0 }
+                        );
+
+                        if (legacyTotals.cash === stayRecord.cashPaid && legacyTotals.card === stayRecord.cardPaid) {
+                            legacyEntryIds = legacyCandidates.map((entry) => entry.id);
+                        }
                     }
                 }
 
