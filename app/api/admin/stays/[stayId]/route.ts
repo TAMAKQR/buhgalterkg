@@ -161,11 +161,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const nextCash = payload.cashPaid ?? stayRecord.cashPaid;
         const nextCard = payload.cardPaid ?? stayRecord.cardPaid;
         const nextOnline = payload.onlinePaid ?? stayRecord.onlinePaid;
+        const hasPaymentBreakdownPayload =
+            payload.cashPaid !== undefined ||
+            payload.cardPaid !== undefined ||
+            payload.onlinePaid !== undefined;
+        const nextBreakdownTotal = sumStayPayments({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
 
-        if (payload.amountPaid !== undefined) {
+        if (hasPaymentBreakdownPayload && (nextBreakdownTotal > 0 || payload.amountPaid === undefined || payload.amountPaid === 0)) {
+            updateData.amountPaid = nextBreakdownTotal;
+        } else if (payload.amountPaid !== undefined) {
             updateData.amountPaid = payload.amountPaid;
-        } else if (payload.cashPaid !== undefined || payload.cardPaid !== undefined || payload.onlinePaid !== undefined) {
-            updateData.amountPaid = sumStayPayments({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
         }
 
         if (payload.cashPaid !== undefined) {

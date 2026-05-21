@@ -1050,6 +1050,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const hydrateStayEditor = (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
+        const stayBreakdownTotal = (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0) + (stay.onlinePaid ?? 0);
         stayEditForm.reset({
             stayId: stay.id,
             roomId: room.id,
@@ -1063,7 +1064,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             cashPaid: (stay.cashPaid ?? 0) / 100,
             cardPaid: (stay.cardPaid ?? 0) / 100,
             onlinePaid: (stay.onlinePaid ?? 0) / 100,
-            totalPaid: (stay.amountPaid ?? (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0) + (stay.onlinePaid ?? 0)) / 100,
+            totalPaid: (stayBreakdownTotal > 0 ? stayBreakdownTotal : stay.amountPaid ?? 0) / 100,
             paymentMethod:
                 (stay.onlinePaid ?? 0) > 0 && !(stay.cashPaid ?? 0) && !(stay.cardPaid ?? 0)
                     ? 'ONLINE'
@@ -1089,7 +1090,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const cashMinor = toOptionalMinorValue(values.cashPaid);
         const cardMinor = toOptionalMinorValue(values.cardPaid);
         const onlineMinor = toOptionalMinorValue(values.onlinePaid);
-        const totalMinor = toOptionalMinorValue(values.totalPaid);
+        const breakdownTotalMinor = (cashMinor ?? 0) + (cardMinor ?? 0) + (onlineMinor ?? 0);
+        const totalMinor = breakdownTotalMinor > 0 ? breakdownTotalMinor : toOptionalMinorValue(values.totalPaid);
 
         try {
             await request(`/api/admin/stays/${values.stayId}`, {
@@ -1740,6 +1742,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     const cashPortion = stayEntry.cashPaid ?? 0;
                                                                                     const cardPortion = stayEntry.cardPaid ?? 0;
                                                                                     const onlinePortion = stayEntry.onlinePaid ?? 0;
+                                                                                    const paymentBreakdownTotal = cashPortion + cardPortion + onlinePortion;
+                                                                                    const displayAmount = paymentBreakdownTotal > 0 ? paymentBreakdownTotal : stayEntry.amountPaid;
                                                                                     const paymentLabel = (() => {
                                                                                         const segments: string[] = [];
                                                                                         if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
@@ -1774,8 +1778,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             </div>
                                                                                             <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                                                                                                 {checkInLabel} — {checkOutLabel}
-                                                                                                {stayEntry.amountPaid != null && (
-                                                                                                    <> · {formatCurrency(stayEntry.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
+                                                                                                {displayAmount != null && (
+                                                                                                    <> · {formatCurrency(displayAmount)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
                                                                                                 )}
                                                                                             </p>
                                                                                             {transferLabel ? (
