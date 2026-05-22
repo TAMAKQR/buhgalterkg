@@ -43,6 +43,43 @@ const parseDateOrNull = (value?: string | null) => {
     return parsed;
 };
 
+const getCashLedgerParts = ({
+    amountPaid,
+    cashPaid,
+    cardPaid,
+    onlinePaid,
+    paymentMethod,
+}: {
+    amountPaid?: number | null;
+    cashPaid?: number | null;
+    cardPaid?: number | null;
+    onlinePaid?: number | null;
+    paymentMethod?: PaymentMethod | null;
+}) => {
+    const cash = cashPaid ?? 0;
+    const card = cardPaid ?? 0;
+    const online = onlinePaid ?? 0;
+
+    if (cash > 0 || card > 0) {
+        return { cash, card };
+    }
+
+    const total = amountPaid ?? 0;
+    if (total <= 0 || online > 0) {
+        return { cash: 0, card: 0 };
+    }
+
+    if (paymentMethod === PaymentMethod.CASH) {
+        return { cash: total, card: 0 };
+    }
+
+    if (paymentMethod === PaymentMethod.CARD) {
+        return { cash: 0, card: total };
+    }
+
+    return { cash: 0, card: 0 };
+};
+
 export async function PATCH(request: NextRequest, { params }: { params: { stayId: string } }) {
     try {
         const body = await request.json();
@@ -240,7 +277,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 });
 
                 let legacyEntryIds: string[] = [];
-                if (payload.status === StayStatus.CANCELLED && linkedLedgerEntries.length === 0) {
+                if (linkedLedgerEntries.length === 0) {
                     const legacyMetaCandidates = await tx.cashEntry.findMany({
                         where: {
                             stayId: null,
@@ -297,7 +334,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             { cash: 0, card: 0 }
                         );
 
-                        if (legacyTotals.cash === stayRecord.cashPaid && legacyTotals.card === stayRecord.cardPaid) {
+                        const expectedLegacyTotals = getCashLedgerParts(stayRecord);
+
+                        if (legacyTotals.cash === expectedLegacyTotals.cash && legacyTotals.card === expectedLegacyTotals.card) {
                             legacyEntryIds = legacyCandidates.map((entry) => entry.id);
                         }
                     }
@@ -316,15 +355,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                     });
                 }
 
+                const nextLedgerParts = getCashLedgerParts(result);
                 const shouldRecreateLedger =
                     result.status !== StayStatus.CANCELLED &&
-                    (linkedLedgerEntries.length > 0 || stay.status === StayStatus.SCHEDULED || payload.status === StayStatus.CHECKED_IN);
+                    (
+                        linkedLedgerEntries.length > 0 ||
+                        legacyEntryIds.length > 0 ||
+                        stay.status === StayStatus.SCHEDULED ||
+                        payload.status === StayStatus.CHECKED_IN ||
+                        nextLedgerParts.cash > 0 ||
+                        nextLedgerParts.card > 0
+                    );
 
                 if (shouldRecreateLedger) {
                     const recordedAt = linkedLedgerEntries[0]?.recordedAt ?? result.actualCheckIn ?? result.scheduledCheckIn;
                     const ledgerPayloads = [
-                        { amount: result.cashPaid, method: PaymentMethod.CASH },
-                        { amount: result.cardPaid, method: PaymentMethod.CARD }
+                        { amount: nextLedgerParts.cash, method: PaymentMethod.CASH },
+                        { amount: nextLedgerParts.card, method: PaymentMethod.CARD }
                     ].filter((entry) => entry.amount > 0);
 
                     for (const ledgerEntry of ledgerPayloads) {
