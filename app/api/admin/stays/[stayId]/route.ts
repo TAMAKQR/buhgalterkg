@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, StayStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
@@ -250,10 +250,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         }
 
         const updatedStay = await prisma.$transaction(async (tx) => {
-            const result = await tx.roomStay.update({
+            let result = await tx.roomStay.update({
                 where: { id: params.stayId },
                 data: updateData
             });
+
+            let ledgerShiftId = stay.shiftId;
+            let ledgerManagerId = stay.shift?.managerId ?? null;
+            if (!ledgerShiftId && result.status === StayStatus.CHECKED_IN) {
+                const activeShift = await tx.shift.findFirst({
+                    where: {
+                        hotelId: stay.hotelId,
+                        status: ShiftStatus.OPEN
+                    },
+                    orderBy: { openedAt: 'desc' },
+                    select: {
+                        id: true,
+                        managerId: true
+                    }
+                });
+
+                if (activeShift) {
+                    result = await tx.roomStay.update({
+                        where: { id: params.stayId },
+                        data: { shiftId: activeShift.id }
+                    });
+                    ledgerShiftId = activeShift.id;
+                    ledgerManagerId = activeShift.managerId;
+                }
+            }
 
             const shouldSyncStayLedger =
                 payload.status === StayStatus.CANCELLED ||
@@ -263,7 +288,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 payload.amountPaid !== undefined ||
                 payload.paymentMethod !== undefined;
 
-            if (shouldSyncStayLedger && stay.shiftId) {
+            if (shouldSyncStayLedger && ledgerShiftId) {
                 const linkedLedgerEntries = await tx.cashEntry.findMany({
                     where: {
                         stayId: stay.id,
@@ -282,7 +307,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                         where: {
                             stayId: null,
                             hotelId: stay.hotelId,
-                            shiftId: stay.shiftId,
+                            shiftId: ledgerShiftId,
                             entryType: LedgerEntryType.CASH_IN,
                             meta: {
                                 path: ['stayId'],
@@ -304,7 +329,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             where: {
                                 stayId: null,
                                 hotelId: stay.hotelId,
-                                shiftId: stay.shiftId,
+                                shiftId: ledgerShiftId,
                                 entryType: LedgerEntryType.CASH_IN,
                                 recordedAt: {
                                     gte: new Date(stayStart.getTime() - 15 * 60 * 1000),
@@ -378,8 +403,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                         await tx.cashEntry.create({
                             data: {
                                 hotelId: stay.hotelId,
-                                shiftId: stay.shiftId,
-                                managerId: stay.shift?.managerId ?? null,
+                                shiftId: ledgerShiftId,
+                                managerId: ledgerManagerId,
                                 stayId: stay.id,
                                 entryType: LedgerEntryType.CASH_IN,
                                 method: ledgerEntry.method,
@@ -398,10 +423,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 }
             }
 
-            if (stay.room.currentStayId === stay.id && payload.status) {
+            if (payload.status) {
                 const nextRoomData: Prisma.RoomUpdateInput | null = (() => {
                     if (payload.status === StayStatus.CHECKED_IN) {
                         return { status: RoomStatus.OCCUPIED, currentStayId: stay.id };
+                    }
+                    if (stay.room.currentStayId !== stay.id) {
+                        return null;
                     }
                     if (payload.status === StayStatus.CHECKED_OUT) {
                         return { status: RoomStatus.DIRTY, currentStayId: null };
