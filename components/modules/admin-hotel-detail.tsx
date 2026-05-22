@@ -266,6 +266,15 @@ const stayStatusOptions: Array<{ value: StayStatusValue; label: string }> = [
     { value: 'CANCELLED', label: 'Отменён' }
 ];
 
+type StayHistoryStatusFilter = 'ALL' | StayStatusValue;
+
+const stayHistoryStatusOptions: Array<{ value: StayHistoryStatusFilter; label: string }> = [
+    { value: 'ALL', label: 'Все статусы' },
+    ...stayStatusOptions
+];
+
+const compactStayHistoryLimit = 3;
+
 const stayStatusLabels: Record<StayStatusValue, string> = {
     SCHEDULED: 'Запланирован',
     CHECKED_IN: 'Заселён',
@@ -762,13 +771,67 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
+    const [stayHistoryQuery, setStayHistoryQuery] = useState('');
+    const [stayHistoryStatus, setStayHistoryStatus] = useState<StayHistoryStatusFilter>('ALL');
+    const [expandedStayHistoryRooms, setExpandedStayHistoryRooms] = useState<Set<string>>(() => new Set());
     const [isOutflowModalOpen, setIsOutflowModalOpen] = useState(false);
     useEffect(() => {
         setIsTransactionsExpanded(false);
         setIsRoomHistoryExpanded(false);
+        setStayHistoryQuery('');
+        setStayHistoryStatus('ALL');
+        setExpandedStayHistoryRooms(new Set());
         setIsOutflowModalOpen(false);
     }, [selectedShiftId]);
     const closeOutflowModal = () => setIsOutflowModalOpen(false);
+
+    const filteredRoomStayHistory = useMemo(() => {
+        const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
+        const hasFilters = Boolean(query) || stayHistoryStatus !== 'ALL';
+
+        return sortedRooms
+            .map((room) => {
+                const stays = [...(room.stays ?? [])]
+                    .sort((first, second) => stayStartTimestamp(second) - stayStartTimestamp(first))
+                    .filter((stay) => {
+                        if (stayHistoryStatus !== 'ALL' && stay.status !== stayHistoryStatus) {
+                            return false;
+                        }
+
+                        if (!query) {
+                            return true;
+                        }
+
+                        return [
+                            room.label,
+                            room.floor,
+                            stay.guestName,
+                            stay.bookingSource,
+                            stay.notes,
+                            stay.shiftNumber ? `смена ${stay.shiftNumber}` : null,
+                            stay.shiftManagerName,
+                        ]
+                            .filter(Boolean)
+                            .some((value) => String(value).toLocaleLowerCase('ru-RU').includes(query));
+                    });
+
+                if (!stays.length) {
+                    return null;
+                }
+
+                const isExpanded = expandedStayHistoryRooms.has(room.id) || hasFilters;
+                return {
+                    room,
+                    stays: isExpanded ? stays : stays.slice(0, compactStayHistoryLimit),
+                    total: stays.length,
+                    isExpanded,
+                    hasMore: stays.length > compactStayHistoryLimit,
+                };
+            })
+            .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    }, [expandedStayHistoryRooms, sortedRooms, stayHistoryQuery, stayHistoryStatus]);
+
+    const totalFilteredStayHistory = filteredRoomStayHistory.reduce((total, item) => total + item.total, 0);
 
     const toMinor = (value: number) => Math.round(value * 100);
     const toOptionalMinor = (value?: number | null) => {
@@ -1834,6 +1897,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <div className="flex items-center justify-between gap-3">
                                                     <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Номера <span className="text-slate-400 dark:text-white/40">{sortedRooms.length}</span></h3>
                                                     <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-white/50">
+                                                        {isRoomHistoryExpanded && totalFilteredStayHistory > 0 && (
+                                                            <span>{totalFilteredStayHistory} записей</span>
+                                                        )}
                                                         <Button
                                                             type="button"
                                                             size="sm"
@@ -1846,14 +1912,27 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                 </div>
                                                 {isRoomHistoryExpanded ? (
-                                                    <div className="mt-3 divide-y divide-slate-200/80 dark:divide-white/[0.06]">
-                                                        {sortedRooms.length ? (
-                                                            sortedRooms.map((room) => {
-                                                                const stayHistory = [...(room.stays ?? [])].sort(
-                                                                    (first, second) => stayStartTimestamp(first) - stayStartTimestamp(second)
-                                                                );
-
-                                                                return (
+                                                    <>
+                                                        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px]">
+                                                            <Input
+                                                                placeholder="Поиск: номер, гость, источник, смена"
+                                                                value={stayHistoryQuery}
+                                                                onChange={(event) => setStayHistoryQuery(event.target.value)}
+                                                            />
+                                                            <Select
+                                                                value={stayHistoryStatus}
+                                                                onChange={(event) => setStayHistoryStatus(event.target.value as StayHistoryStatusFilter)}
+                                                            >
+                                                                {stayHistoryStatusOptions.map((option) => (
+                                                                    <option key={`stay-history-status-${option.value}`} value={option.value}>
+                                                                        {option.label}
+                                                                    </option>
+                                                                ))}
+                                                            </Select>
+                                                        </div>
+                                                        <div className="mt-3 divide-y divide-slate-200/80 dark:divide-white/[0.06]">
+                                                            {filteredRoomStayHistory.length ? (
+                                                                filteredRoomStayHistory.map(({ room, stays, total, isExpanded, hasMore }) => (
                                                                     <div key={`shift-room-history-${room.id}`} className="py-3 first:pt-0 last:pb-0">
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</span>
@@ -1889,9 +1968,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 {removingRoomId === room.id ? '…' : '✕'}
                                                                             </button>
                                                                         </div>
-                                                                        {stayHistory.length ? (
-                                                                            <div className="mt-2 space-y-1.5 pl-1">
-                                                                                {stayHistory.map((stayEntry) => {
+                                                                        <div className="mt-2 space-y-1.5 pl-1">
+                                                                            {stays.map((stayEntry) => {
                                                                                     const guestLabel =
                                                                                         stayEntry.guestName?.trim() || (stayEntry.status === 'CHECKED_IN' ? 'Гость' : '—');
                                                                                     const checkInLabel = formatStayDate(stayEntry.actualCheckIn ?? stayEntry.scheduledCheckIn);
@@ -1944,16 +2022,41 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             ) : null}
                                                                                         </div>
                                                                                     );
-                                                                                })}
-                                                                            </div>
-                                                                        ) : null}
+                                                                            })}
+                                                                            {hasMore && !isExpanded ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="mt-1 text-xs font-medium text-slate-500 transition hover:text-slate-900 dark:text-white/50 dark:hover:text-white"
+                                                                                    onClick={() => setExpandedStayHistoryRooms((current) => {
+                                                                                        const next = new Set(current);
+                                                                                        next.add(room.id);
+                                                                                        return next;
+                                                                                    })}
+                                                                                >
+                                                                                    Показать все {total}
+                                                                                </button>
+                                                                            ) : null}
+                                                                            {hasMore && isExpanded && !stayHistoryQuery.trim() && stayHistoryStatus === 'ALL' ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="mt-1 text-xs font-medium text-slate-500 transition hover:text-slate-900 dark:text-white/50 dark:hover:text-white"
+                                                                                    onClick={() => setExpandedStayHistoryRooms((current) => {
+                                                                                        const next = new Set(current);
+                                                                                        next.delete(room.id);
+                                                                                        return next;
+                                                                                    })}
+                                                                                >
+                                                                                    Скрыть старые
+                                                                                </button>
+                                                                            ) : null}
+                                                                        </div>
                                                                     </div>
-                                                                );
-                                                            })
-                                                        ) : (
-                                                            <p className="py-3 text-xs text-slate-400 dark:text-white/40">Номеров пока нет</p>
-                                                        )}
-                                                    </div>
+                                                                ))
+                                                            ) : (
+                                                                <p className="py-3 text-xs text-slate-400 dark:text-white/40">По фильтрам ничего не найдено</p>
+                                                            )}
+                                                        </div>
+                                                    </>
                                                 ) : null}
                                             </div>
                                         </div>
