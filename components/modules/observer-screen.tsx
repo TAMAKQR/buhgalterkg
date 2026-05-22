@@ -33,7 +33,7 @@ interface ObserverStateResponse {
         adjustments: number;
         net: number;
     };
-    dailySeries: Array<{ date: string; cashIn: number; cashOut: number }>;
+    dailySeries: Array<{ date: string; cashIn: number; cashOut: number; collections: number }>;
     shiftNumbers: Array<{ number: number; status: string; openedAt: string }>;
     occupancy: {
         total: number;
@@ -311,7 +311,7 @@ function DonutChart({ segments, centerLabel, centerValue, centerColor }: {
 
 /* ── Daily Line Chart ── */
 
-type DailyPoint = { date: string; cashIn: number; cashOut: number };
+type DailyPoint = { date: string; cashIn: number; cashOut: number; collections: number };
 
 function DailyLineChart({ data }: { data: DailyPoint[] }) {
     if (!data.length) return null;
@@ -324,7 +324,7 @@ function DailyLineChart({ data }: { data: DailyPoint[] }) {
     const chartW = W - PX * 2;
     const chartH = H - PY - PB;
 
-    const allValues = data.flatMap((d) => [d.cashIn, d.cashOut]);
+    const allValues = data.flatMap((d) => [d.cashIn, d.cashOut, d.collections]);
     const maxVal = Math.max(...allValues, 100);
     const minVal = 0;
     const range = maxVal - minVal || 1;
@@ -334,11 +334,12 @@ function DailyLineChart({ data }: { data: DailyPoint[] }) {
     const toX = (i: number) => PX + (data.length > 1 ? i * xStep : chartW / 2);
     const toY = (v: number) => PY + chartH - ((v - minVal) / range) * chartH;
 
-    const makePath = (key: 'cashIn' | 'cashOut') =>
+    const makePath = (key: 'cashIn' | 'cashOut' | 'collections') =>
         data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(d[key]).toFixed(1)}`).join(' ');
 
     const pathIn = makePath('cashIn');
     const pathOut = makePath('cashOut');
+    const pathCollections = makePath('collections');
 
     const gridLines = 4;
     const gridSteps = Array.from({ length: gridLines + 1 }, (_, i) => minVal + (range / gridLines) * i);
@@ -372,10 +373,12 @@ function DailyLineChart({ data }: { data: DailyPoint[] }) {
                 />
                 <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
                 <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
+                <path d={pathCollections} fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="2 4" />
                 {data.map((d, i) => (
                     <g key={d.date}>
                         <circle cx={toX(i)} cy={toY(d.cashIn)} r="2.5" fill="#34d399" />
                         <circle cx={toX(i)} cy={toY(d.cashOut)} r="2.5" fill="#f87171" />
+                        {d.collections > 0 && <circle cx={toX(i)} cy={toY(d.collections)} r="2.5" fill="#22d3ee" />}
                     </g>
                 ))}
                 {data.map((d, i) =>
@@ -394,6 +397,10 @@ function DailyLineChart({ data }: { data: DailyPoint[] }) {
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block h-2 w-4 rounded-sm bg-rose-400" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.3) 3px, rgba(0,0,0,0.3) 5px)' }} />
                     Расход
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-4 rounded-sm bg-cyan-300" />
+                    Инкассация
                 </span>
             </div>
         </Card>

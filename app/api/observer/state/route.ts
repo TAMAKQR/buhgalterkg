@@ -15,6 +15,17 @@ function assertObserver(user: { role: string }) {
     }
 }
 
+const toDateKeyInTimeZone = (date: Date, timeZone: string) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+    const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+    return `${pick('year')}-${pick('month')}-${pick('day')}`;
+};
+
 export async function GET(request: NextRequest) {
     try {
         type ObserverStayRecord = {
@@ -209,46 +220,32 @@ export async function GET(request: NextRequest) {
         const occupiedCount = rooms.filter((r) => r.status === 'OCCUPIED').length;
 
         /* ── Daily series for line chart ── */
-        const dailyConditions: string[] = [`"hotelId" = $1`];
-        const dailyParams: unknown[] = [hotelId];
-        let paramIndex = 2;
-
-        if (startDate) {
-            dailyConditions.push(`"recordedAt" >= $${paramIndex++}`);
-            dailyParams.push(startDate);
-        }
-        if (endDate) {
-            dailyConditions.push(`"recordedAt" <= $${paramIndex++}`);
-            dailyParams.push(endDate);
-        }
-        if (shiftNumber) {
-            dailyConditions.push(`"shiftId" IN (SELECT id FROM "Shift" WHERE "hotelId" = $1 AND number = $${paramIndex++})`);
-            dailyParams.push(shiftNumber);
-        }
-
         const tz = hotel.timezone || 'Asia/Bishkek';
-        const whereClause = dailyConditions.length ? `WHERE ${dailyConditions.join(' AND ')}` : '';
+        const dailyEntries = await prisma.cashEntry.findMany({
+            where: ledgerWhere,
+            orderBy: { recordedAt: 'asc' },
+            select: {
+                entryType: true,
+                amount: true,
+                method: true,
+                note: true,
+                recordedAt: true,
+                expenseCategory: { select: { name: true } },
+            },
+        });
 
-        const dailyRows = await prisma.$queryRawUnsafe<
-            Array<{ day: string; entry_type: string; total: bigint }>
-        >(
-            `SELECT TO_CHAR("recordedAt" AT TIME ZONE '${tz}', 'YYYY-MM-DD') AS day,
-                    "entryType" AS entry_type,
-                    SUM(amount) AS total
-             FROM "CashEntry"
-             ${whereClause}
-             GROUP BY day, "entryType"
-             ORDER BY day`,
-            ...dailyParams,
-        );
-
-        const dayMap = new Map<string, { cashIn: number; cashOut: number }>();
-        for (const row of dailyRows) {
-            const entry = dayMap.get(row.day) ?? { cashIn: 0, cashOut: 0 };
-            const amount = Number(row.total);
-            if (row.entry_type === 'CASH_IN') entry.cashIn += amount;
-            if (row.entry_type === 'CASH_OUT' || row.entry_type === 'MANAGER_PAYOUT') entry.cashOut += amount;
-            dayMap.set(row.day, entry);
+        const dayMap = new Map<string, { cashIn: number; cashOut: number; collections: number }>();
+        for (const row of dailyEntries) {
+            const day = toDateKeyInTimeZone(row.recordedAt, tz);
+            const entry = dayMap.get(day) ?? { cashIn: 0, cashOut: 0, collections: 0 };
+            if (row.entryType === LedgerEntryType.CASH_IN) {
+                entry.cashIn += row.amount;
+            } else if (isCollectionLedgerEntry(row)) {
+                entry.collections += row.amount;
+            } else if (row.entryType === LedgerEntryType.CASH_OUT || row.entryType === LedgerEntryType.MANAGER_PAYOUT) {
+                entry.cashOut += row.amount;
+            }
+            dayMap.set(day, entry);
         }
 
         const dailySeries = Array.from(dayMap.entries())

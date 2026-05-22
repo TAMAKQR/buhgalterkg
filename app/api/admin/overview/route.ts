@@ -43,6 +43,17 @@ const toDateKey = ({ year, month, day }: { year: number; month: number; day: num
     `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 );
 
+const toDateKeyInTimeZone = (date: Date, timeZone: string) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date);
+    const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+    return `${pick("year")}-${pick("month")}-${pick("day")}`;
+};
+
 const toUtcDate = ({ year, month, day }: { year: number; month: number; day: number }) => (
     new Date(Date.UTC(year, month - 1, day))
 );
@@ -404,52 +415,33 @@ export async function GET(request: NextRequest) {
                 : "текущие расчетные периоды по каждому объекту";
 
         /* ── Daily series for line chart ── */
-        const dailyConditions: string[] = [];
-        const dailyParams: unknown[] = [];
-        let paramIndex = 1;
+        const dailyEntries = await prisma.cashEntry.findMany({
+            where: ledgerWhere,
+            select: {
+                entryType: true,
+                amount: true,
+                method: true,
+                note: true,
+                recordedAt: true,
+                expenseCategory: {
+                    select: { name: true },
+                },
+            },
+            orderBy: { recordedAt: "asc" },
+        });
 
-        dailyConditions.push(`"hotelId" IN (SELECT "id" FROM "Hotel" WHERE "country" = $${paramIndex++})`);
-        dailyParams.push(country);
-
-        if (hotelIds.length) {
-            dailyConditions.push(`"hotelId" IN (${hotelIds.map(() => `$${paramIndex++}`).join(", ")})`);
-            dailyParams.push(...hotelIds);
-        }
-        if (managerIds.length) {
-            dailyConditions.push(`"managerId" IN (${managerIds.map(() => `$${paramIndex++}`).join(", ")})`);
-            dailyParams.push(...managerIds);
-        }
-        if (startDate) {
-            dailyConditions.push(`"recordedAt" >= $${paramIndex++}`);
-            dailyParams.push(startDate);
-        }
-        if (endDate) {
-            dailyConditions.push(`"recordedAt" <= $${paramIndex++}`);
-            dailyParams.push(endDate);
-        }
-
-        const whereClause = dailyConditions.length ? `WHERE ${dailyConditions.join(" AND ")}` : "";
-
-        const dailyRows = await prisma.$queryRawUnsafe<
-            Array<{ day: string; entry_type: string; total: bigint }>
-        >(
-            `SELECT TO_CHAR("recordedAt" AT TIME ZONE '${countryConfig.timezone}', 'YYYY-MM-DD') AS day,
-                    "entryType" AS entry_type,
-                    SUM(amount) AS total
-             FROM "CashEntry"
-             ${whereClause}
-             GROUP BY day, "entryType"
-             ORDER BY day`,
-            ...dailyParams,
-        );
-
-        const dayMap = new Map<string, { cashIn: number; cashOut: number }>();
-        for (const row of dailyRows) {
-            const entry = dayMap.get(row.day) ?? { cashIn: 0, cashOut: 0 };
-            const amount = Number(row.total);
-            if (row.entry_type === "CASH_IN") entry.cashIn += amount;
-            if (row.entry_type === "CASH_OUT" || row.entry_type === "MANAGER_PAYOUT") entry.cashOut += amount;
-            dayMap.set(row.day, entry);
+        const dayMap = new Map<string, { cashIn: number; cashOut: number; collections: number }>();
+        for (const row of dailyEntries) {
+            const day = toDateKeyInTimeZone(row.recordedAt, countryConfig.timezone);
+            const entry = dayMap.get(day) ?? { cashIn: 0, cashOut: 0, collections: 0 };
+            if (row.entryType === LedgerEntryType.CASH_IN) {
+                entry.cashIn += row.amount;
+            } else if (isCollectionLedgerEntry(row)) {
+                entry.collections += row.amount;
+            } else if (row.entryType === LedgerEntryType.CASH_OUT || row.entryType === LedgerEntryType.MANAGER_PAYOUT) {
+                entry.cashOut += row.amount;
+            }
+            dayMap.set(day, entry);
         }
 
         const dailySeries = Array.from(dayMap.entries())

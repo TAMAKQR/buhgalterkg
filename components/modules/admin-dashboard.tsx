@@ -134,7 +134,7 @@ type AdminOverview = {
         projectedRevenue: number;
         onTrack: boolean;
     };
-    dailySeries?: Array<{ date: string; cashIn: number; cashOut: number }>;
+    dailySeries?: Array<{ date: string; cashIn: number; cashOut: number; collections: number }>;
     recentExpenses?: ExpenseEntry[];
 };
 
@@ -855,7 +855,7 @@ const ExpenseStructureChart = ({ cashOut, collections, payouts, adjustments, cur
 
 /* ── Line Chart: Доход / Расход по дням ──────────────── */
 
-type DailyPoint = { date: string; cashIn: number; cashOut: number };
+type DailyPoint = { date: string; cashIn: number; cashOut: number; collections: number };
 
 const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: string }) => {
     if (!data.length) return null;
@@ -874,7 +874,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
     const chartW = W - PX * 2;
     const chartH = H - PY - PB;
 
-    const allValues = data.flatMap((d) => [d.cashIn, d.cashOut]);
+    const allValues = data.flatMap((d) => [d.cashIn, d.cashOut, d.collections]);
     const maxVal = Math.max(...allValues, 100);
     const minVal = 0;
     const range = maxVal - minVal || 1;
@@ -886,6 +886,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 
     const pointsIn = data.map((d, i) => ({ x: toX(i), y: toY(d.cashIn) }));
     const pointsOut = data.map((d, i) => ({ x: toX(i), y: toY(d.cashOut) }));
+    const pointsCollections = data.map((d, i) => ({ x: toX(i), y: toY(d.collections) }));
 
     const makeSmoothPath = (points: { x: number; y: number }[]) => {
         if (!points.length) return '';
@@ -913,6 +914,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 
     const pathIn = makeSmoothPath(pointsIn);
     const pathOut = makeSmoothPath(pointsOut);
+    const pathCollections = makeSmoothPath(pointsCollections);
 
     const gridLines = 4;
     const gridSteps = Array.from({ length: gridLines + 1 }, (_, i) => minVal + (range / gridLines) * i);
@@ -958,11 +960,13 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
                 {/* lines */}
                 <path d={pathIn} fill="none" stroke="#34d399" strokeWidth="1.15" strokeLinejoin="round" strokeLinecap="round" />
                 <path d={pathOut} fill="none" stroke="#f87171" strokeWidth="1.05" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4 4" />
+                <path d={pathCollections} fill="none" stroke="#22d3ee" strokeWidth="1.05" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="2 3" />
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
                         <circle cx={toX(i)} cy={toY(d.cashIn)} r="1.9" fill="#34d399" stroke="rgba(15,23,42,0.35)" strokeWidth="0.45" />
                         <circle cx={toX(i)} cy={toY(d.cashOut)} r="1.9" fill="#f87171" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />
+                        {d.collections > 0 && <circle cx={toX(i)} cy={toY(d.collections)} r="1.9" fill="#22d3ee" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />}
                     </g>
                 ))}
                 {/* x labels */}
@@ -982,6 +986,10 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block h-2 w-4 rounded-sm bg-rose-400" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(100,116,139,0.45) 3px, rgba(100,116,139,0.45) 5px)' }} />
                     Расход
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-4 rounded-sm bg-cyan-300" />
+                    Инкассация
                 </span>
             </div>
         </Card>
