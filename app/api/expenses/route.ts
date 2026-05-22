@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
                 }),
                 prisma.roomStay.aggregate({
                     where: { shiftId, hotelId: payload.hotelId },
-                    _sum: { amountPaid: true }
+                    _sum: { amountPaid: true, onlinePaid: true }
                 })
             ]);
 
@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
 
             const cashIn = ledgerGroups.find((group) => group.entryType === LedgerEntryType.CASH_IN)?._sum.amount ?? 0;
             const payouts = ledgerGroups.find((group) => group.entryType === LedgerEntryType.MANAGER_PAYOUT)?._sum.amount ?? 0;
-            const shiftBonus = calculateBonusFromTiers(stayRevenue._sum.amountPaid ?? 0, bonusTiers);
+            const settledStayRevenue = Math.max((stayRevenue._sum.amountPaid ?? 0) - (stayRevenue._sum.onlinePaid ?? 0), 0);
+            const shiftBonus = calculateBonusFromTiers(settledStayRevenue, bonusTiers);
             const payout = calculateManagerPayout({
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct,

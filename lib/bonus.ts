@@ -8,8 +8,8 @@ export interface BonusResult {
 }
 
 /**
- * Calculate the bonus for a given shift based on its STAY REVENUE
- * (sum of amountPaid from RoomStay) and the hotel's bonus tiers configuration.
+ * Calculate the bonus for a given shift based on settled stay revenue
+ * (room stay payment minus pending online/site amount).
  *
  * Returns the highest matching tier's bonus, or null if no tier matched.
  */
@@ -20,7 +20,7 @@ export async function calculateShiftBonus(
     const [stayRevenueResult, tiers] = await Promise.all([
         prisma.roomStay.aggregate({
             where: { shiftId, hotelId },
-            _sum: { amountPaid: true },
+            _sum: { amountPaid: true, onlinePaid: true },
         }),
         prisma.bonusTier.findMany({
             where: { hotelId },
@@ -28,7 +28,7 @@ export async function calculateShiftBonus(
         }),
     ]);
 
-    const totalStayRevenue = stayRevenueResult._sum.amountPaid ?? 0;
+    const totalStayRevenue = Math.max((stayRevenueResult._sum.amountPaid ?? 0) - (stayRevenueResult._sum.onlinePaid ?? 0), 0);
 
     if (!tiers.length || totalStayRevenue <= 0) return null;
 

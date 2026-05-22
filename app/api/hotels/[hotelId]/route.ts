@@ -229,7 +229,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     shiftId: { not: null },
                     status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] }
                 },
-                _sum: { amountPaid: true }
+                _sum: { amountPaid: true, onlinePaid: true }
             })
         ]);
 
@@ -306,9 +306,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         };
 
         const shiftStayRevenue = new Map<string, number>();
+        const shiftPendingOnline = new Map<string, number>();
         for (const group of stayRevenueByShift) {
             if (group.shiftId) {
-                shiftStayRevenue.set(group.shiftId, group._sum?.amountPaid ?? 0);
+                const online = group._sum?.onlinePaid ?? 0;
+                shiftStayRevenue.set(group.shiftId, Math.max((group._sum?.amountPaid ?? 0) - online, 0));
+                shiftPendingOnline.set(group.shiftId, online);
             }
         }
 
@@ -343,7 +346,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     expectedPayout: payout?.expected ?? null,
                     paidPayout: payout?.paid ?? null,
                     pendingPayout: payout?.pending ?? null,
-                    bonus: shiftBonus?.computed ?? null
+                    bonus: shiftBonus?.computed ?? null,
+                    pendingOnline: shiftPendingOnline.get(shift.id) ?? 0
                 };
             });
 
@@ -445,7 +449,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     expectedPayout: activeShiftPayout?.expected ?? null,
                     paidPayout: activeShiftPayout?.paid ?? null,
                     pendingPayout: activeShiftPayout?.pending ?? null,
-                    bonus: activeShiftBonus?.computed ?? null
+                    bonus: activeShiftBonus?.computed ?? null,
+                    pendingOnline: shiftPendingOnline.get(activeShiftRecord.id) ?? 0
                 }
                 : null,
             shiftHistory,
@@ -482,6 +487,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 collections: collectionsTotal,
                 payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT],
                 adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT],
+                pendingOnline: Array.from(shiftPendingOnline.values()).reduce((total, amount) => total + amount, 0),
                 netCash:
                     ledgerTotals[LedgerEntryType.CASH_IN] -
                     ledgerTotals[LedgerEntryType.CASH_OUT] -

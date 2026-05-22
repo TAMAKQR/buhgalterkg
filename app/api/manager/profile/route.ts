@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
             ? await prisma.roomStay.groupBy({
                 by: ['shiftId'],
                 where: { shiftId: { in: shiftIds }, hotelId },
-                _sum: { amountPaid: true }
+                _sum: { amountPaid: true, onlinePaid: true }
             })
             : [];
 
@@ -61,7 +61,8 @@ export async function GET(request: NextRequest) {
         const stayRevenueMap = new Map<string, number>();
         for (const group of stayRevenueGroups) {
             if (group.shiftId) {
-                stayRevenueMap.set(group.shiftId, group._sum.amountPaid ?? 0);
+                const online = group._sum.onlinePaid ?? 0;
+                stayRevenueMap.set(group.shiftId, Math.max((group._sum.amountPaid ?? 0) - online, 0));
             }
         }
 

@@ -97,6 +97,7 @@ interface ShiftHistoryEntry {
     paidPayout?: number | null;
     pendingPayout?: number | null;
     bonus?: number | null;
+    pendingOnline?: number | null;
 }
 
 type ShiftListItem = ShiftHistoryEntry & { isCurrent: boolean };
@@ -143,6 +144,7 @@ interface HotelDetailPayload {
         collections: number;
         payouts: number;
         adjustments: number;
+        pendingOnline?: number;
         netCash: number;
     };
     bonusTiers?: Array<{
@@ -1512,7 +1514,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         {
             label: 'Касса',
             value: formatCurrency(data.financials.netCash),
-            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано · ${formatCurrency(data.financials.collections)} инкас.`
+            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано · ${formatCurrency(data.financials.collections)} инкас. · ${formatCurrency(data.financials.pendingOnline ?? 0)} ожидает`
         },
         {
             label: 'Команда',
@@ -1551,6 +1553,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 label: 'Инкассация',
                 value: formatCurrency(selectedShiftCollections),
                 valueClass: 'text-cyan-300'
+            },
+            {
+                label: 'Ожидает сайт',
+                value: formatCurrency(selectedShift.pendingOnline ?? 0),
+                valueClass: 'text-amber-300'
             }
         ]
         : [];
@@ -1732,6 +1739,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <p className="flex items-center justify-between"><span>безналично</span><span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</span></p>
                                                                         </div>
                                                                     </div>
+                                                                </div>
+                                                            )}
+                                                            {(selectedShift.pendingOnline ?? 0) > 0 && (
+                                                                <div className="mt-2 rounded-2xl border border-amber-200/80 bg-amber-50 px-3 py-2.5 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <span>Ожидает поступления с сайта</span>
+                                                                        <span className="font-semibold">{formatCurrency(selectedShift.pendingOnline)}</span>
+                                                                    </div>
+                                                                    <p className="mt-1 text-[11px] text-amber-600/80 dark:text-amber-200/70">Не входит в кассу и поступления смены до фактического получения.</p>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1983,7 +1999,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         const segments: string[] = [];
                                                                                         if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
                                                                                         if (cardPortion) segments.push(`безнал ${formatCurrency(cardPortion)}`);
-                                                                                        if (onlinePortion) segments.push(`сайт ${formatCurrency(onlinePortion)}`);
                                                                                         if (!segments.length && stayEntry.paymentMethod) {
                                                                                             return stayEntry.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
                                                                                         }
@@ -2017,6 +2032,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                     <> · {formatCurrency(displayAmount)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
                                                                                                 )}
                                                                                             </p>
+                                                                                            {onlinePortion > 0 ? (
+                                                                                                <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-300">
+                                                                                                    Ожидает сайт: {formatCurrency(onlinePortion)}
+                                                                                                </p>
+                                                                                            ) : null}
                                                                                             {transferLabel ? (
                                                                                                 <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">{transferLabel}</p>
                                                                                             ) : null}
