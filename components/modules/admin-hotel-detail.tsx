@@ -37,6 +37,12 @@ interface RoomStayDetail {
     cardPaid?: number | null;
     onlinePaid?: number | null;
     bookingSource?: string | null;
+    shiftId?: string | null;
+    shiftNumber?: number | null;
+    shiftStatus?: ShiftStatusValue | null;
+    shiftOpenedAt?: string | null;
+    shiftClosedAt?: string | null;
+    shiftManagerName?: string | null;
     transfers?: Array<{
         id: string;
         createdAt: string;
@@ -216,6 +222,7 @@ interface StayEditForm {
     onlinePaid: number;
     totalPaid: number;
     paymentMethod: PaymentMethodValue;
+    shiftId: string;
     bookingSource: string;
     notes: string;
 }
@@ -235,6 +242,7 @@ const createStayEditDefaults = (): StayEditForm => ({
     onlinePaid: 0,
     totalPaid: 0,
     paymentMethod: 'AUTO',
+    shiftId: '',
     bookingSource: '',
     notes: ''
 });
@@ -1094,6 +1102,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     : stay.paymentMethod
                         ? (stay.paymentMethod as PaymentMethodValue)
                         : 'AUTO',
+            shiftId: stay.shiftId ?? '',
             bookingSource: stay.bookingSource ?? '',
             notes: stay.notes ?? ''
         });
@@ -1132,6 +1141,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     onlinePaid: onlineMinor,
                     amountPaid: totalMinor,
                     paymentMethod: values.paymentMethod === 'AUTO' || values.paymentMethod === 'ONLINE' ? null : values.paymentMethod,
+                    shiftId: values.shiftId || null,
                     bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined
                 }
             });
@@ -2106,6 +2116,40 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             </div>
                             <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
                                 <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                                <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                                        <div className="min-w-0">
+                                            <p className={modalLabelClass}>Смена проживания</p>
+                                            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                                                {selectedStayForEditor?.shiftNumber
+                                                    ? `Смена №${selectedStayForEditor.shiftNumber}`
+                                                    : 'Смена не привязана'}
+                                                {selectedStayForEditor?.shiftManagerName ? ` · ${selectedStayForEditor.shiftManagerName}` : ''}
+                                            </p>
+                                            {selectedStayForEditor?.shiftOpenedAt && (
+                                                <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+                                                    Открыта {formatDateTime(selectedStayForEditor.shiftOpenedAt, hotelTz)}
+                                                    {selectedStayForEditor.shiftStatus ? ` · ${selectedStayForEditor.shiftStatus === 'OPEN' ? 'активная' : 'закрытая'}` : ''}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="w-full md:max-w-xs">
+                                            <Select {...stayEditForm.register('shiftId')}>
+                                                <option value="">Без смены</option>
+                                                {selectedStayForEditor?.shiftId && !shiftList.some((shift) => shift.id === selectedStayForEditor.shiftId) && (
+                                                    <option value={selectedStayForEditor.shiftId}>
+                                                        №{selectedStayForEditor.shiftNumber ?? '?'} · {selectedStayForEditor.shiftManagerName ?? 'Менеджер'} · {selectedStayForEditor.shiftStatus === 'OPEN' ? 'активная' : 'закрытая'}
+                                                    </option>
+                                                )}
+                                                {shiftList.map((shift) => (
+                                                    <option key={`stay-shift-${shift.id}`} value={shift.id}>
+                                                        №{shift.number} · {shift.manager} · {shift.status === 'OPEN' ? 'активная' : 'закрытая'}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </div>
+                                    </div>
+                                </div>
                                 {data?.usesExtranets && (data.extranetNames?.length ?? 0) > 0 && (
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>Источник брони</label>

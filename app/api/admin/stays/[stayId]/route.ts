@@ -26,6 +26,7 @@ const updateStaySchema = z
         cardPaid: z.number().int().min(0).optional(),
         onlinePaid: z.number().int().min(0).optional(),
         paymentMethod: z.nativeEnum(PaymentMethod).optional().nullable(),
+        shiftId: z.string().cuid().optional().nullable(),
         notes: z.string().max(500).optional().nullable()
     })
     .refine((values) => Object.values(values).some((value) => value !== undefined), {
@@ -125,6 +126,32 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             onlinePaid?: number;
             bookingSource?: string | null;
         };
+        let requestedShift: { id: string; managerId: string } | null | undefined;
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'shiftId')) {
+            if (payload.shiftId) {
+                requestedShift = await prisma.shift.findFirst({
+                    where: {
+                        id: payload.shiftId,
+                        hotelId: stay.hotelId,
+                        hotel: { country }
+                    },
+                    select: {
+                        id: true,
+                        managerId: true
+                    }
+                });
+
+                if (!requestedShift) {
+                    return new NextResponse('Смена не найдена для этого отеля', { status: 400 });
+                }
+
+                updateData.shift = { connect: { id: requestedShift.id } };
+            } else {
+                requestedShift = null;
+                updateData.shift = { disconnect: true };
+            }
+        }
 
         if (payload.guestName !== undefined) {
             const trimmed = payload.guestName?.trim();
@@ -255,8 +282,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 data: updateData
             });
 
-            let ledgerShiftId = stay.shiftId;
-            let ledgerManagerId = stay.shift?.managerId ?? null;
+            let ledgerShiftId = result.shiftId;
+            let ledgerManagerId = requestedShift?.managerId ?? (ledgerShiftId === stay.shiftId ? stay.shift?.managerId ?? null : null);
             if (!ledgerShiftId && result.status === StayStatus.CHECKED_IN) {
                 const activeShift = await tx.shift.findFirst({
                     where: {
@@ -286,9 +313,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 payload.cardPaid !== undefined ||
                 payload.onlinePaid !== undefined ||
                 payload.amountPaid !== undefined ||
-                payload.paymentMethod !== undefined;
+                payload.paymentMethod !== undefined ||
+                payload.shiftId !== undefined;
 
-            if (shouldSyncStayLedger && ledgerShiftId) {
+            if (shouldSyncStayLedger) {
                 const linkedLedgerEntries = await tx.cashEntry.findMany({
                     where: {
                         stayId: stay.id,
@@ -302,12 +330,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 });
 
                 let legacyEntryIds: string[] = [];
-                if (linkedLedgerEntries.length === 0) {
+                const legacyShiftIds = Array.from(new Set([stay.shiftId, ledgerShiftId].filter((id): id is string => Boolean(id))));
+                if (linkedLedgerEntries.length === 0 && legacyShiftIds.length > 0) {
                     const legacyMetaCandidates = await tx.cashEntry.findMany({
                         where: {
                             stayId: null,
                             hotelId: stay.hotelId,
-                            shiftId: ledgerShiftId,
+                            shiftId: { in: legacyShiftIds },
                             entryType: LedgerEntryType.CASH_IN,
                             meta: {
                                 path: ['stayId'],
@@ -329,7 +358,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             where: {
                                 stayId: null,
                                 hotelId: stay.hotelId,
-                                shiftId: ledgerShiftId,
+                                shiftId: { in: legacyShiftIds },
                                 entryType: LedgerEntryType.CASH_IN,
                                 recordedAt: {
                                     gte: new Date(stayStart.getTime() - 15 * 60 * 1000),
@@ -383,6 +412,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 const nextLedgerParts = getCashLedgerParts(result);
                 const shouldRecreateLedger =
                     result.status !== StayStatus.CANCELLED &&
+                    Boolean(ledgerShiftId) &&
                     (
                         linkedLedgerEntries.length > 0 ||
                         legacyEntryIds.length > 0 ||
@@ -403,7 +433,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                         await tx.cashEntry.create({
                             data: {
                                 hotelId: stay.hotelId,
-                                shiftId: ledgerShiftId,
+                                shiftId: ledgerShiftId as string,
                                 managerId: ledgerManagerId,
                                 stayId: stay.id,
                                 entryType: LedgerEntryType.CASH_IN,

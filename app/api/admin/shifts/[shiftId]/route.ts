@@ -143,10 +143,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
             data.closedAt = closedAt;
         }
 
-        const updated = await prisma.shift.update({
-            where: { id: shift.id },
-            data,
-            include: { manager: true }
+        const updated = await prisma.$transaction(async (tx) => {
+            const result = await tx.shift.update({
+                where: { id: shift.id },
+                data,
+                include: { manager: true }
+            });
+
+            if (payload.managerId) {
+                await tx.cashEntry.updateMany({
+                    where: { shiftId: shift.id },
+                    data: { managerId: payload.managerId }
+                });
+            }
+
+            return result;
         });
 
         return NextResponse.json(updated);

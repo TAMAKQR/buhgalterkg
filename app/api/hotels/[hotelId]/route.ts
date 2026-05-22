@@ -43,6 +43,20 @@ const hotelDetailInclude = {
                             shift: { select: { number: true } },
                             manager: { select: { displayName: true } }
                         }
+                    },
+                    shift: {
+                        select: {
+                            id: true,
+                            number: true,
+                            status: true,
+                            openedAt: true,
+                            closedAt: true,
+                            manager: {
+                                select: {
+                                    displayName: true
+                                }
+                            }
+                        }
                     }
                 }
             } as never
@@ -50,7 +64,6 @@ const hotelDetailInclude = {
     },
     shifts: {
         orderBy: { openedAt: 'desc' },
-        take: 20,
         include: { manager: true }
     },
     assignments: {
@@ -111,6 +124,14 @@ type HotelStayRecord = RoomStay & {
         shift: { number: number } | null;
         manager: { displayName: string } | null;
     }>;
+    shift: {
+        id: string;
+        number: number;
+        status: ShiftStatus;
+        openedAt: Date;
+        closedAt: Date | null;
+        manager: { displayName: string };
+    } | null;
 };
 
 const cleaningChatIdSchema = z
@@ -176,7 +197,6 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             prisma.cashEntry.findMany({
                 where: { hotelId: params.hotelId },
                 orderBy: { recordedAt: 'desc' },
-                take: 50,
                 include: {
                     expenseCategory: {
                         select: {
@@ -358,6 +378,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         cardPaid: stay.cardPaid,
                         onlinePaid: stayRecord.onlinePaid,
                         bookingSource: stayRecord.bookingSource,
+                        shiftId: stayRecord.shift?.id ?? null,
+                        shiftNumber: stayRecord.shift?.number ?? null,
+                        shiftStatus: stayRecord.shift?.status ?? null,
+                        shiftOpenedAt: stayRecord.shift?.openedAt ?? null,
+                        shiftClosedAt: stayRecord.shift?.closedAt ?? null,
+                        shiftManagerName: stayRecord.shift?.manager.displayName ?? null,
                         transfers: stayRecord.transfers.map((transfer) => ({
                             id: transfer.id,
                             createdAt: transfer.createdAt,
