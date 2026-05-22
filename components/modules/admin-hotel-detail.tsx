@@ -75,6 +75,7 @@ interface LedgerEntryDetail {
     } | null;
     recordedAt: string;
     managerName?: string | null;
+    shiftId?: string | null;
     shiftNumber?: number | null;
 }
 
@@ -225,6 +226,17 @@ interface StayEditForm {
     shiftId: string;
     bookingSource: string;
     notes: string;
+}
+
+interface LedgerEditForm {
+    entryId: string;
+    shiftId: string;
+    entryType: LedgerEntryTypeValue;
+    method: LedgerPaymentMethodValue;
+    amount: number;
+    recordedAt: string;
+    categoryId: string;
+    note: string;
 }
 
 const createStayEditDefaults = (): StayEditForm => ({
@@ -474,9 +486,22 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const stayEditForm = useForm<StayEditForm>({
         defaultValues: createStayEditDefaults()
     });
+    const ledgerEditForm = useForm<LedgerEditForm>({
+        defaultValues: {
+            entryId: '',
+            shiftId: '',
+            entryType: 'CASH_IN',
+            method: 'CASH',
+            amount: 0,
+            recordedAt: '',
+            categoryId: '',
+            note: ''
+        }
+    });
 
     const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
+    const [editingLedgerEntry, setEditingLedgerEntry] = useState<LedgerEntryDetail | null>(null);
     const [isCreatingShift, setIsCreatingShift] = useState(false);
     const [isClearingHistory, setIsClearingHistory] = useState(false);
     const [isDeletingShift, setIsDeletingShift] = useState(false);
@@ -504,6 +529,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [removingExpenseCategoryId, setRemovingExpenseCategoryId] = useState<string | null>(null);
 
     const stayFormValues = stayEditForm.watch();
+    const ledgerFormValues = ledgerEditForm.watch();
     const hasStaySelection = Boolean(stayFormValues.stayId);
     const selectedStayForEditor = useMemo(() => {
         if (!data || !stayFormValues.stayId || !stayFormValues.roomId) {
@@ -1068,6 +1094,84 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             toast(String(error), 'error');
         } finally {
             setRemovingExpenseCategoryId(null);
+        }
+    };
+
+    const handleSelectLedgerEntryForEdit = (entry: LedgerEntryDetail) => {
+        setEditingLedgerEntry(entry);
+        ledgerEditForm.reset({
+            entryId: entry.id,
+            shiftId: entry.shiftId ?? '',
+            entryType: entry.entryType,
+            method: entry.method,
+            amount: entry.amount / 100,
+            recordedAt: toDateTimeInputValue(entry.recordedAt),
+            categoryId: entry.category?.id ?? '',
+            note: entry.note ?? ''
+        });
+    };
+
+    const handleCloseLedgerEditor = () => {
+        setEditingLedgerEntry(null);
+        ledgerEditForm.reset({
+            entryId: '',
+            shiftId: '',
+            entryType: 'CASH_IN',
+            method: 'CASH',
+            amount: 0,
+            recordedAt: '',
+            categoryId: '',
+            note: ''
+        });
+    };
+
+    const handleUpdateLedgerEntry = ledgerEditForm.handleSubmit(async (values) => {
+        if (!values.entryId) {
+            return;
+        }
+
+        const amount = toOptionalMinorValue(values.amount);
+        if (!amount || amount <= 0) {
+            ledgerEditForm.setError('amount', { type: 'manual', message: 'Укажите сумму операции' });
+            return;
+        }
+
+        try {
+            await request(`/api/admin/ledger/${values.entryId}`, {
+                method: 'PATCH',
+                body: {
+                    shiftId: values.shiftId || null,
+                    entryType: values.entryType,
+                    method: values.method,
+                    amount,
+                    recordedAt: fromDateTimeInputValue(values.recordedAt) ?? undefined,
+                    categoryId: values.entryType === 'CASH_OUT' ? values.categoryId || null : null,
+                    note: normalizeOptionalText(values.note)
+                }
+            });
+            await mutate();
+            toast('Операция обновлена', 'success');
+            handleCloseLedgerEditor();
+        } catch (error) {
+            console.error(error);
+            toast(String(error), 'error');
+        }
+    });
+
+    const handleDeleteLedgerEntry = async () => {
+        const entryId = editingLedgerEntry?.id;
+        if (!entryId) {
+            return;
+        }
+
+        try {
+            await request(`/api/admin/ledger/${entryId}`, { method: 'DELETE' });
+            await mutate();
+            toast('Операция удалена', 'success');
+            handleCloseLedgerEditor();
+        } catch (error) {
+            console.error(error);
+            toast(String(error), 'error');
         }
     };
 
@@ -1704,7 +1808,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         <Badge label={ledgerMethodLabels[entry.method]} />
                                                                         {categoryName ? <Badge label={categoryName} /> : null}
                                                                     </div>
-                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerDisplayLabel(entry)}</p>
+                                                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                                                        <p className="text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerDisplayLabel(entry)}</p>
+                                                                        <Button
+                                                                            type="button"
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
+                                                                            onClick={() => handleSelectLedgerEntryForEdit(entry)}
+                                                                        >
+                                                                            Редактировать
+                                                                        </Button>
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         })}
@@ -2287,6 +2402,101 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <Button type="button" variant="ghost" className="border border-slate-200/80 dark:border-white/20" onClick={handleCloseStayEditor}>
                                         Отменить
                                     </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {editingLedgerEntry && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center px-2 py-4 sm:px-6 sm:py-6">
+                        <div className="absolute inset-0 bg-black/70" onClick={handleCloseLedgerEditor} />
+                        <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_32px_90px_-38px_rgba(15,23,42,0.65)] backdrop-blur sm:p-5 dark:border-white/[0.08] dark:bg-[#090d16]/95 dark:text-white">
+                            <div className="mb-4 flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Редактирование операции</p>
+                                    <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+                                        {ledgerDisplayLabel(editingLedgerEntry)} · {formatCurrency(editingLedgerEntry.amount)}
+                                    </h3>
+                                </div>
+                                <Button type="button" variant="ghost" size="sm" className="border border-slate-200/80 dark:border-white/10" onClick={handleCloseLedgerEditor}>
+                                    ×
+                                </Button>
+                            </div>
+                            <form className="space-y-4" onSubmit={handleUpdateLedgerEntry}>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Тип операции</label>
+                                        <Select {...ledgerEditForm.register('entryType')}>
+                                            <option value="CASH_IN">Поступление</option>
+                                            <option value="CASH_OUT">Расход</option>
+                                            <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
+                                            <option value="ADJUSTMENT">Корректировка</option>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Способ оплаты</label>
+                                        <Select {...ledgerEditForm.register('method')}>
+                                            <option value="CASH">Наличные</option>
+                                            <option value="CARD">Безнал</option>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Сумма (${hotelCur || 'KGS'})`}</label>
+                                        <Input type="number" step="0.01" min="0.01" {...ledgerEditForm.register('amount', { valueAsNumber: true })} />
+                                        {ledgerEditForm.formState.errors.amount && (
+                                            <p className="text-xs text-rose-400">{ledgerEditForm.formState.errors.amount.message}</p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Время операции</label>
+                                        <Input type="datetime-local" step="60" {...ledgerEditForm.register('recordedAt')} />
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Смена</label>
+                                        <Select {...ledgerEditForm.register('shiftId')}>
+                                            <option value="">Без смены</option>
+                                            {editingLedgerEntry.shiftId && !shiftList.some((shift) => shift.id === editingLedgerEntry.shiftId) && (
+                                                <option value={editingLedgerEntry.shiftId}>
+                                                    №{editingLedgerEntry.shiftNumber ?? '?'} · текущая операция
+                                                </option>
+                                            )}
+                                            {shiftList.map((shift) => (
+                                                <option key={`ledger-shift-${shift.id}`} value={shift.id}>
+                                                    №{shift.number} · {shift.manager} · {shift.status === 'OPEN' ? 'активная' : 'закрытая'}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Категория расхода</label>
+                                        <Select
+                                            {...ledgerEditForm.register('categoryId')}
+                                            disabled={ledgerFormValues.entryType !== 'CASH_OUT'}
+                                        >
+                                            <option value="">Без категории</option>
+                                            {(data.expenseCategories ?? []).map((category) => (
+                                                <option key={`ledger-category-${category.id}`} value={category.id}>{category.name}</option>
+                                            ))}
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className={modalLabelClass}>Комментарий</label>
+                                    <TextArea rows={3} placeholder="Назначение операции" {...ledgerEditForm.register('note')} />
+                                </div>
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <Button type="button" variant="ghost" className="border border-rose-200/80 text-rose-500 hover:bg-rose-50 dark:border-rose-400/30 dark:text-rose-300 dark:hover:bg-rose-500/10" onClick={handleDeleteLedgerEntry}>
+                                        Удалить операцию
+                                    </Button>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <Button type="button" variant="ghost" className="border border-slate-200/80 dark:border-white/20" onClick={handleCloseLedgerEditor}>
+                                            Отмена
+                                        </Button>
+                                        <Button type="submit">Сохранить</Button>
+                                    </div>
                                 </div>
                             </form>
                         </div>

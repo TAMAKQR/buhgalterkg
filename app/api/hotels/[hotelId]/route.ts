@@ -205,7 +205,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         }
                     },
                     manager: true,
-                    shift: { select: { number: true } }
+                    shift: { select: { id: true, number: true } }
                 }
             }),
             prisma.cashEntry.groupBy({
@@ -463,6 +463,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     : null,
                 recordedAt: entry.recordedAt,
                 managerName: entry.manager?.displayName ?? null,
+                shiftId: entry.shift?.id ?? null,
                 shiftNumber: entry.shift?.number ?? null
             })),
             expenseCategories: hotelRecord.expenseCategories.map((category) => ({
