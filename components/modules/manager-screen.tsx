@@ -1244,11 +1244,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             entry.entryType === 'CASH_IN'
                                                                 ? 'Приход'
                                                                 : entry.entryType === 'CASH_OUT'
-                                                                    ? 'Расход'
+                                                                    ? isCollectionLedgerEntry(entry)
+                                                                        ? 'Инкассация'
+                                                                        : 'Расход'
                                                                     : entry.entryType === 'MANAGER_PAYOUT'
                                                                         ? 'Выплата'
                                                                         : 'Корр.';
-                                                        const amountClass = signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300';
+                                                        const amountClass = signedAmount >= 0
+                                                            ? 'text-emerald-300'
+                                                            : isCollectionLedgerEntry(entry)
+                                                                ? 'text-cyan-300'
+                                                                : 'text-rose-300';
                                                         const detailLabel = [entry.category?.name?.trim(), entry.note?.trim()].filter(Boolean).join(' · ');
 
                                                         return (

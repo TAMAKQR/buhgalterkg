@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
 import { parseDateOnly } from '@/lib/timezone';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
             room: { select: { label: true } },
         } as const;
 
-        const [hotel, ledgerGroups, ledgerEntries, shifts, stays, rooms] = await prisma.$transaction([
+        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shifts, stays, rooms] = await prisma.$transaction([
             prisma.hotel.findUnique({
                 where: { id: hotelId },
                 select: {
@@ -115,6 +116,19 @@ export async function GET(request: NextRequest) {
                 _sum: { amount: true },
             }),
             prisma.cashEntry.findMany({
+                where: {
+                    ...ledgerWhere,
+                    entryType: LedgerEntryType.CASH_OUT,
+                },
+                select: {
+                    amount: true,
+                    method: true,
+                    note: true,
+                    entryType: true,
+                    expenseCategory: { select: { name: true } },
+                },
+            }),
+            prisma.cashEntry.findMany({
                 where: ledgerWhere,
                 orderBy: { recordedAt: 'desc' },
                 take: 200,
@@ -125,6 +139,7 @@ export async function GET(request: NextRequest) {
                     amount: true,
                     note: true,
                     recordedAt: true,
+                    expenseCategory: { select: { name: true } },
                     shift: { select: { number: true } },
                 },
             }),
@@ -173,6 +188,22 @@ export async function GET(request: NextRequest) {
             bucket.total += amount;
             if (group.method === PaymentMethod.CASH) bucket.cash += amount;
             else if (group.method === PaymentMethod.CARD) bucket.card += amount;
+        }
+        const collectionTotals = createBreakdown();
+        for (const entry of collectionEntries) {
+            if (!isCollectionLedgerEntry(entry)) {
+                continue;
+            }
+            const bucket = ledgerTotals[LedgerEntryType.CASH_OUT];
+            bucket.total -= entry.amount;
+            collectionTotals.total += entry.amount;
+            if (entry.method === PaymentMethod.CASH) {
+                bucket.cash -= entry.amount;
+                collectionTotals.cash += entry.amount;
+            } else if (entry.method === PaymentMethod.CARD) {
+                bucket.card -= entry.amount;
+                collectionTotals.card += entry.amount;
+            }
         }
 
         const occupiedCount = rooms.filter((r) => r.status === 'OCCUPIED').length;
@@ -245,10 +276,16 @@ export async function GET(request: NextRequest) {
                     cash: ledgerTotals[LedgerEntryType.CASH_OUT].cash,
                     card: ledgerTotals[LedgerEntryType.CASH_OUT].card,
                 },
+                collections: collectionTotals.total,
+                collectionsBreakdown: {
+                    cash: collectionTotals.cash,
+                    card: collectionTotals.card,
+                },
                 payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].total,
                 adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT].total,
                 net: ledgerTotals[LedgerEntryType.CASH_IN].total
                     - ledgerTotals[LedgerEntryType.CASH_OUT].total
+                    - collectionTotals.total
                     - ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].total
                     + ledgerTotals[LedgerEntryType.ADJUSTMENT].total,
             },
@@ -301,6 +338,7 @@ export async function GET(request: NextRequest) {
                 method: e.method,
                 amount: e.amount,
                 note: e.note,
+                categoryName: e.expenseCategory?.name ?? null,
                 recordedAt: e.recordedAt.toISOString(),
                 shiftNumber: e.shift?.number ?? null,
             })),

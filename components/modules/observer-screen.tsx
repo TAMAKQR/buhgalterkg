@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import type { SessionUser } from '@/lib/types';
 import { useCookieApi } from '@/hooks/useCookieApi';
 import { formatDateTime, formatMoney } from '@/lib/timezone';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 /* ── Types ── */
 
@@ -26,6 +27,8 @@ interface ObserverStateResponse {
         cashInBreakdown: { cash: number; card: number };
         cashOut: number;
         cashOutBreakdown: { cash: number; card: number };
+        collections: number;
+        collectionsBreakdown: { cash: number; card: number };
         payouts: number;
         adjustments: number;
         net: number;
@@ -75,6 +78,7 @@ interface ObserverStateResponse {
         method: string;
         amount: number;
         note: string | null;
+        categoryName: string | null;
         recordedAt: string;
         shiftNumber: number | null;
     }>;
@@ -121,6 +125,12 @@ const ENTRY_COLORS: Record<string, string> = {
     MANAGER_PAYOUT: 'text-amber-400',
     ADJUSTMENT: 'text-sky-400',
 };
+
+const entryLabel = (entry: ObserverStateResponse['ledger'][number]) =>
+    isCollectionLedgerEntry(entry) ? 'Инкассация' : ENTRY_LABELS[entry.entryType] || entry.entryType;
+
+const entryColor = (entry: ObserverStateResponse['ledger'][number]) =>
+    isCollectionLedgerEntry(entry) ? 'text-cyan-300' : ENTRY_COLORS[entry.entryType] || 'text-white';
 
 const fc = (v: number, cur?: string) => formatMoney(v, cur);
 
@@ -418,9 +428,10 @@ function OverviewTab({ data, fmt, cur }: { data: ObserverStateResponse; fmt: (v:
             </Card>
 
             {/* Totals grid */}
-            <div className="grid grid-cols-2 gap-2 xs:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 xs:grid-cols-5">
                 <MiniCard label="Приход" value={fmt(t.cashIn)} className="text-emerald-400" />
                 <MiniCard label="Расход" value={fmt(t.cashOut)} className="text-rose-400" />
+                <MiniCard label="Инкас." value={fmt(t.collections)} className="text-cyan-300" />
                 <MiniCard label="Выплаты" value={fmt(t.payouts)} className="text-amber-400" />
                 <MiniCard label="Коррект." value={fmt(t.adjustments)} className="text-sky-400" />
             </div>
@@ -432,6 +443,7 @@ function OverviewTab({ data, fmt, cur }: { data: ObserverStateResponse; fmt: (v:
                     segments={[
                         { value: t.cashIn, color: '#34d399', label: 'Вход', textColor: 'text-emerald-300' },
                         { value: t.cashOut + t.payouts, color: '#f87171', label: 'Выход', textColor: 'text-rose-300' },
+                        { value: t.collections, color: '#22d3ee', label: 'Инкассация', textColor: 'text-cyan-300' },
                     ]}
                     centerLabel={netPositive ? 'Профицит' : 'Дефицит'}
                     centerValue={fmt(t.net)}
@@ -441,11 +453,11 @@ function OverviewTab({ data, fmt, cur }: { data: ObserverStateResponse; fmt: (v:
                 {/* Payment method donut */}
                 <DonutChart
                     segments={[
-                        { value: t.cashInBreakdown.cash + t.cashOutBreakdown.cash, color: '#60a5fa', label: 'Наличные', textColor: 'text-blue-300' },
-                        { value: t.cashInBreakdown.card + t.cashOutBreakdown.card, color: '#a78bfa', label: 'Карта', textColor: 'text-violet-300' },
+                        { value: t.cashInBreakdown.cash + t.cashOutBreakdown.cash + t.collectionsBreakdown.cash, color: '#60a5fa', label: 'Наличные', textColor: 'text-blue-300' },
+                        { value: t.cashInBreakdown.card + t.cashOutBreakdown.card + t.collectionsBreakdown.card, color: '#a78bfa', label: 'Карта', textColor: 'text-violet-300' },
                     ]}
                     centerLabel="Всего"
-                    centerValue={fmt(t.cashIn + t.cashOut)}
+                    centerValue={fmt(t.cashIn + t.cashOut + t.collections)}
                     centerColor="text-white"
                 />
 
@@ -453,11 +465,12 @@ function OverviewTab({ data, fmt, cur }: { data: ObserverStateResponse; fmt: (v:
                 <DonutChart
                     segments={[
                         { value: t.cashOut, color: '#f87171', label: 'Расходы', textColor: 'text-rose-300' },
+                        { value: t.collections, color: '#22d3ee', label: 'Инкассация', textColor: 'text-cyan-300' },
                         { value: t.payouts, color: '#fb923c', label: 'Выплаты', textColor: 'text-orange-300' },
                         { value: Math.abs(t.adjustments), color: '#facc15', label: 'Корректировки', textColor: 'text-yellow-300' },
                     ]}
                     centerLabel="Расходы"
-                    centerValue={fmt(t.cashOut + t.payouts + Math.abs(t.adjustments))}
+                    centerValue={fmt(t.cashOut + t.collections + t.payouts + Math.abs(t.adjustments))}
                     centerColor="text-rose-200"
                 />
             </div>
@@ -567,16 +580,16 @@ function LedgerTab({
             {ledger.map((e) => (
                 <div key={e.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
                     <div className="min-w-0">
-                        <p className={`text-sm font-medium ${ENTRY_COLORS[e.entryType] || 'text-white'}`}>
-                            {ENTRY_LABELS[e.entryType] || e.entryType}
+                        <p className={`text-sm font-medium ${entryColor(e)}`}>
+                            {entryLabel(e)}
                             {e.shiftNumber != null && (
                                 <span className="text-white/30 text-xs ml-1">#{e.shiftNumber}</span>
                             )}
                         </p>
-                        {e.note && <p className="text-[11px] text-white/30 truncate">{e.note}</p>}
+                        {(e.note || e.categoryName) && <p className="text-[11px] text-white/30 truncate">{e.note || e.categoryName}</p>}
                         <p className="text-[11px] text-white/20">{fmtDate(e.recordedAt)} · {e.method === 'CASH' ? 'Нал' : 'Карта'}</p>
                     </div>
-                    <span className={`text-sm font-medium shrink-0 ${ENTRY_COLORS[e.entryType] || 'text-white'}`}>
+                    <span className={`text-sm font-medium shrink-0 ${entryColor(e)}`}>
                         {fmt(e.amount)}
                     </span>
                 </div>

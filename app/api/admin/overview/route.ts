@@ -284,6 +284,7 @@ export async function GET(request: NextRequest) {
             [LedgerEntryType.MANAGER_PAYOUT]: createBreakdown(),
             [LedgerEntryType.ADJUSTMENT]: createBreakdown(),
         };
+        const collectionTotals = createBreakdown();
 
         for (const group of ledgerGroups) {
             const amount = group._sum?.amount ?? 0;
@@ -302,10 +303,13 @@ export async function GET(request: NextRequest) {
             }
             const bucket = ledgerTotals[LedgerEntryType.CASH_OUT];
             bucket.total -= entry.amount;
+            collectionTotals.total += entry.amount;
             if (entry.method === PaymentMethod.CASH) {
                 bucket.cash -= entry.amount;
+                collectionTotals.cash += entry.amount;
             } else if (entry.method === PaymentMethod.CARD) {
                 bucket.card -= entry.amount;
+                collectionTotals.card += entry.amount;
             }
         }
 
@@ -319,6 +323,11 @@ export async function GET(request: NextRequest) {
             cashOutBreakdown: {
                 cash: ledgerTotals[LedgerEntryType.CASH_OUT].cash,
                 card: ledgerTotals[LedgerEntryType.CASH_OUT].card,
+            },
+            collections: collectionTotals.total,
+            collectionsBreakdown: {
+                cash: collectionTotals.cash,
+                card: collectionTotals.card,
             },
             payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT].total,
             payoutsBreakdown: {
@@ -455,7 +464,7 @@ export async function GET(request: NextRequest) {
             },
             totals: {
                 ...totals,
-                netCash: totals.cashIn - totals.cashOut - totals.payouts + totals.adjustments,
+                netCash: totals.cashIn - totals.cashOut - totals.collections - totals.payouts + totals.adjustments,
             },
             occupancy: {
                 hotels: hotelCount,
@@ -487,7 +496,6 @@ export async function GET(request: NextRequest) {
             },
             dailySeries,
             recentExpenses: recentExpenses
-                .filter((entry) => !isCollectionLedgerEntry(entry))
                 .map((entry) => ({
                     id: entry.id,
                     hotelId: entry.hotelId,

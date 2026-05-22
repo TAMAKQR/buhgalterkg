@@ -207,9 +207,6 @@ export async function GET(request: NextRequest) {
         }>>();
 
         for (const entry of recentExpenseEntries) {
-            if (isCollectionLedgerEntry(entry)) {
-                continue;
-            }
             const bucket = recentExpensesMap.get(entry.hotelId) ?? [];
             if (bucket.length < 3) {
                 bucket.push({
@@ -275,7 +272,10 @@ export async function GET(request: NextRequest) {
                     cashIn: summary[LedgerEntryType.CASH_IN].total,
                     cashInBreakdown: toBreakdown(LedgerEntryType.CASH_IN),
                     cashOut: summary[LedgerEntryType.CASH_OUT].total,
-                    cashOutBreakdown: toBreakdown(LedgerEntryType.CASH_OUT)
+                    cashOutBreakdown: toBreakdown(LedgerEntryType.CASH_OUT),
+                    collections: collectionEntries
+                        .filter((entry) => entry.hotelId === hotel.id && isCollectionLedgerEntry(entry))
+                        .reduce((total, entry) => total + entry.amount, 0)
                 };
             })(),
             recentExpenses: recentExpensesMap.get(hotel.id) ?? []

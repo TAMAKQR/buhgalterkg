@@ -133,6 +133,7 @@ interface HotelDetailPayload {
     financials: {
         cashIn: number;
         cashOut: number;
+        collections: number;
         payouts: number;
         adjustments: number;
         netCash: number;
@@ -293,6 +294,15 @@ const ledgerSignSymbol: Record<LedgerEntryTypeValue, string> = {
     MANAGER_PAYOUT: '-',
     ADJUSTMENT: '±'
 };
+
+const ledgerDisplayLabel = (entry: LedgerEntryDetail) =>
+    isCollectionLedgerEntry(entry) ? 'Инкассация' : ledgerEntryTypeLabels[entry.entryType];
+
+const ledgerDisplayTone = (entry: LedgerEntryDetail): 'default' | 'success' | 'warning' | 'danger' =>
+    isCollectionLedgerEntry(entry) ? 'default' : ledgerEntryTone[entry.entryType];
+
+const ledgerDisplayAmountClass = (entry: LedgerEntryDetail) =>
+    isCollectionLedgerEntry(entry) ? 'text-cyan-300' : ledgerAmountClass[entry.entryType];
 
 const ledgerMethodLabels: Record<LedgerPaymentMethodValue, string> = {
     CASH: 'Наличные',
@@ -707,6 +717,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const selectedShiftExpenseOut = useMemo(
         () => selectedShiftOutflows.reduce((total, entry) => total + entry.amount, 0),
         [selectedShiftOutflows]
+    );
+
+    const selectedShiftCollections = useMemo(
+        () => selectedShiftTransactions
+            .filter((entry) => isCollectionLedgerEntry(entry))
+            .reduce((total, entry) => total + entry.amount, 0),
+        [selectedShiftTransactions]
     );
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
@@ -1318,7 +1335,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         {
             label: 'Касса',
             value: formatCurrency(data.financials.netCash),
-            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано`
+            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано · ${formatCurrency(data.financials.collections)} инкас.`
         },
         {
             label: 'Команда',
@@ -1352,6 +1369,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 label: 'Списания',
                 value: formatCurrency(selectedShiftExpenseOut),
                 valueClass: 'text-rose-300'
+            },
+            {
+                label: 'Инкассация',
+                value: formatCurrency(selectedShiftCollections),
+                valueClass: 'text-cyan-300'
             }
         ]
         : [];
@@ -1546,6 +1568,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <span>{formatCurrency(selectedShiftExpenseOut)}</span>
                                                         </button>
                                                         <p className="flex items-center justify-between">
+                                                            <span>Инкассация</span>
+                                                            <span className="text-cyan-300">{formatCurrency(selectedShiftCollections)}</span>
+                                                        </p>
+                                                        <p className="flex items-center justify-between">
                                                             <span>Выплаты</span>
                                                             <span className="text-amber-200">{formatCurrency(selectedShiftCash?.payouts ?? 0)}</span>
                                                         </p>
@@ -1656,7 +1682,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <p className="text-sm text-slate-500 dark:text-white/70">{entry.managerName ?? 'Система'}</p>
                                                                         </div>
                                                                         <div className="text-right">
-                                                                            <p className={`text-lg font-semibold ${ledgerAmountClass[entry.entryType]}`}>
+                                                                            <p className={`text-lg font-semibold ${ledgerDisplayAmountClass(entry)}`}>
                                                                                 {ledgerSignSymbol[entry.entryType]}
                                                                                 {formatCurrency(entry.amount)}
                                                                             </p>
@@ -1664,11 +1690,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         </div>
                                                                     </div>
                                                                     <div className="mt-3 flex flex-wrap gap-2">
-                                                                        <Badge label={ledgerEntryTypeLabels[entry.entryType]} tone={ledgerEntryTone[entry.entryType]} />
+                                                                        <Badge label={ledgerDisplayLabel(entry)} tone={ledgerDisplayTone(entry)} />
                                                                         <Badge label={ledgerMethodLabels[entry.method]} />
                                                                         {categoryName ? <Badge label={categoryName} /> : null}
                                                                     </div>
-                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerEntryTypeLabels[entry.entryType]}</p>
+                                                                    <p className="mt-2 text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerDisplayLabel(entry)}</p>
                                                                 </div>
                                                             );
                                                         })}

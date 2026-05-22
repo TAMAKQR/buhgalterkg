@@ -9,6 +9,7 @@ import { calculateBonusFromTiers } from '@/lib/bonus';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { sanitizeExtranetNames } from '@/lib/stays';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,7 +149,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         assertAdmin(session);
         const country = getCountryFromRequest(_request);
 
-        const [hotel, ledgerGroups, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
+        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
             prisma.hotel.findFirst({
                 where: { id: params.hotelId, country },
                 include: hotelDetailInclude
@@ -158,6 +159,19 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 orderBy: { entryType: 'asc' },
                 where: { hotelId: params.hotelId },
                 _sum: { amount: true }
+            }),
+            prisma.cashEntry.findMany({
+                where: {
+                    hotelId: params.hotelId,
+                    entryType: LedgerEntryType.CASH_OUT,
+                },
+                select: {
+                    amount: true,
+                    method: true,
+                    note: true,
+                    entryType: true,
+                    expenseCategory: { select: { name: true } },
+                },
             }),
             prisma.cashEntry.findMany({
                 where: { hotelId: params.hotelId },
@@ -215,6 +229,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         for (const group of ledgerGroups) {
             ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
         }
+        const collectionsTotal = collectionEntries.reduce(
+            (total, entry) => total + (isCollectionLedgerEntry(entry) ? entry.amount : 0),
+            0
+        );
+        ledgerTotals[LedgerEntryType.CASH_OUT] -= collectionsTotal;
 
         const shiftLedgerTotals = new Map<
             string,
@@ -433,11 +452,13 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             financials: {
                 cashIn: ledgerTotals[LedgerEntryType.CASH_IN],
                 cashOut: ledgerTotals[LedgerEntryType.CASH_OUT],
+                collections: collectionsTotal,
                 payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT],
                 adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT],
                 netCash:
                     ledgerTotals[LedgerEntryType.CASH_IN] -
                     ledgerTotals[LedgerEntryType.CASH_OUT] -
+                    collectionsTotal -
                     ledgerTotals[LedgerEntryType.MANAGER_PAYOUT] +
                     ledgerTotals[LedgerEntryType.ADJUSTMENT]
             }

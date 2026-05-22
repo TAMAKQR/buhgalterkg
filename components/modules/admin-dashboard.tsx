@@ -9,6 +9,7 @@ import { useCountryContext } from '@/hooks/useCountryContext';
 import { getCountryConfig, type CountryCode } from "@/lib/country";
 import type { SessionUser } from "@/lib/types";
 import { formatDateTime as fdt, formatMoney } from "@/lib/timezone";
+import { isCollectionLedgerEntry } from "@/lib/ledger";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -75,6 +76,7 @@ type AdminHotelSummary = {
         cashInBreakdown: PaymentSplit;
         cashOut: number;
         cashOutBreakdown: PaymentSplit;
+        collections?: number;
     };
     recentExpenses?: ExpenseEntry[];
 };
@@ -90,6 +92,8 @@ type AdminOverview = {
         cashInBreakdown: PaymentSplit;
         cashOut: number;
         cashOutBreakdown: PaymentSplit;
+        collections: number;
+        collectionsBreakdown: PaymentSplit;
         payouts: number;
         payoutsBreakdown: PaymentSplit;
         adjustments: number;
@@ -255,22 +259,26 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 const paymentMethodLabel = (method: "CASH" | "CARD") => (method === "CASH" ? "нал" : "карта");
-const expenseTypeLabel = (entryType: ExpenseEntry["entryType"]) => {
-    if (entryType === "MANAGER_PAYOUT") return "выплата";
-    if (entryType === "ADJUSTMENT") return "корректировка";
+const expenseTypeLabel = (entry: ExpenseEntry) => {
+    if (isCollectionLedgerEntry(entry)) return "Инкассация";
+    if (entry.entryType === "MANAGER_PAYOUT") return "выплата";
+    if (entry.entryType === "ADJUSTMENT") return "корректировка";
     return "расход";
 };
 const expenseReasonLabel = (entry: ExpenseEntry) => {
     if (entry.categoryName?.trim()) return entry.categoryName.trim();
     if (entry.note?.trim()) return entry.note.trim();
+    if (isCollectionLedgerEntry(entry)) return "Инкассация";
     if (entry.entryType === "MANAGER_PAYOUT") return "Выплата менеджеру";
     if (entry.entryType === "ADJUSTMENT") return "Корректировка";
     return "Без категории";
 };
 const expenseNoteLabel = (entry: ExpenseEntry) => entry.note?.trim() || null;
-const expenseAmountPrefix = (entryType: ExpenseEntry["entryType"]) => (entryType === "ADJUSTMENT" ? "+" : "-");
-const expenseAmountTone = (entryType: ExpenseEntry["entryType"]) =>
-    entryType === "ADJUSTMENT"
+const expenseAmountPrefix = (entry: ExpenseEntry) => (entry.entryType === "ADJUSTMENT" ? "+" : "-");
+const expenseAmountTone = (entry: ExpenseEntry) =>
+    isCollectionLedgerEntry(entry)
+        ? "text-cyan-600 dark:text-cyan-300"
+        : entry.entryType === "ADJUSTMENT"
         ? "text-sky-600 dark:text-sky-300"
         : "text-rose-500 dark:text-rose-300";
 
@@ -491,14 +499,14 @@ function ExpenseFeed({
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{note}</p>
                                     <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">
-                                        {expenseTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.method)}
+                                        {expenseTypeLabel(entry)} · {paymentMethodLabel(entry.method)}
                                         {entry.managerName ? ` · ${entry.managerName}` : ""}
                                         {showHotelName && entry.hotelName ? ` · ${entry.hotelName}` : ""}
                                     </p>
                                     {noteDetails && entry.categoryName ? <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{noteDetails}</p> : null}
                                 </div>
                                 <div className="text-right">
-                                    <p className={`text-sm font-semibold ${expenseAmountTone(entry.entryType)}`}>{expenseAmountPrefix(entry.entryType)}{formatCurrency(entry.amount, currency ?? undefined)}</p>
+                                    <p className={`text-sm font-semibold ${expenseAmountTone(entry)}`}>{expenseAmountPrefix(entry)}{formatCurrency(entry.amount, currency ?? undefined)}</p>
                                     <p className="mt-1 text-[11px] text-slate-500 dark:text-white/35">{formatDT(entry.recordedAt, timezone ?? undefined)}</p>
                                 </div>
                             </div>
@@ -583,7 +591,7 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                 entry.managerName,
                 entry.hotelName,
                 paymentMethodLabel(entry.method),
-                expenseTypeLabel(entry.entryType),
+                expenseTypeLabel(entry),
             ]
                 .filter(Boolean)
                 .join(" ")
@@ -632,15 +640,15 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                                             {noteDetails && entry.categoryName ? <p className="mt-1 text-[12px] text-slate-500 dark:text-white/45">{noteDetails}</p> : null}
                                         </td>
                                         <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
-                                            <p>{expenseTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.method)}</p>
+                                            <p>{expenseTypeLabel(entry)} · {paymentMethodLabel(entry.method)}</p>
                                             {entry.managerName ? <p className="mt-1">{entry.managerName}</p> : null}
                                             {showHotelName && entry.hotelName ? <p className="mt-1">{entry.hotelName}</p> : null}
                                         </td>
                                         <td className="px-3 py-3 text-[12px] text-slate-500 dark:text-white/45">
                                             {formatDT(entry.recordedAt, timezone ?? undefined)}
                                         </td>
-                                        <td className={`px-3 py-3 text-right font-semibold ${expenseAmountTone(entry.entryType)}`}>
-                                            {expenseAmountPrefix(entry.entryType)}{formatCurrency(entry.amount, currency)}
+                                        <td className={`px-3 py-3 text-right font-semibold ${expenseAmountTone(entry)}`}>
+                                            {expenseAmountPrefix(entry)}{formatCurrency(entry.amount, currency)}
                                         </td>
                                     </tr>
                                 );
@@ -819,15 +827,17 @@ const PaymentMethodChart = ({ cashTotal, cardTotal, currency }: PaymentMethodCha
 
 type ExpenseStructureChartProps = {
     cashOut: number;
+    collections: number;
     payouts: number;
     adjustments: number;
     currency?: string;
 };
 
-const ExpenseStructureChart = ({ cashOut, payouts, adjustments, currency }: ExpenseStructureChartProps) => {
-    const total = (cashOut || 0) + (payouts || 0) + Math.abs(adjustments || 0);
+const ExpenseStructureChart = ({ cashOut, collections, payouts, adjustments, currency }: ExpenseStructureChartProps) => {
+    const total = (cashOut || 0) + (collections || 0) + (payouts || 0) + Math.abs(adjustments || 0);
     const segments: DonutSegment[] = [
         { value: cashOut || 0, color: "#f87171", label: "Расходы", textColor: "text-rose-600 dark:text-rose-300" },
+        { value: collections || 0, color: "#22d3ee", label: "Инкассация", textColor: "text-cyan-600 dark:text-cyan-300" },
         { value: payouts || 0, color: "#fb923c", label: "Выплаты", textColor: "text-orange-600 dark:text-orange-300" },
         { value: Math.abs(adjustments || 0), color: "#facc15", label: "Корректировки", textColor: "text-yellow-600 dark:text-yellow-300" },
     ];
@@ -1419,9 +1429,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             ["Вход (всего)", fc(t.cashIn)],
             ["  вход нал", fc(t.cashInBreakdown.cash)],
             ["  вход карта", fc(t.cashInBreakdown.card)],
-            ["Выход (всего)", fc(t.cashOut)],
+            ["Выход (всего)", fc(t.cashOut + t.collections)],
             ["  выход нал", fc(t.cashOutBreakdown.cash)],
             ["  выход карта", fc(t.cashOutBreakdown.card)],
+            ["Инкассация", fc(t.collections)],
             ["Выплаты", fc(t.payouts)],
             ["Корректировки", fc(t.adjustments)],
             ["Загрузка", formatPercent(o.rate)],
@@ -1588,9 +1599,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                         <SummaryCard
                                             label="Выход"
-                                            value={formatCurrency(overview.totals.cashOut, overviewCurrency)}
+                                            value={formatCurrency(overview.totals.cashOut + overview.totals.collections, overviewCurrency)}
                                             valueColor="text-rose-400"
-                                            detail={`нал ${formatCurrency(overview.totals.cashOutBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashOutBreakdown.card, overviewCurrency)}`}
+                                            detail={`расход ${formatCurrency(overview.totals.cashOut, overviewCurrency)} · инкас ${formatCurrency(overview.totals.collections, overviewCurrency)}`}
                                         />
                                         <Card className="overflow-hidden p-4 text-light-text dark:text-white">
                                             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Загрузка</p>
@@ -1606,17 +1617,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         )}
                                         <AnalyticsFlowChart
                                             inflow={overview.totals.cashIn}
-                                            outflow={overview.totals.cashOut}
+                                            outflow={overview.totals.cashOut + overview.totals.collections}
                                             net={overview.totals.netCash}
                                             currency={overviewCurrency}
                                         />
                                         <PaymentMethodChart
-                                            cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash}
-                                            cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card}
+                                            cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash + overview.totals.collectionsBreakdown.cash}
+                                            cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card + overview.totals.collectionsBreakdown.card}
                                             currency={overviewCurrency}
                                         />
                                         <ExpenseStructureChart
                                             cashOut={overview.totals.cashOut}
+                                            collections={overview.totals.collections}
                                             payouts={overview.totals.payouts}
                                             adjustments={overview.totals.adjustments}
                                             currency={overviewCurrency}
@@ -1658,7 +1670,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             {!isLoading &&
                                 overviewHotels.map((hotel) => {
                                     const inflow = hotel.ledger?.cashIn ?? 0;
-                                    const outflow = hotel.ledger?.cashOut ?? 0;
+                                    const outflow = (hotel.ledger?.cashOut ?? 0) + (hotel.ledger?.collections ?? 0);
 
                                     return (
                                         <Card
