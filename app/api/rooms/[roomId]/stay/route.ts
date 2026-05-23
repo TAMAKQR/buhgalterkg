@@ -12,8 +12,8 @@ import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, 
 export const dynamic = 'force-dynamic';
 
 const staySchema = z.object({
-    shiftId: z.string().cuid(),
-    intent: z.enum(['checkin', 'checkout', 'extend', 'transfer']),
+    shiftId: z.string().cuid().optional(),
+    intent: z.enum(['book', 'checkin', 'checkout', 'extend', 'transfer']),
     guestName: z.string().optional(),
     guestPhone: z.string().max(40).optional().nullable(),
     companyName: z.string().max(120).optional().nullable(),
@@ -66,6 +66,67 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
 
         if ((payload.intent === 'checkin' || payload.intent === 'extend' || payload.intent === 'transfer') && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
             return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
+        }
+
+        if (payload.intent === 'book') {
+            if (!payload.scheduledCheckIn || !payload.scheduledCheckOut) {
+                return new NextResponse('Укажите даты брони', { status: 400 });
+            }
+
+            const scheduledCheckIn = new Date(payload.scheduledCheckIn);
+            const scheduledCheckOut = new Date(payload.scheduledCheckOut);
+
+            if (Number.isNaN(scheduledCheckIn.getTime()) || Number.isNaN(scheduledCheckOut.getTime())) {
+                return new NextResponse('Некорректные даты брони', { status: 400 });
+            }
+
+            if (scheduledCheckOut <= scheduledCheckIn) {
+                return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });
+            }
+
+            const normalizedBookingSource = normalizeBookingSource(payload.bookingSource);
+            const resolvedBookingSource = normalizedBookingSource
+                ? resolveBookingSource(normalizedBookingSource, room.hotel.extranetNames)
+                : null;
+
+            if (normalizedBookingSource && (!room.hotel.usesExtranets || !resolvedBookingSource)) {
+                return new NextResponse('Выбранный экстранет не настроен для этой точки', { status: 400 });
+            }
+
+            const conflictingStay = await prisma.roomStay.findFirst({
+                where: {
+                    roomId: room.id,
+                    status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                    scheduledCheckIn: { lt: scheduledCheckOut },
+                    scheduledCheckOut: { gt: scheduledCheckIn }
+                },
+                select: { id: true }
+            });
+
+            if (conflictingStay) {
+                return new NextResponse('На эти даты у номера уже есть бронь или проживание', { status: 409 });
+            }
+
+            const stay = await prisma.roomStay.create({
+                data: {
+                    roomId: room.id,
+                    hotelId: room.hotelId,
+                    bookingSource: resolvedBookingSource,
+                    scheduledCheckIn,
+                    scheduledCheckOut,
+                    status: StayStatus.SCHEDULED,
+                    guestName: normalizeOptionalText(payload.guestName),
+                    guestPhone: normalizeOptionalText(payload.guestPhone),
+                    companyName: normalizeOptionalText(payload.companyName),
+                    notes: normalizeOptionalText(payload.notes),
+                    amountPaid: 0,
+                    cashPaid: 0,
+                    cardPaid: 0,
+                    onlinePaid: 0
+                }
+            });
+
+            return NextResponse.json(stay);
         }
 
         if (payload.intent === 'checkin') {

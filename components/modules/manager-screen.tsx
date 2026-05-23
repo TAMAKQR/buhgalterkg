@@ -152,7 +152,7 @@ interface ShiftHandoverForm {
 }
 
 interface CheckInModalState {
-    mode: 'checkin' | 'extend' | 'transfer';
+    mode: 'book' | 'checkin' | 'extend' | 'transfer';
     roomId: string;
     label: string;
     guestName: string;
@@ -776,6 +776,37 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         setCheckInError(null);
     };
 
+    const showBookingModal = (room: ManagerStateResponse['rooms'][number], selectedDay?: Date) => {
+        const startDate = selectedDay ? new Date(selectedDay) : new Date();
+        startDate.setHours(14, 0, 0, 0);
+        if (!selectedDay && startDate.getTime() <= Date.now()) {
+            startDate.setDate(startDate.getDate() + 1);
+        }
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 1);
+        endDate.setHours(12, 0, 0, 0);
+
+        setCheckInModal({
+            mode: 'book',
+            roomId: room.id,
+            label: room.label,
+            guestName: '',
+            guestPhone: '',
+            companyName: '',
+            bookingSource: '',
+            notes: '',
+            targetRoomId: '',
+            transferNote: '',
+            checkIn: formatDateInputValue(startDate),
+            currentCheckOut: undefined,
+            checkOut: formatDateInputValue(endDate),
+            cashAmount: '',
+            cardAmount: '',
+            onlineAmount: ''
+        });
+        setCheckInError(null);
+    };
+
     const showExtendModal = (room: ManagerStateResponse['rooms'][number]) => {
         if (!data?.shift) {
             toast('Сначала откройте смену, чтобы продлить проживание', 'error');
@@ -845,7 +876,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     };
 
     const handleConfirmCheckIn = async () => {
-        if (!checkInModal || !data?.shift) {
+        if (!checkInModal) {
+            return;
+        }
+
+        const activeShiftId = data?.shift?.id;
+        if (checkInModal.mode !== 'book' && !activeShiftId) {
             return;
         }
 
@@ -859,7 +895,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             try {
                 await request(`/api/rooms/${checkInModal.roomId}/stay`, {
                     body: {
-                        shiftId: data.shift.id,
+                        shiftId: activeShiftId,
                         intent: 'transfer',
                         targetRoomId: checkInModal.targetRoomId,
                         transferNote: checkInModal.transferNote.trim() || undefined,
@@ -882,12 +918,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const scheduledCheckIn = parseInputValue(checkInModal.checkIn, hotelTz);
         const scheduledCheckOut = parseInputValue(checkInModal.checkOut, hotelTz);
 
-        if (!scheduledCheckOut || (checkInModal.mode === 'checkin' && !scheduledCheckIn)) {
-            setCheckInError(checkInModal.mode === 'extend' ? 'Укажите корректную новую дату выезда' : 'Укажите корректные даты заселения и выезда');
+        if (!scheduledCheckOut || ((checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && !scheduledCheckIn)) {
+            setCheckInError(checkInModal.mode === 'extend' ? 'Укажите корректную новую дату выезда' : 'Укажите корректные даты заезда и выезда');
             return;
         }
 
-        if (checkInModal.mode === 'checkin') {
+        if (checkInModal.mode === 'checkin' || checkInModal.mode === 'book') {
             if (scheduledCheckOut <= scheduledCheckIn!) {
                 setCheckInError('Время выезда должно быть позже заселения');
                 return;
@@ -904,9 +940,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             }
         }
 
-        const cashValue = Number(checkInModal.cashAmount || 0);
-        const cardValue = Number(checkInModal.cardAmount || 0);
-        const onlineValue = Number(checkInModal.onlineAmount || 0);
+        const cashValue = checkInModal.mode === 'book' ? 0 : Number(checkInModal.cashAmount || 0);
+        const cardValue = checkInModal.mode === 'book' ? 0 : Number(checkInModal.cardAmount || 0);
+        const onlineValue = checkInModal.mode === 'book' ? 0 : Number(checkInModal.onlineAmount || 0);
 
         if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0 || !Number.isFinite(onlineValue) || onlineValue < 0) {
             setCheckInError('Сумма не может быть отрицательной или пустой');
@@ -926,14 +962,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         try {
             await request(`/api/rooms/${checkInModal.roomId}/stay`, {
                 body: {
-                    shiftId: data.shift.id,
+                    shiftId: checkInModal.mode === 'book' ? undefined : activeShiftId,
                     intent: checkInModal.mode,
-                    guestName: checkInModal.mode === 'checkin' ? checkInModal.guestName.trim() || undefined : undefined,
-                    guestPhone: checkInModal.mode === 'checkin' ? checkInModal.guestPhone.trim() || undefined : undefined,
-                    companyName: checkInModal.mode === 'checkin' ? checkInModal.companyName.trim() || undefined : undefined,
-                    bookingSource: checkInModal.mode === 'checkin' && data.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
-                    notes: checkInModal.mode === 'checkin' ? checkInModal.notes.trim() || undefined : undefined,
-                    scheduledCheckIn: checkInModal.mode === 'checkin' ? scheduledCheckIn!.toISOString() : undefined,
+                    guestName: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestName.trim() || undefined : undefined,
+                    guestPhone: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestPhone.trim() || undefined : undefined,
+                    companyName: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.companyName.trim() || undefined : undefined,
+                    bookingSource: (checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && data?.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
+                    notes: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.notes.trim() || undefined : undefined,
+                    scheduledCheckIn: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     cashAmount: cashMinor,
                     cardAmount: cardMinor,
@@ -942,11 +978,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             });
             setCheckInModal(null);
             setCheckInError(null);
-            toast(checkInModal.mode === 'extend' ? 'Проживание продлено' : 'Гость заселён', 'success');
+            toast(checkInModal.mode === 'book' ? 'Бронь создана' : checkInModal.mode === 'extend' ? 'Проживание продлено' : 'Гость заселён', 'success');
             mutate();
         } catch (modalError) {
             console.error(modalError);
-            setCheckInError(checkInModal.mode === 'extend' ? 'Не удалось продлить проживание' : 'Не удалось заселить гостя');
+            setCheckInError(checkInModal.mode === 'book' ? 'Не удалось создать бронь' : checkInModal.mode === 'extend' ? 'Не удалось продлить проживание' : 'Не удалось заселить гостя');
         } finally {
             setIsSubmittingCheckIn(false);
         }
@@ -1218,10 +1254,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         {roomBoardDays.map((day, dayIndex) => {
                                                             const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(day).getTime();
                                                             return (
-                                                                <div
+                                                                <button
+                                                                    type="button"
                                                                     key={`manager-board-cell-${room.id}-${dayIndex}`}
-                                                                    className={`border-l border-slate-200/70 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                    className={`border-l border-slate-200/70 text-left transition hover:bg-cyan-50/70 dark:border-white/[0.04] dark:hover:bg-cyan-400/[0.05] ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
                                                                     style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                                                                    onClick={() => showBookingModal(room, day)}
+                                                                    title={`Поставить бронь на № ${room.label}`}
+                                                                    aria-label={`Поставить бронь на номер ${room.label}`}
                                                                 />
                                                             );
                                                         })}
@@ -1248,10 +1288,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             <button
                                                                 type="button"
                                                                 className="z-10 col-start-2 col-end-[-1] m-1 rounded-xl border border-dashed border-slate-200 px-2 py-1 text-left text-[11px] text-slate-300 dark:border-white/[0.07] dark:text-white/20"
-                                                                onClick={() => showCheckInModal(room)}
-                                                                disabled={!hasOpenShift}
+                                                                onClick={() => showBookingModal(room, roomBoardDays[0])}
                                                             >
-                                                                Свободно
+                                                                Свободно · нажмите день для брони
                                                             </button>
                                                         ) : null}
                                                     </div>
@@ -1331,18 +1370,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </Button>
                                                         </div>
                                                     ) : (
-                                                        <Button
-                                                            type="button"
-                                                            size="icon"
-                                                            variant="secondary"
-                                                            className="h-8 w-8 self-end rounded-xl"
-                                                            disabled={!hasOpenShift}
-                                                            onClick={() => showCheckInModal(room)}
-                                                            title="Заселить"
-                                                            aria-label={`Заселить номер ${room.label}`}
-                                                        >
-                                                            <LogIn className="h-4 w-4" aria-hidden="true" />
-                                                        </Button>
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <Button
+                                                                type="button"
+                                                                size="icon"
+                                                                variant="secondary"
+                                                                className="h-8 w-8 rounded-xl"
+                                                                onClick={() => showBookingModal(room)}
+                                                                title="Поставить бронь"
+                                                                aria-label={`Поставить бронь на номер ${room.label}`}
+                                                            >
+                                                                <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                size="icon"
+                                                                variant="secondary"
+                                                                className="h-8 w-8 rounded-xl"
+                                                                disabled={!hasOpenShift}
+                                                                onClick={() => showCheckInModal(room)}
+                                                                title="Заселить"
+                                                                aria-label={`Заселить номер ${room.label}`}
+                                                            >
+                                                                <LogIn className="h-4 w-4" aria-hidden="true" />
+                                                            </Button>
+                                                        </div>
                                                     )}
                                                 </div>
                                                 {room.stay && (
@@ -1818,7 +1870,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
                             <div className="w-full max-w-sm rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
                                 <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-base font-semibold">{checkInModal.mode === 'extend' ? `Продление № ${checkInModal.label}` : checkInModal.mode === 'transfer' ? `Переселение из № ${checkInModal.label}` : `Заселение № ${checkInModal.label}`}</h3>
+                                    <h3 className="text-base font-semibold">
+                                        {checkInModal.mode === 'book'
+                                            ? `Бронь № ${checkInModal.label}`
+                                            : checkInModal.mode === 'extend'
+                                                ? `Продление № ${checkInModal.label}`
+                                                : checkInModal.mode === 'transfer'
+                                                    ? `Переселение из № ${checkInModal.label}`
+                                                    : `Заселение № ${checkInModal.label}`}
+                                    </h3>
                                     <Button type="button" variant="ghost" size="sm" disabled={isSubmittingCheckIn} onClick={handleCloseModal}>
                                         ×
                                     </Button>
@@ -1829,17 +1889,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <Input
                                             id="modal-guest"
                                             type="text"
-                                            autoFocus={checkInModal.mode === 'checkin'}
+                                            autoFocus={checkInModal.mode === 'checkin' || checkInModal.mode === 'book'}
                                             placeholder="Имя гостя"
                                             value={checkInModal.guestName}
                                             onChange={(event) =>
                                                 setCheckInModal((prev) => (prev ? { ...prev, guestName: event.target.value } : prev))
                                             }
                                             className="text-white"
-                                            readOnly={checkInModal.mode !== 'checkin'}
+                                            readOnly={checkInModal.mode !== 'checkin' && checkInModal.mode !== 'book'}
                                         />
                                     </div>
-                                    {checkInModal.mode === 'checkin' && (
+                                    {(checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && (
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-guest-phone">Телефон</label>
@@ -1913,7 +1973,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     )}
                                     {checkInModal.mode !== 'transfer' && (
                                         <>
-                                            {checkInModal.mode === 'checkin' && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
+                                            {(checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
                                                 <div>
                                                     <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-source">Источник брони</label>
                                                     <Select
@@ -1931,7 +1991,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </Select>
                                                 </div>
                                             )}
-                                            {checkInModal.mode === 'checkin' && (
+                                            {(checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && (
                                                 <div>
                                                     <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-stay-notes">Комментарий</label>
                                                     <TextArea
@@ -1946,7 +2006,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     />
                                                 </div>
                                             )}
-                                            {checkInModal.mode === 'checkin' ? (
+                                            {checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? (
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
@@ -1999,9 +2059,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                 </div>
                                             )}
+                                            {checkInModal.mode === 'book' && (
+                                                <p className="text-[11px] text-white/45">Бронь сохранится без оплаты и без открытия смены. Заселение делается отдельно в день заезда.</p>
+                                            )}
                                             {checkInModal.mode === 'extend' && (
                                                 <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
                                             )}
+                                            {checkInModal.mode !== 'book' && (
                                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                                                 <div>
                                                     <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
@@ -2055,6 +2119,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     />
                                                 </div>
                                             </div>
+                                            )}
                                         </>
                                     )}
                                     {checkInError && <p className="text-xs text-rose-300">{checkInError}</p>}
@@ -2064,7 +2129,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         disabled={isSubmittingCheckIn}
                                         onClick={handleConfirmCheckIn}
                                     >
-                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'extend' ? 'Продлить' : checkInModal.mode === 'transfer' ? 'Переселить' : 'Заселить'}
+                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'book' ? 'Поставить бронь' : checkInModal.mode === 'extend' ? 'Продлить' : checkInModal.mode === 'transfer' ? 'Переселить' : 'Заселить'}
                                     </Button>
                                 </div>
                             </div>
