@@ -14,6 +14,7 @@ import type { SessionUser } from '@/lib/types';
 import { useCookieApi } from '@/hooks/useCookieApi';
 import { formatDateTime, formatInputValue, parseInputValue, formatMoney } from '@/lib/timezone';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { ArrowRightLeft, CalendarPlus, LogIn, LogOut } from 'lucide-react';
 
 interface ManagerStateResponse {
     hotel: {
@@ -1075,45 +1076,53 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         <div className="flex flex-wrap items-center justify-end gap-1">
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 px-2.5 text-[11px]"
+                                                                className="h-8 w-8 rounded-xl"
                                                                 disabled={!hasOpenShift || !availableTransferRooms.length}
                                                                 onClick={() => showTransferModal(room)}
+                                                                title="Переселить"
+                                                                aria-label={`Переселить номер ${room.label}`}
                                                             >
-                                                                Переселить
+                                                                <ArrowRightLeft className="h-4 w-4" aria-hidden="true" />
                                                             </Button>
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 px-2.5 text-[11px]"
+                                                                className="h-8 w-8 rounded-xl"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => showExtendModal(room)}
+                                                                title="Продлить"
+                                                                aria-label={`Продлить проживание в номере ${room.label}`}
                                                             >
-                                                                Продлить
+                                                                <CalendarPlus className="h-4 w-4" aria-hidden="true" />
                                                             </Button>
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="ghost"
-                                                                className="h-8 px-2.5 text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
+                                                                className="h-8 w-8 rounded-xl text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
+                                                                title="Выселить"
+                                                                aria-label={`Выселить номер ${room.label}`}
                                                             >
-                                                                Выселить
+                                                                <LogOut className="h-4 w-4" aria-hidden="true" />
                                                             </Button>
                                                         </div>
                                                     ) : (
                                                         <Button
                                                             type="button"
-                                                            size="sm"
+                                                            size="icon"
                                                             variant="secondary"
-                                                            className="self-end text-[11px]"
+                                                            className="h-8 w-8 self-end rounded-xl"
                                                             disabled={!hasOpenShift}
                                                             onClick={() => showCheckInModal(room)}
+                                                            title="Заселить"
+                                                            aria-label={`Заселить номер ${room.label}`}
                                                         >
-                                                            Заселить
+                                                            <LogIn className="h-4 w-4" aria-hidden="true" />
                                                         </Button>
                                                     )}
                                                 </div>
