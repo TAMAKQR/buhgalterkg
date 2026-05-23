@@ -1063,21 +1063,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                                         return (
                                             <article key={room.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:shadow dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 min-w-0">
-                                                        <span className="text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                        <span className="min-w-0 break-words text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
                                                         <Badge
                                                             label={isOverdue ? 'Просрочено' : isOccupied ? 'Занят' : room.status === 'DIRTY' ? 'Уборка' : 'Свободен'}
                                                             tone={isOverdue ? 'danger' : isOccupied ? 'warning' : 'success'}
                                                         />
                                                     </div>
                                                     {isOccupied ? (
-                                                        <div className="flex shrink-0 items-center gap-1">
+                                                        <div className="flex flex-wrap items-center justify-end gap-1">
                                                             <Button
                                                                 type="button"
                                                                 size="sm"
                                                                 variant="secondary"
-                                                                className="text-[11px]"
+                                                                className="h-8 px-2.5 text-[11px]"
                                                                 disabled={!hasOpenShift || !availableTransferRooms.length}
                                                                 onClick={() => showTransferModal(room)}
                                                             >
@@ -1087,7 +1087,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="sm"
                                                                 variant="secondary"
-                                                                className="text-[11px]"
+                                                                className="h-8 px-2.5 text-[11px]"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => showExtendModal(room)}
                                                             >
@@ -1097,7 +1097,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="sm"
                                                                 variant="ghost"
-                                                                className="text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
+                                                                className="h-8 px-2.5 text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
                                                             >
@@ -1109,7 +1109,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             type="button"
                                                             size="sm"
                                                             variant="secondary"
-                                                            className="text-[11px]"
+                                                            className="self-end text-[11px]"
                                                             disabled={!hasOpenShift}
                                                             onClick={() => showCheckInModal(room)}
                                                         >
