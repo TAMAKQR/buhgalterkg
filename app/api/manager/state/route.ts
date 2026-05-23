@@ -36,8 +36,8 @@ export async function GET(request: NextRequest) {
                     include: {
                         stays: {
                             where: { status: { in: ['SCHEDULED', 'CHECKED_IN'] } },
-                            orderBy: { scheduledCheckIn: 'desc' },
-                            take: 1
+                            orderBy: { scheduledCheckIn: 'asc' },
+                            take: 40
                         }
                     },
                     orderBy: { label: 'asc' }
@@ -266,30 +266,38 @@ export async function GET(request: NextRequest) {
             shiftPayments,
             shiftStayRevenue,
             shiftLedger: serializedLedger,
-            rooms: hotel.rooms.map((room) => ({
-                id: room.id,
-                label: room.label,
-                floor: room.floor,
-                status: room.status,
-                stay: room.stays[0]
+            rooms: hotel.rooms.map((room) => {
+                const primaryStay = room.stays.find((stay) => stay.status === 'CHECKED_IN') ?? room.stays[0] ?? null;
+                const serializeStay = (stay: typeof room.stays[number]) => ({
+                    id: stay.id,
+                    guestName: stay.guestName,
+                    guestPhone: stay.guestPhone,
+                    companyName: stay.companyName,
+                    scheduledCheckIn: stay.scheduledCheckIn,
+                    scheduledCheckOut: stay.scheduledCheckOut,
+                    status: stay.status,
+                    amountPaid: stay.amountPaid,
+                    paymentMethod: stay.paymentMethod,
+                    cashPaid: stay.cashPaid,
+                    cardPaid: stay.cardPaid,
+                    onlinePaid: stay.onlinePaid,
+                    bookingSource: stay.bookingSource,
+                    notes: stay.notes
+                });
+
+                return {
+                    id: room.id,
+                    label: room.label,
+                    floor: room.floor,
+                    status: room.status,
+                    stay: primaryStay
                     ? {
-                        id: room.stays[0].id,
-                        guestName: room.stays[0].guestName,
-                        guestPhone: room.stays[0].guestPhone,
-                        companyName: room.stays[0].companyName,
-                        scheduledCheckIn: room.stays[0].scheduledCheckIn,
-                        scheduledCheckOut: room.stays[0].scheduledCheckOut,
-                        status: room.stays[0].status,
-                        amountPaid: room.stays[0].amountPaid,
-                        paymentMethod: room.stays[0].paymentMethod,
-                        cashPaid: room.stays[0].cashPaid,
-                        cardPaid: room.stays[0].cardPaid,
-                        onlinePaid: room.stays[0].onlinePaid,
-                        bookingSource: room.stays[0].bookingSource,
-                        notes: room.stays[0].notes
+                        ...serializeStay(primaryStay)
                     }
-                    : null
-            })),
+                    : null,
+                    stays: room.stays.map(serializeStay)
+                };
+            }),
             compensation: assignment
                 ? {
                     shiftPayAmount: assignment.shiftPayAmount,

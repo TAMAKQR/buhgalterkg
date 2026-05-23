@@ -16,6 +16,23 @@ import { formatDateTime, formatInputValue, parseInputValue, formatMoney } from '
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { ArrowRightLeft, CalendarPlus, LogIn, LogOut } from 'lucide-react';
 
+type ManagerRoomStay = {
+    id: string;
+    guestName?: string | null;
+    guestPhone?: string | null;
+    companyName?: string | null;
+    scheduledCheckIn: string;
+    scheduledCheckOut: string;
+    status: string;
+    amountPaid?: number | null;
+    paymentMethod?: 'CASH' | 'CARD' | null;
+    cashPaid?: number | null;
+    cardPaid?: number | null;
+    onlinePaid?: number | null;
+    bookingSource?: string | null;
+    notes?: string | null;
+};
+
 interface ManagerStateResponse {
     hotel: {
         id: string;
@@ -72,22 +89,8 @@ interface ManagerStateResponse {
         label: string;
         floor?: string | null;
         status: string;
-        stay?: {
-            id: string;
-            guestName?: string | null;
-            guestPhone?: string | null;
-            companyName?: string | null;
-            scheduledCheckIn: string;
-            scheduledCheckOut: string;
-            status: string;
-            amountPaid?: number | null;
-            paymentMethod?: 'CASH' | 'CARD' | null;
-            cashPaid?: number | null;
-            cardPaid?: number | null;
-            onlinePaid?: number | null;
-            bookingSource?: string | null;
-            notes?: string | null;
-        } | null;
+        stay?: ManagerRoomStay | null;
+        stays?: ManagerRoomStay[];
     }>;
     compensation?: {
         shiftPayAmount?: number | null;
@@ -168,7 +171,9 @@ interface CheckInModalState {
 }
 
 type PanelKey = 'rooms' | 'shift' | 'cash' | 'history';
+type RoomViewMode = 'cards' | 'board';
 
+const managerBoardDayCount = 7;
 
 const formatShareDate = (value: string, timeZone?: string) => {
     const date = new Date(value);
@@ -206,6 +211,44 @@ const isPastDate = (value?: string | null, now = new Date()) => {
     return !Number.isNaN(date.getTime()) && date < now;
 };
 
+const startOfLocalDay = (value: Date) => {
+    const copy = new Date(value);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+};
+
+const addDays = (value: Date, days: number) => {
+    const copy = new Date(value);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+};
+
+const formatBoardDay = (value: Date) =>
+    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(value).replace('.', '');
+
+const formatBoardWeekday = (value: Date) =>
+    new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
+
+const boardStatusClass = (status: string, isOverdue = false) => {
+    if (isOverdue) {
+        return 'border-rose-300/50 bg-rose-500/20 text-rose-100';
+    }
+    if (status === 'CHECKED_IN') {
+        return 'border-amber-300/35 bg-amber-400/15 text-amber-100';
+    }
+    if (status === 'SCHEDULED') {
+        return 'border-cyan-300/35 bg-cyan-400/15 text-cyan-100';
+    }
+    return 'border-white/[0.08] bg-white/[0.05] text-white/55';
+};
+
+const stayStatusLabel = (status: string) => {
+    if (status === 'CHECKED_IN') return 'Заселён';
+    if (status === 'SCHEDULED') return 'Бронь';
+    if (status === 'CHECKED_OUT') return 'Выселен';
+    return 'Отменён';
+};
+
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
     const { get, request } = useCookieApi();
 
@@ -235,6 +278,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
     const [checkInError, setCheckInError] = useState<string | null>(null);
     const [activePanel, setActivePanel] = useState<PanelKey>('rooms');
+    const [roomViewMode, setRoomViewMode] = useState<RoomViewMode>('cards');
+    const [roomBoardStartOffset, setRoomBoardStartOffset] = useState(0);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [selectedShiftId, setSelectedShiftId] = useState<string>('');
     const [historyStatus, setHistoryStatus] = useState<'ALL' | 'OPEN' | 'CLOSED'>('ALL');
@@ -414,6 +459,53 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             first.label.localeCompare(second.label, 'ru', { numeric: true, sensitivity: 'base' })
         );
     }, [data?.rooms]);
+
+    const roomBoardDays = useMemo(() => {
+        const firstDay = addDays(startOfLocalDay(new Date()), roomBoardStartOffset);
+        return Array.from({ length: managerBoardDayCount }, (_, index) => addDays(firstDay, index));
+    }, [roomBoardStartOffset]);
+
+    const roomBoardRange = useMemo(() => {
+        const start = roomBoardDays[0] ?? startOfLocalDay(new Date());
+        return { start, end: addDays(start, managerBoardDayCount) };
+    }, [roomBoardDays]);
+
+    const roomBoardRows = useMemo(() => {
+        const rangeStart = roomBoardRange.start.getTime();
+        const rangeEnd = roomBoardRange.end.getTime();
+        const now = new Date();
+
+        return sortedRooms.map((room) => {
+            const items = (room.stays ?? (room.stay ? [room.stay] : []))
+                .filter((stay) => stay.status !== 'CANCELLED')
+                .map((stay) => {
+                    const stayStart = Date.parse(stay.scheduledCheckIn);
+                    const stayEnd = Date.parse(stay.scheduledCheckOut);
+                    if (!Number.isFinite(stayStart) || !Number.isFinite(stayEnd) || stayEnd <= rangeStart || stayStart >= rangeEnd) {
+                        return null;
+                    }
+
+                    const clampedStart = Math.max(stayStart, rangeStart);
+                    const clampedEnd = Math.min(stayEnd, rangeEnd);
+                    const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
+                    const endIndex = Math.min(managerBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
+                    const span = Math.max(1, endIndex - startIndex);
+                    const isOverdue = stay.status === 'CHECKED_IN' && isPastDate(stay.scheduledCheckOut, now);
+                    const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
+                    const detailLabel = [
+                        stay.bookingSource?.trim(),
+                        stay.companyName?.trim(),
+                        stay.guestPhone?.trim()
+                    ].filter(Boolean).join(' · ');
+
+                    return { stay, startIndex, span, isOverdue, guestLabel, detailLabel };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
+
+            return { room, items };
+        });
+    }, [roomBoardRange, sortedRooms]);
 
     const availableTransferRooms = useMemo(
         () => sortedRooms.filter((room) => room.status === 'AVAILABLE'),
@@ -1037,12 +1129,139 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                         {activePanel === 'rooms' && (
                             <section className="space-y-3">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                     <h2 className="text-lg font-semibold text-light-text dark:text-white">Номера</h2>
-                                    <Badge label={`${sortedRooms.length} в учёте`} />
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex rounded-xl bg-slate-200/60 p-1 text-xs font-medium text-slate-700 dark:bg-white/[0.05] dark:text-white/50">
+                                            <button
+                                                type="button"
+                                                className={`rounded-lg px-2.5 py-1 transition ${roomViewMode === 'cards' ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:text-slate-900 dark:hover:text-white'}`}
+                                                onClick={() => setRoomViewMode('cards')}
+                                            >
+                                                Карточки
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`rounded-lg px-2.5 py-1 transition ${roomViewMode === 'board' ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:text-slate-900 dark:hover:text-white'}`}
+                                                onClick={() => setRoomViewMode('board')}
+                                            >
+                                                Шахматка
+                                            </button>
+                                        </div>
+                                        <Badge label={`${sortedRooms.length} в учёте`} />
+                                    </div>
                                 </div>
-                                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                    {sortedRooms.map((room) => {
+                                {roomViewMode === 'board' ? (
+                                    <div className="space-y-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex flex-wrap gap-1.5">
+                                                <Badge label="Бронь" />
+                                                <Badge label="Заселён" tone="warning" />
+                                                <Badge label="Просрочено" tone="danger" />
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="border border-slate-200/80 dark:border-white/15"
+                                                    onClick={() => setRoomBoardStartOffset((current) => current - managerBoardDayCount)}
+                                                >
+                                                    Назад
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="border border-slate-200/80 dark:border-white/15"
+                                                    onClick={() => setRoomBoardStartOffset(0)}
+                                                >
+                                                    Сегодня
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="border border-slate-200/80 dark:border-white/15"
+                                                    onClick={() => setRoomBoardStartOffset((current) => current + managerBoardDayCount)}
+                                                >
+                                                    Вперёд
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                            <div className="min-w-[760px]">
+                                                <div
+                                                    className="grid border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/45"
+                                                    style={{ gridTemplateColumns: `92px repeat(${managerBoardDayCount}, minmax(88px, 1fr))` }}
+                                                >
+                                                    <div className="sticky left-0 z-20 bg-slate-50 px-3 py-2 dark:bg-[#151923]">Номер</div>
+                                                    {roomBoardDays.map((day) => (
+                                                        <div key={`manager-board-day-${day.toISOString()}`} className="border-l border-slate-200 px-2 py-2 text-center dark:border-white/[0.06]">
+                                                            <p>{formatBoardDay(day)}</p>
+                                                            <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day)}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {roomBoardRows.map(({ room, items }) => (
+                                                    <div
+                                                        key={`manager-board-room-${room.id}`}
+                                                        className="grid min-h-[56px] border-b border-slate-200/80 last:border-b-0 dark:border-white/[0.05]"
+                                                        style={{ gridTemplateColumns: `92px repeat(${managerBoardDayCount}, minmax(88px, 1fr))` }}
+                                                    >
+                                                        <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]">
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-sm font-semibold text-light-text dark:text-white">№ {room.label}</p>
+                                                                {room.floor ? <p className="truncate text-[11px] text-slate-400 dark:text-white/35">{room.floor}</p> : null}
+                                                            </div>
+                                                        </div>
+                                                        {roomBoardDays.map((day, dayIndex) => {
+                                                            const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(day).getTime();
+                                                            return (
+                                                                <div
+                                                                    key={`manager-board-cell-${room.id}-${dayIndex}`}
+                                                                    className={`border-l border-slate-200/70 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                    style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                                                                />
+                                                            );
+                                                        })}
+                                                        {items.map((item) => (
+                                                            <button
+                                                                key={`manager-board-stay-${item.stay.id}`}
+                                                                type="button"
+                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue)}`}
+                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: 1 }}
+                                                                title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
+                                                                onClick={() => {
+                                                                    if (item.stay.status === 'CHECKED_IN') {
+                                                                        showExtendModal(room);
+                                                                    } else if (room.status === 'AVAILABLE') {
+                                                                        showCheckInModal(room);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span className="block truncate font-semibold">{item.guestLabel}</span>
+                                                                <span className="mt-0.5 block truncate opacity-80">{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
+                                                            </button>
+                                                        ))}
+                                                        {!items.length ? (
+                                                            <button
+                                                                type="button"
+                                                                className="z-10 col-start-2 col-end-[-1] m-1 rounded-xl border border-dashed border-slate-200 px-2 py-1 text-left text-[11px] text-slate-300 dark:border-white/[0.07] dark:text-white/20"
+                                                                onClick={() => showCheckInModal(room)}
+                                                                disabled={!hasOpenShift}
+                                                            >
+                                                                Свободно
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                        {sortedRooms.map((room) => {
                                         const isOccupied = room.status === 'OCCUPIED';
                                         const isOverdue = isOccupied && isPastDate(room.stay?.scheduledCheckOut);
                                         const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
@@ -1139,8 +1358,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 )}
                                             </article>
                                         );
-                                    })}
-                                </div>
+                                        })}
+                                    </div>
+                                )}
                             </section>
                         )}
 
