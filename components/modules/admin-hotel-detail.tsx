@@ -424,6 +424,14 @@ const stayStartTimestamp = (stay: RoomStayDetail) => {
     return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const isOverdueStay = (stay?: RoomStayDetail | null) => {
+    if (!stay || stay.status !== 'CHECKED_IN') {
+        return false;
+    }
+    const checkoutTime = Date.parse(stay.scheduledCheckOut);
+    return Number.isFinite(checkoutTime) && checkoutTime < Date.now();
+};
+
 interface AdminHotelDetailProps {
     hotelId: string;
 }
@@ -652,6 +660,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const buckets = {
             available: [] as string[],
             occupied: [] as string[],
+            overdue: [] as string[],
             dirty: [] as string[],
             hold: [] as string[]
         };
@@ -664,6 +673,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 buckets.available.push(label);
             } else if (room.status === 'OCCUPIED') {
                 buckets.occupied.push(label);
+                if (isOverdueStay(room.stay)) {
+                    buckets.overdue.push(label);
+                }
             } else if (room.status === 'DIRTY') {
                 buckets.dirty.push(label);
             } else if (room.status === 'HOLD') {
@@ -672,6 +684,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
         buckets.available.sort();
         buckets.occupied.sort();
+        buckets.overdue.sort();
         buckets.dirty.sort();
         buckets.hold.sort();
         return buckets;
@@ -1509,7 +1522,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         {
             label: 'Загрузка',
             value: `${data.occupiedRooms}/${data.roomCount}`,
-            caption: `${occupancyRate}% занято сейчас`
+            caption: `${occupancyRate}% занято сейчас · ${roomStatusBuckets.overdue.length} просрочено`
         },
         {
             label: 'Касса',
@@ -1826,6 +1839,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <span>Занято</span>
                                                     <span>{roomStatusBuckets.occupied.length}</span>
                                                 </div>
+                                                <div className={`flex items-center justify-between ${roomStatusBuckets.overdue.length ? 'text-rose-500 dark:text-rose-300' : ''}`}>
+                                                    <span>Просрочено</span>
+                                                    <span>{roomStatusBuckets.overdue.length}</span>
+                                                </div>
                                                 <div className="flex items-center justify-between">
                                                     <span>Уборка</span>
                                                     <span>{roomStatusBuckets.dirty.length}</span>
@@ -1843,6 +1860,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <div>
                                                     <p className="font-semibold text-slate-700 dark:text-white/70">Занятые</p>
                                                     <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.occupied.length ? roomStatusBuckets.occupied.join(', ') : '—'}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-rose-500 dark:text-rose-300">Просроченные</p>
+                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.overdue.length ? roomStatusBuckets.overdue.join(', ') : '—'}</p>
                                                 </div>
                                             </div>
                                         </div>
