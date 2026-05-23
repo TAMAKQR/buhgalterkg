@@ -22,6 +22,7 @@ type StayStatusValue = 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED';
 type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD' | 'ONLINE';
 type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
 type LedgerPaymentMethodValue = 'CASH' | 'CARD';
+type RoomOverviewMode = 'board' | 'history';
 
 interface RoomStayDetail {
     id: string;
@@ -304,6 +305,7 @@ const stayHistoryStatusOptions: Array<{ value: StayHistoryStatusFilter; label: s
 ];
 
 const compactStayHistoryLimit = 3;
+const bookingBoardDayCount = 14;
 
 const stayStatusLabels: Record<StayStatusValue, string> = {
     SCHEDULED: 'Запланирован',
@@ -458,6 +460,31 @@ const isOverdueStay = (stay?: RoomStayDetail | null) => {
     }
     const checkoutTime = Date.parse(stay.scheduledCheckOut);
     return Number.isFinite(checkoutTime) && checkoutTime < Date.now();
+};
+
+const startOfLocalDay = (value: Date) => {
+    const copy = new Date(value);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+};
+
+const addDays = (value: Date, days: number) => {
+    const copy = new Date(value);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+};
+
+const formatBoardDay = (value: Date) =>
+    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(value).replace('.', '');
+
+const formatBoardWeekday = (value: Date) =>
+    new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
+
+const bookingBoardStatusClass: Record<StayStatusValue, string> = {
+    SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/12 dark:text-cyan-100',
+    CHECKED_IN: 'border-amber-300/70 bg-amber-400/20 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/14 dark:text-amber-100',
+    CHECKED_OUT: 'border-slate-300/80 bg-slate-100 text-slate-600 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-white/55',
+    CANCELLED: 'border-rose-300/70 bg-rose-50 text-rose-600 dark:border-rose-300/20 dark:bg-rose-500/10 dark:text-rose-200'
 };
 
 interface AdminHotelDetailProps {
@@ -819,6 +846,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
+    const [roomOverviewMode, setRoomOverviewMode] = useState<RoomOverviewMode>('board');
+    const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
     const [stayHistoryQuery, setStayHistoryQuery] = useState('');
     const [stayHistoryStatus, setStayHistoryStatus] = useState<StayHistoryStatusFilter>('ALL');
     const [expandedStayHistoryRooms, setExpandedStayHistoryRooms] = useState<Set<string>>(() => new Set());
@@ -832,6 +861,57 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         setIsOutflowModalOpen(false);
     }, [selectedShiftId]);
     const closeOutflowModal = () => setIsOutflowModalOpen(false);
+
+    const bookingBoardDays = useMemo(() => {
+        const firstDay = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
+        return Array.from({ length: bookingBoardDayCount }, (_, index) => addDays(firstDay, index));
+    }, [bookingBoardStartOffset]);
+
+    const bookingBoardRange = useMemo(() => {
+        const start = bookingBoardDays[0] ?? startOfLocalDay(new Date());
+        const end = addDays(start, bookingBoardDayCount);
+        return { start, end };
+    }, [bookingBoardDays]);
+
+    const bookingBoardRows = useMemo(() => {
+        const rangeStart = bookingBoardRange.start.getTime();
+        const rangeEnd = bookingBoardRange.end.getTime();
+
+        return sortedRooms.map((room) => {
+            const items = (room.stays ?? [])
+                .filter((stay) => stay.status !== 'CANCELLED')
+                .map((stay) => {
+                    const stayStart = Date.parse(stay.scheduledCheckIn);
+                    const stayEnd = Date.parse(stay.scheduledCheckOut);
+                    if (!Number.isFinite(stayStart) || !Number.isFinite(stayEnd) || stayEnd <= rangeStart || stayStart >= rangeEnd) {
+                        return null;
+                    }
+
+                    const clampedStart = Math.max(stayStart, rangeStart);
+                    const clampedEnd = Math.min(stayEnd, rangeEnd);
+                    const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
+                    const endIndex = Math.min(bookingBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
+                    const span = Math.max(1, endIndex - startIndex);
+                    const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
+
+                    return {
+                        stay,
+                        startIndex,
+                        span,
+                        guestLabel,
+                        detailLabel: [
+                            stay.bookingSource?.trim(),
+                            stay.companyName?.trim(),
+                            stay.guestPhone?.trim()
+                        ].filter(Boolean).join(' · ')
+                    };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
+
+            return { room, items };
+        });
+    }, [bookingBoardRange, sortedRooms]);
 
     const filteredRoomStayHistory = useMemo(() => {
         const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
@@ -2031,12 +2111,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         )}
                                         <div className="mt-6 space-y-6">
                                             <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <div className="flex items-center justify-between gap-3">
+                                                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                                     <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Номера <span className="text-slate-400 dark:text-white/40">{sortedRooms.length}</span></h3>
-                                                    <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-white/50">
-                                                        {isRoomHistoryExpanded && totalFilteredStayHistory > 0 && (
+                                                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 dark:text-white/50">
+                                                        {roomOverviewMode === 'history' && isRoomHistoryExpanded && totalFilteredStayHistory > 0 && (
                                                             <span>{totalFilteredStayHistory} записей</span>
                                                         )}
+                                                        <div className="flex rounded-2xl border border-slate-200/80 bg-white p-0.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                                                            <button
+                                                                type="button"
+                                                                className={`rounded-[14px] px-3 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'board' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
+                                                                onClick={() => setRoomOverviewMode('board')}
+                                                            >
+                                                                Шахматка
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className={`rounded-[14px] px-3 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'history' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
+                                                                onClick={() => setRoomOverviewMode('history')}
+                                                            >
+                                                                Список
+                                                            </button>
+                                                        </div>
                                                         <Button
                                                             type="button"
                                                             size="sm"
@@ -2050,13 +2146,122 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             size="sm"
                                                             variant="ghost"
                                                             className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
-                                                            onClick={() => setIsRoomHistoryExpanded((prev) => !prev)}
+                                                            onClick={() => {
+                                                                setRoomOverviewMode('history');
+                                                                setIsRoomHistoryExpanded((prev) => !prev);
+                                                            }}
                                                         >
                                                             {isRoomHistoryExpanded ? 'Свернуть' : 'Открыть'}
                                                         </Button>
                                                     </div>
                                                 </div>
-                                                {isRoomHistoryExpanded ? (
+                                                {roomOverviewMode === 'board' ? (
+                                                    <div className="mt-4 space-y-3">
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                <Badge label="Бронь" tone="default" />
+                                                                <Badge label="Заселён" tone="warning" />
+                                                                <Badge label="Выселен" tone="success" />
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="border border-slate-200/80 text-slate-600 dark:border-white/15 dark:text-white/80"
+                                                                    onClick={() => setBookingBoardStartOffset((current) => current - bookingBoardDayCount)}
+                                                                >
+                                                                    Назад
+                                                                </Button>
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="border border-slate-200/80 text-slate-600 dark:border-white/15 dark:text-white/80"
+                                                                    onClick={() => setBookingBoardStartOffset(0)}
+                                                                >
+                                                                    Сегодня
+                                                                </Button>
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="border border-slate-200/80 text-slate-600 dark:border-white/15 dark:text-white/80"
+                                                                    onClick={() => setBookingBoardStartOffset((current) => current + bookingBoardDayCount)}
+                                                                >
+                                                                    Вперёд
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]">
+                                                            <div className="min-w-[1120px]">
+                                                                <div
+                                                                    className="grid border-b border-slate-200/80 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/45"
+                                                                    style={{ gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))` }}
+                                                                >
+                                                                    <div className="sticky left-0 z-20 bg-slate-50 px-3 py-2 dark:bg-[#151923]">Номер</div>
+                                                                    {bookingBoardDays.map((day) => (
+                                                                        <div key={`board-day-${day.toISOString()}`} className="border-l border-slate-200/80 px-2 py-2 text-center dark:border-white/[0.06]">
+                                                                            <p>{formatBoardDay(day)}</p>
+                                                                            <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day)}</p>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                                {bookingBoardRows.map(({ room, items }) => (
+                                                                    <div
+                                                                        key={`booking-board-row-${room.id}`}
+                                                                        className="grid min-h-[58px] border-b border-slate-200/70 last:border-b-0 dark:border-white/[0.05]"
+                                                                        style={{ gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))` }}
+                                                                    >
+                                                                        <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-200/80 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]">
+                                                                            <div className="min-w-0">
+                                                                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</p>
+                                                                                {room.floor ? <p className="truncate text-[11px] text-slate-400 dark:text-white/35">{room.floor}</p> : null}
+                                                                            </div>
+                                                                        </div>
+                                                                        {bookingBoardDays.map((day, dayIndex) => {
+                                                                            const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(day).getTime();
+                                                                            return (
+                                                                                <div
+                                                                                    key={`booking-board-cell-${room.id}-${dayIndex}`}
+                                                                                    className={`border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/70 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                                    style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                                                                                />
+                                                                            );
+                                                                        })}
+                                                                        {items.map((item) => (
+                                                                            <button
+                                                                                key={`booking-board-stay-${item.stay.id}`}
+                                                                                type="button"
+                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] shadow-sm transition hover:scale-[1.01] ${bookingBoardStatusClass[item.stay.status]}`}
+                                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: 1 }}
+                                                                                onClick={() => handleSelectStayForEdit(room, item.stay)}
+                                                                                title={[
+                                                                                    item.guestLabel,
+                                                                                    stayStatusLabels[item.stay.status],
+                                                                                    item.detailLabel,
+                                                                                    item.stay.notes?.trim()
+                                                                                ].filter(Boolean).join(' · ')}
+                                                                            >
+                                                                                <span className="block truncate font-semibold">{item.guestLabel}</span>
+                                                                                <span className="mt-0.5 block truncate opacity-80">{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
+                                                                            </button>
+                                                                        ))}
+                                                                        {!items.length ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="z-10 col-start-2 col-end-[-1] m-1 rounded-xl border border-dashed border-slate-200/90 px-2 py-1 text-left text-[11px] text-slate-300 transition hover:border-slate-300 hover:text-slate-500 dark:border-white/[0.06] dark:text-white/20 dark:hover:text-white/45"
+                                                                                onClick={() => handleOpenBookingForm(room)}
+                                                                            >
+                                                                                Свободно в выбранном периоде
+                                                                            </button>
+                                                                        ) : null}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : isRoomHistoryExpanded ? (
                                                     <>
                                                         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px]">
                                                             <Input
