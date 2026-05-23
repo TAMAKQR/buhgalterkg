@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
         type ObserverStayRecord = {
             id: string;
             guestName: string | null;
+            guestPhone: string | null;
+            companyName: string | null;
             scheduledCheckIn: Date;
             scheduledCheckOut: Date;
             actualCheckIn: Date | null;
@@ -95,6 +97,8 @@ export async function GET(request: NextRequest) {
         const staySelect = {
             id: true,
             guestName: true,
+            guestPhone: true,
+            companyName: true,
             scheduledCheckIn: true,
             scheduledCheckOut: true,
             actualCheckIn: true,
@@ -316,6 +320,8 @@ export async function GET(request: NextRequest) {
             stays: stayRecords.map((s) => ({
                 id: s.id,
                 guestName: s.guestName,
+                guestPhone: s.guestPhone,
+                companyName: s.companyName,
                 room: s.room?.label ?? '—',
                 scheduledCheckIn: s.scheduledCheckIn.toISOString(),
                 scheduledCheckOut: s.scheduledCheckOut.toISOString(),

@@ -38,6 +38,8 @@ export type RoomViewModel = {
     stay?: {
         id: string;
         guestName?: string | null;
+        guestPhone?: string | null;
+        companyName?: string | null;
         scheduledCheckIn: string;
         scheduledCheckOut: string;
         status: StayStatus;

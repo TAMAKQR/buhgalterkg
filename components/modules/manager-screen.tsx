@@ -74,6 +74,8 @@ interface ManagerStateResponse {
         stay?: {
             id: string;
             guestName?: string | null;
+            guestPhone?: string | null;
+            companyName?: string | null;
             scheduledCheckIn: string;
             scheduledCheckOut: string;
             status: string;
@@ -83,6 +85,7 @@ interface ManagerStateResponse {
             cardPaid?: number | null;
             onlinePaid?: number | null;
             bookingSource?: string | null;
+            notes?: string | null;
         } | null;
     }>;
     compensation?: {
@@ -149,7 +152,10 @@ interface CheckInModalState {
     roomId: string;
     label: string;
     guestName: string;
+    guestPhone: string;
+    companyName: string;
     bookingSource: string;
+    notes: string;
     targetRoomId: string;
     transferNote: string;
     checkIn: string;
@@ -661,7 +667,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             roomId: room.id,
             label: room.label,
             guestName: '',
+            guestPhone: '',
+            companyName: '',
             bookingSource: '',
+            notes: '',
             targetRoomId: '',
             transferNote: '',
             checkIn: formatDateInputValue(startDate),
@@ -689,7 +698,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             roomId: room.id,
             label: room.label,
             guestName: room.stay.guestName?.trim() || 'Гость',
+            guestPhone: room.stay.guestPhone?.trim() || '',
+            companyName: room.stay.companyName?.trim() || '',
             bookingSource: room.stay.bookingSource?.trim() || '',
+            notes: room.stay.notes?.trim() || '',
             targetRoomId: '',
             transferNote: '',
             checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
@@ -723,7 +735,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             roomId: room.id,
             label: room.label,
             guestName: room.stay.guestName?.trim() || 'Гость',
+            guestPhone: room.stay.guestPhone?.trim() || '',
+            companyName: room.stay.companyName?.trim() || '',
             bookingSource: room.stay.bookingSource?.trim() || '',
+            notes: room.stay.notes?.trim() || '',
             targetRoomId: targetRoom.id,
             transferNote: '',
             checkIn: formatDateInputValue(new Date(room.stay.scheduledCheckIn)),
@@ -821,7 +836,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     shiftId: data.shift.id,
                     intent: checkInModal.mode,
                     guestName: checkInModal.mode === 'checkin' ? checkInModal.guestName.trim() || undefined : undefined,
+                    guestPhone: checkInModal.mode === 'checkin' ? checkInModal.guestPhone.trim() || undefined : undefined,
+                    companyName: checkInModal.mode === 'checkin' ? checkInModal.companyName.trim() || undefined : undefined,
                     bookingSource: checkInModal.mode === 'checkin' && data.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
+                    notes: checkInModal.mode === 'checkin' ? checkInModal.notes.trim() || undefined : undefined,
                     scheduledCheckIn: checkInModal.mode === 'checkin' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     cashAmount: cashMinor,
@@ -1041,6 +1059,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             return segments.join(' · ') || null;
                                         })();
                                         const bookingSourceLabel = room.stay?.bookingSource?.trim() ? `источник ${room.stay.bookingSource.trim()}` : null;
+                                        const contactLabel = [room.stay?.companyName?.trim(), room.stay?.guestPhone?.trim()].filter(Boolean).join(' · ');
 
                                         return (
                                             <article key={room.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:shadow dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none">
@@ -1106,6 +1125,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         {room.stay.amountPaid != null && (
                                                             <> · {formatKgs(room.stay.amountPaid)}{paymentLabel ? ` · ${paymentLabel}` : ''}{bookingSourceLabel ? ` · ${bookingSourceLabel}` : ''}</>
                                                         )}
+                                                        {contactLabel ? <> · {contactLabel}</> : null}
                                                     </div>
                                                 )}
                                             </article>
@@ -1590,6 +1610,36 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             readOnly={checkInModal.mode !== 'checkin'}
                                         />
                                     </div>
+                                    {checkInModal.mode === 'checkin' && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-guest-phone">Телефон</label>
+                                                <Input
+                                                    id="modal-guest-phone"
+                                                    type="text"
+                                                    placeholder="Телефон"
+                                                    value={checkInModal.guestPhone}
+                                                    onChange={(event) =>
+                                                        setCheckInModal((prev) => (prev ? { ...prev, guestPhone: event.target.value } : prev))
+                                                    }
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-company-name">Компания</label>
+                                                <Input
+                                                    id="modal-company-name"
+                                                    type="text"
+                                                    placeholder="Компания"
+                                                    value={checkInModal.companyName}
+                                                    onChange={(event) =>
+                                                        setCheckInModal((prev) => (prev ? { ...prev, companyName: event.target.value } : prev))
+                                                    }
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                     {checkInModal.mode === 'transfer' && (
                                         <>
                                             <div className="grid grid-cols-2 gap-2">
@@ -1650,6 +1700,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             <option key={`modal-booking-source-${name}`} value={name}>{name}</option>
                                                         ))}
                                                     </Select>
+                                                </div>
+                                            )}
+                                            {checkInModal.mode === 'checkin' && (
+                                                <div>
+                                                    <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-stay-notes">Комментарий</label>
+                                                    <TextArea
+                                                        id="modal-stay-notes"
+                                                        rows={2}
+                                                        placeholder="Комментарий к брони или гостю"
+                                                        value={checkInModal.notes}
+                                                        onChange={(event) =>
+                                                            setCheckInModal((prev) => (prev ? { ...prev, notes: event.target.value } : prev))
+                                                        }
+                                                        className="text-white"
+                                                    />
                                                 </div>
                                             )}
                                             {checkInModal.mode === 'checkin' ? (

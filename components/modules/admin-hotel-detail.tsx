@@ -26,6 +26,8 @@ type LedgerPaymentMethodValue = 'CASH' | 'CARD';
 interface RoomStayDetail {
     id: string;
     guestName?: string | null;
+    guestPhone?: string | null;
+    companyName?: string | null;
     status: StayStatusValue;
     scheduledCheckIn: string;
     scheduledCheckOut: string;
@@ -215,6 +217,8 @@ interface StayEditForm {
     roomId: string;
     roomLabel: string;
     guestName: string;
+    guestPhone: string;
+    companyName: string;
     scheduledCheckIn: string;
     scheduledCheckOut: string;
     actualCheckIn: string;
@@ -226,6 +230,17 @@ interface StayEditForm {
     totalPaid: number;
     paymentMethod: PaymentMethodValue;
     shiftId: string;
+    bookingSource: string;
+    notes: string;
+}
+
+interface BookingCreateForm {
+    roomId: string;
+    guestName: string;
+    guestPhone: string;
+    companyName: string;
+    scheduledCheckIn: string;
+    scheduledCheckOut: string;
     bookingSource: string;
     notes: string;
 }
@@ -246,6 +261,8 @@ const createStayEditDefaults = (): StayEditForm => ({
     roomId: '',
     roomLabel: '',
     guestName: '',
+    guestPhone: '',
+    companyName: '',
     scheduledCheckIn: '',
     scheduledCheckOut: '',
     actualCheckIn: '',
@@ -257,6 +274,17 @@ const createStayEditDefaults = (): StayEditForm => ({
     totalPaid: 0,
     paymentMethod: 'AUTO',
     shiftId: '',
+    bookingSource: '',
+    notes: ''
+});
+
+const createBookingDefaults = (): BookingCreateForm => ({
+    roomId: '',
+    guestName: '',
+    guestPhone: '',
+    companyName: '',
+    scheduledCheckIn: '',
+    scheduledCheckOut: '',
     bookingSource: '',
     notes: ''
 });
@@ -505,6 +533,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const stayEditForm = useForm<StayEditForm>({
         defaultValues: createStayEditDefaults()
     });
+    const bookingCreateForm = useForm<BookingCreateForm>({
+        defaultValues: createBookingDefaults()
+    });
     const ledgerEditForm = useForm<LedgerEditForm>({
         defaultValues: {
             entryId: '',
@@ -532,6 +563,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
     const [isRoomListExpanded, setIsRoomListExpanded] = useState(false);
     const [isStayEditorOpen, setIsStayEditorOpen] = useState(false);
+    const [isBookingFormOpen, setIsBookingFormOpen] = useState(false);
+    const [isCreatingBooking, setIsCreatingBooking] = useState(false);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
@@ -821,6 +854,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             room.label,
                             room.floor,
                             stay.guestName,
+                            stay.guestPhone,
+                            stay.companyName,
                             stay.bookingSource,
                             stay.notes,
                             stay.shiftNumber ? `смена ${stay.shiftNumber}` : null,
@@ -1262,6 +1297,67 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         resetStayEditor();
     };
 
+    const handleOpenBookingForm = (room?: HotelDetailPayload['rooms'][number]) => {
+        const checkIn = new Date();
+        checkIn.setHours(14, 0, 0, 0);
+        if (checkIn.getTime() <= Date.now()) {
+            checkIn.setDate(checkIn.getDate() + 1);
+        }
+        const checkOut = new Date(checkIn);
+        checkOut.setDate(checkOut.getDate() + 1);
+        checkOut.setHours(12, 0, 0, 0);
+
+        bookingCreateForm.reset({
+            ...createBookingDefaults(),
+            roomId: room?.id ?? '',
+            scheduledCheckIn: toDateTimeInputValue(checkIn.toISOString()),
+            scheduledCheckOut: toDateTimeInputValue(checkOut.toISOString())
+        });
+        setIsBookingFormOpen(true);
+        setIsRoomHistoryExpanded(true);
+    };
+
+    const handleCloseBookingForm = () => {
+        setIsBookingFormOpen(false);
+        bookingCreateForm.reset(createBookingDefaults());
+    };
+
+    const handleCreateBooking = bookingCreateForm.handleSubmit(async (values) => {
+        const scheduledCheckIn = fromDateTimeInputValue(values.scheduledCheckIn);
+        const scheduledCheckOut = fromDateTimeInputValue(values.scheduledCheckOut);
+
+        if (!values.roomId || !scheduledCheckIn || !scheduledCheckOut) {
+            toast('Выберите номер и даты брони', 'error');
+            return;
+        }
+
+        try {
+            setIsCreatingBooking(true);
+            await request('/api/admin/stays', {
+                body: {
+                    roomId: values.roomId,
+                    guestName: normalizeOptionalText(values.guestName),
+                    guestPhone: normalizeOptionalText(values.guestPhone),
+                    companyName: normalizeOptionalText(values.companyName),
+                    scheduledCheckIn,
+                    scheduledCheckOut,
+                    bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined,
+                    notes: normalizeOptionalText(values.notes)
+                }
+            });
+            await mutate();
+            setStayHistoryStatus('SCHEDULED');
+            setStayHistoryQuery('');
+            handleCloseBookingForm();
+            toast('Будущая бронь добавлена', 'success');
+        } catch (bookingError) {
+            console.error(bookingError);
+            toast(bookingError instanceof Error ? bookingError.message : 'Не удалось добавить бронь', 'error');
+        } finally {
+            setIsCreatingBooking(false);
+        }
+    });
+
     const hydrateStayEditor = (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
         const stayBreakdownTotal = (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0) + (stay.onlinePaid ?? 0);
         stayEditForm.reset({
@@ -1269,6 +1365,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             roomId: room.id,
             roomLabel: room.label,
             guestName: stay.guestName ?? '',
+            guestPhone: stay.guestPhone ?? '',
+            companyName: stay.companyName ?? '',
             scheduledCheckIn: toDateTimeInputValue(stay.scheduledCheckIn),
             scheduledCheckOut: toDateTimeInputValue(stay.scheduledCheckOut),
             actualCheckIn: toDateTimeInputValue(stay.actualCheckIn),
@@ -1312,6 +1410,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 method: 'PATCH',
                 body: {
                     guestName: normalizeOptionalText(values.guestName),
+                    guestPhone: normalizeOptionalText(values.guestPhone),
+                    companyName: normalizeOptionalText(values.companyName),
                     notes: normalizeOptionalText(values.notes),
                     scheduledCheckIn: fromDateTimeInputValue(values.scheduledCheckIn),
                     scheduledCheckOut: fromDateTimeInputValue(values.scheduledCheckOut),
@@ -1940,6 +2040,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         <Button
                                                             type="button"
                                                             size="sm"
+                                                            variant="secondary"
+                                                            onClick={() => handleOpenBookingForm()}
+                                                        >
+                                                            Новая бронь
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
                                                             variant="ghost"
                                                             className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                             onClick={() => setIsRoomHistoryExpanded((prev) => !prev)}
@@ -1952,7 +2060,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <>
                                                         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px]">
                                                             <Input
-                                                                placeholder="Поиск: номер, гость, источник, смена"
+                                                                placeholder="Поиск: номер, гость, телефон, компания, источник"
                                                                 value={stayHistoryQuery}
                                                                 onChange={(event) => setStayHistoryQuery(event.target.value)}
                                                             />
@@ -1998,6 +2106,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <span className="flex-1" />
                                                                             <button
                                                                                 type="button"
+                                                                                className="text-[11px] font-medium text-slate-500 transition hover:text-slate-900 dark:text-white/45 dark:hover:text-white"
+                                                                                onClick={() => handleOpenBookingForm(room)}
+                                                                            >
+                                                                                Бронь
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
                                                                                 className="text-[11px] text-rose-400/70 transition hover:text-rose-500 dark:text-rose-300/60 dark:hover:text-rose-300"
                                                                                 onClick={() => handleDeleteRoom(room.id)}
                                                                                 disabled={removingRoomId === room.id}
@@ -2026,6 +2141,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         return segments.join(' · ') || undefined;
                                                                                     })();
                                                                                     const sourceLabel = stayEntry.bookingSource?.trim() ? `источник ${stayEntry.bookingSource.trim()}` : undefined;
+                                                                                    const phoneLabel = stayEntry.guestPhone?.trim() ? `тел. ${stayEntry.guestPhone.trim()}` : undefined;
+                                                                                    const companyLabel = stayEntry.companyName?.trim() ? `компания ${stayEntry.companyName.trim()}` : undefined;
                                                                                     const transferLabel = stayEntry.transfers?.length
                                                                                         ? stayEntry.transfers
                                                                                             .map((transfer) => `переселение ${transfer.fromRoomLabel}→${transfer.toRoomLabel}`)
@@ -2053,6 +2170,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                     <> · {formatCurrency(displayAmount)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
                                                                                                 )}
                                                                                             </p>
+                                                                                            {(phoneLabel || companyLabel || stayEntry.notes) ? (
+                                                                                                <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">
+                                                                                                    {[companyLabel, phoneLabel, stayEntry.notes?.trim()].filter(Boolean).join(' · ')}
+                                                                                                </p>
+                                                                                            ) : null}
                                                                                             {onlinePortion > 0 ? (
                                                                                                 <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-300">
                                                                                                     Ожидает сайт: {formatCurrency(onlinePortion)}
@@ -2352,6 +2474,82 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
                 </Card>
 
+                {isBookingFormOpen && (
+                    <div className="fixed inset-0 z-50 overflow-y-auto px-2 sm:px-6">
+                        <div className="fixed inset-0 bg-black/70" onClick={handleCloseBookingForm} />
+                        <div className="relative z-10 mx-auto mt-4 w-full max-w-3xl rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_32px_90px_-38px_rgba(15,23,42,0.65)] backdrop-blur sm:mt-12 sm:p-6 dark:border-white/[0.08] dark:bg-[#090d16]/95 dark:text-white">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/35">Будущая бронь</p>
+                                    <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Новая запись</h3>
+                                </div>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="border border-slate-200/80 dark:border-white/10"
+                                    onClick={handleCloseBookingForm}
+                                >
+                                    ×
+                                </Button>
+                            </div>
+                            <form className="mt-4 space-y-4" onSubmit={handleCreateBooking}>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Номер</label>
+                                        <Select {...bookingCreateForm.register('roomId')}>
+                                            <option value="">Выберите номер</option>
+                                            {sortedRooms.filter((room) => room.isActive).map((room) => (
+                                                <option key={`booking-room-${room.id}`} value={room.id}>
+                                                    №{room.label}{room.floor ? ` · ${room.floor}` : ''}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </div>
+                                    {data?.usesExtranets && (data.extranetNames?.length ?? 0) > 0 && (
+                                        <div className="space-y-1">
+                                            <label className={modalLabelClass}>Источник брони</label>
+                                            <Select {...bookingCreateForm.register('bookingSource')}>
+                                                <option value="">Без экстранета / прямой заезд</option>
+                                                {(data.extranetNames ?? []).map((name) => (
+                                                    <option key={`create-booking-source-${name}`} value={name}>{name}</option>
+                                                ))}
+                                            </Select>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <Input placeholder="Имя клиента" {...bookingCreateForm.register('guestName')} />
+                                    <Input placeholder="Телефон" {...bookingCreateForm.register('guestPhone')} />
+                                    <Input placeholder="Компания" {...bookingCreateForm.register('companyName')} />
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Заезд</label>
+                                        <Input type="datetime-local" step="60" {...bookingCreateForm.register('scheduledCheckIn')} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Выезд</label>
+                                        <Input type="datetime-local" step="60" {...bookingCreateForm.register('scheduledCheckOut')} />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className={modalLabelClass}>Комментарий</label>
+                                    <TextArea rows={3} placeholder="Пожелания гостя, условия оплаты, кто оставил бронь" {...bookingCreateForm.register('notes')} />
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <Button type="submit" disabled={isCreatingBooking}>
+                                        {isCreatingBooking ? 'Сохраняем…' : 'Сохранить бронь'}
+                                    </Button>
+                                    <Button type="button" variant="ghost" className="border border-slate-200/80 dark:border-white/20" onClick={handleCloseBookingForm}>
+                                        Отменить
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
                 {isStayEditorOpen && hasStaySelection && (
                     <div className="fixed inset-0 z-50 overflow-y-auto px-2 sm:px-6">
                         <div className="fixed inset-0 bg-black/70" onClick={handleCloseStayEditor} />
@@ -2374,7 +2572,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 </Button>
                             </div>
                             <form className="mt-4 space-y-4" onSubmit={handleUpdateStay}>
-                                <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <Input placeholder="Имя гостя" {...stayEditForm.register('guestName')} />
+                                    <Input placeholder="Телефон" {...stayEditForm.register('guestPhone')} />
+                                    <Input placeholder="Компания" {...stayEditForm.register('companyName')} />
+                                </div>
                                 <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                                         <div className="min-w-0">

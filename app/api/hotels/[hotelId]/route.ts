@@ -371,6 +371,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     return {
                         id: stay.id,
                         guestName: stay.guestName,
+                        guestPhone: stay.guestPhone,
+                        companyName: stay.companyName,
                         status: stay.status,
                         scheduledCheckIn: stay.scheduledCheckIn,
                         scheduledCheckOut: stay.scheduledCheckOut,

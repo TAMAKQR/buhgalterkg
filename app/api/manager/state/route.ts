@@ -275,6 +275,8 @@ export async function GET(request: NextRequest) {
                     ? {
                         id: room.stays[0].id,
                         guestName: room.stays[0].guestName,
+                        guestPhone: room.stays[0].guestPhone,
+                        companyName: room.stays[0].companyName,
                         scheduledCheckIn: room.stays[0].scheduledCheckIn,
                         scheduledCheckOut: room.stays[0].scheduledCheckOut,
                         status: room.stays[0].status,
@@ -283,7 +285,8 @@ export async function GET(request: NextRequest) {
                         cashPaid: room.stays[0].cashPaid,
                         cardPaid: room.stays[0].cardPaid,
                         onlinePaid: room.stays[0].onlinePaid,
-                        bookingSource: room.stays[0].bookingSource
+                        bookingSource: room.stays[0].bookingSource,
+                        notes: room.stays[0].notes
                     }
                     : null
             })),

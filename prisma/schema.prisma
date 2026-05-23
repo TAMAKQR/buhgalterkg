@@ -99,6 +99,8 @@ model RoomStay {
   hotelId           String
   shiftId           String?
   guestName         String?
+  guestPhone        String?        @map("guest_phone")
+  companyName       String?        @map("company_name")
   bookingSource     String?        @map("booking_source")
   scheduledCheckIn  DateTime
   scheduledCheckOut DateTime

@@ -15,6 +15,8 @@ export const dynamic = 'force-dynamic';
 const updateStaySchema = z
     .object({
         guestName: z.string().max(80).optional().nullable(),
+        guestPhone: z.string().max(40).optional().nullable(),
+        companyName: z.string().max(120).optional().nullable(),
         scheduledCheckIn: z.string().datetime().optional().nullable(),
         scheduledCheckOut: z.string().datetime().optional().nullable(),
         actualCheckIn: z.string().datetime().optional().nullable(),
@@ -42,6 +44,14 @@ const parseDateOrNull = (value?: string | null) => {
         throw new Error('INVALID_DATE');
     }
     return parsed;
+};
+
+const normalizeOptionalText = (value?: string | null) => {
+    if (value == null) {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
 };
 
 const getCashLedgerParts = ({
@@ -154,13 +164,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         }
 
         if (payload.guestName !== undefined) {
-            const trimmed = payload.guestName?.trim();
-            updateData.guestName = trimmed?.length ? trimmed : null;
+            updateData.guestName = normalizeOptionalText(payload.guestName);
+        }
+
+        if (payload.guestPhone !== undefined) {
+            updateData.guestPhone = normalizeOptionalText(payload.guestPhone);
+        }
+
+        if (payload.companyName !== undefined) {
+            updateData.companyName = normalizeOptionalText(payload.companyName);
         }
 
         if (payload.notes !== undefined) {
-            const trimmed = payload.notes?.trim();
-            updateData.notes = trimmed?.length ? trimmed : null;
+            updateData.notes = normalizeOptionalText(payload.notes);
         }
 
         if (payload.scheduledCheckIn !== undefined) {

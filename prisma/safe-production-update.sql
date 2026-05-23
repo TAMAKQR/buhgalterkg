@@ -143,6 +143,26 @@ BEGIN
     ELSE
         RAISE NOTICE 'RoomStay.online_paid already exists — skipped';
     END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'RoomStay' AND column_name = 'guest_phone'
+    ) THEN
+        ALTER TABLE "RoomStay" ADD COLUMN "guest_phone" TEXT;
+        RAISE NOTICE 'Added RoomStay.guest_phone';
+    ELSE
+        RAISE NOTICE 'RoomStay.guest_phone already exists — skipped';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'RoomStay' AND column_name = 'company_name'
+    ) THEN
+        ALTER TABLE "RoomStay" ADD COLUMN "company_name" TEXT;
+        RAISE NOTICE 'Added RoomStay.company_name';
+    ELSE
+        RAISE NOTICE 'RoomStay.company_name already exists — skipped';
+    END IF;
 END $$;
 
 -- 9. StayTransfer: журнал переселений между комнатами (если нет)

@@ -15,7 +15,10 @@ const staySchema = z.object({
     shiftId: z.string().cuid(),
     intent: z.enum(['checkin', 'checkout', 'extend', 'transfer']),
     guestName: z.string().optional(),
+    guestPhone: z.string().max(40).optional().nullable(),
+    companyName: z.string().max(120).optional().nullable(),
     bookingSource: z.string().max(80).optional().nullable(),
+    notes: z.string().max(500).optional().nullable(),
     targetRoomId: z.string().cuid().optional(),
     transferNote: z.string().trim().max(300).optional().nullable(),
     scheduledCheckIn: z.string().datetime().optional(),
@@ -30,6 +33,14 @@ const staySchema = z.object({
 const appendTransferNote = (existing: string | null | undefined, line: string) => {
     const notes = [existing?.trim(), line.trim()].filter(Boolean).join('\n');
     return notes.slice(0, 500);
+};
+
+const normalizeOptionalText = (value?: string | null) => {
+    if (value == null) {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
 };
 
 export async function POST(request: NextRequest, { params }: { params: { roomId: string } }) {
@@ -98,7 +109,10 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         : new Date(Date.now() + 12 * 60 * 60 * 1000),
                     status: StayStatus.CHECKED_IN,
                     actualCheckIn: new Date(),
-                    guestName: payload.guestName,
+                    guestName: normalizeOptionalText(payload.guestName),
+                    guestPhone: normalizeOptionalText(payload.guestPhone),
+                    companyName: normalizeOptionalText(payload.companyName),
+                    notes: normalizeOptionalText(payload.notes),
                     amountPaid: totalAmount,
                     paymentMethod: detectedMethod,
                     cashPaid: cashAmount,
