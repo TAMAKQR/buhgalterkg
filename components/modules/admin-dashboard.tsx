@@ -282,7 +282,7 @@ const expenseAmountTone = (entry: ExpenseEntry) =>
         ? "text-sky-600 dark:text-sky-300"
         : "text-rose-500 dark:text-rose-300";
 
-const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_6px_18px_-16px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/70 dark:focus:ring-white/[0.06] disabled:opacity-40";
+const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/70 dark:border-white/[0.06] bg-white/72 dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_8px_22px_-20px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white/90 dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/50 dark:focus:ring-white/[0.06] disabled:opacity-40";
 
 const toDateInputValue = (value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -321,7 +321,7 @@ const createPeriodFilters = (preset: PeriodPreset, timeZone: string): OverviewFi
 
 function SectionCard({ title, subtitle, actions, className, children }: { title: string; subtitle?: string; actions?: React.ReactNode; className?: string; children: React.ReactNode }) {
     return (
-        <Card className={`p-4 sm:p-5 ${className ?? ""}`}>
+        <Card className={`!border-slate-200/60 !bg-slate-50/82 !shadow-[0_18px_46px_-40px_rgba(15,23,42,0.32)] dark:!border-white/[0.06] dark:!bg-white/[0.04] dark:!shadow-none p-4 sm:p-5 ${className ?? ""}`}>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                     {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/30">{subtitle}</p> : null}
@@ -1459,10 +1459,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [overview, filters.startDate, filters.endDate, overviewCurrency]);
 
     return (
-        <div className="min-h-screen bg-light-bg dark:bg-night">
+        <div className="min-h-screen bg-[#eef3f8] dark:bg-night">
             <div className="desktop-container">
                 <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-4 sm:px-5 lg:gap-5 lg:px-8 lg:pt-6">
-                    <header className="flex flex-col gap-4 rounded-[28px] border border-slate-200/80 bg-white/88 p-4 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.35)] backdrop-blur-sm dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none lg:flex-row lg:items-center lg:justify-between lg:p-5">
+                    <header className="flex flex-col gap-4 rounded-[28px] border border-slate-200/60 bg-slate-50/82 p-4 shadow-[0_18px_46px_-40px_rgba(15,23,42,0.32)] backdrop-blur-sm dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none lg:flex-row lg:items-center lg:justify-between lg:p-5">
                         <div>
                             <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400 dark:text-white/30">Администрирование</p>
                             <h1 className="mt-1 text-xl font-semibold text-light-text dark:text-white lg:text-2xl">{user.displayName}</h1>
@@ -1481,15 +1481,15 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                     </header>
                     <div className="sticky top-0 z-10 -mx-3 px-3 py-1 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-                        <div className="rounded-[24px] border border-slate-200/80 bg-white/82 p-1.5 shadow-[0_14px_38px_-28px_rgba(15,23,42,0.3)] backdrop-blur-md dark:border-white/[0.06] dark:bg-night/82 dark:shadow-none">
-                            <div className="flex gap-1 rounded-[18px] bg-slate-100/80 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.04] dark:text-white/50">
+                        <div className="rounded-[24px] border border-slate-200/60 bg-slate-50/78 p-1.5 shadow-[0_14px_38px_-32px_rgba(15,23,42,0.28)] backdrop-blur-md dark:border-white/[0.06] dark:bg-night/82 dark:shadow-none">
+                            <div className="flex gap-1 rounded-[18px] bg-slate-200/42 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.04] dark:text-white/50">
                                 {adminTabs.map((tab) => (
                                     <button
                                         key={tab.id}
                                         type="button"
                                         onClick={() => setActiveTab(tab.id)}
                                         className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
-                                            ? "bg-white text-slate-800 shadow-sm dark:bg-white/[0.12] dark:text-white"
+                                            ? "bg-slate-50/95 text-slate-800 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.32)] dark:bg-white/[0.12] dark:text-white"
                                             : "hover:text-slate-700 dark:hover:text-white/70"
                                             }`}
                                     >
