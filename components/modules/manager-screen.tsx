@@ -502,8 +502,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 })
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
                 .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
+            const laneEnds: number[] = [];
+            const itemsWithLanes = items.map((item) => {
+                const endIndex = item.startIndex + item.span;
+                const lane = laneEnds.findIndex((currentEnd) => currentEnd <= item.startIndex);
+                const nextLane = lane >= 0 ? lane : laneEnds.length;
+                laneEnds[nextLane] = endIndex;
+                return { ...item, lane: nextLane };
+            });
+            const laneCount = Math.max(1, laneEnds.length);
 
-            return { room, items };
+            return { room, items: itemsWithLanes, laneCount };
         });
     }, [roomBoardRange, sortedRooms]);
 
@@ -1239,13 +1248,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         </div>
                                                     ))}
                                                 </div>
-                                                {roomBoardRows.map(({ room, items }) => (
+                                                {roomBoardRows.map(({ room, items, laneCount }) => (
                                                     <div
                                                         key={`manager-board-room-${room.id}`}
                                                         className="grid min-h-[56px] border-b border-slate-200/80 last:border-b-0 dark:border-white/[0.05]"
-                                                        style={{ gridTemplateColumns: `92px repeat(${managerBoardDayCount}, minmax(88px, 1fr))` }}
+                                                        style={{
+                                                            gridTemplateColumns: `92px repeat(${managerBoardDayCount}, minmax(88px, 1fr))`,
+                                                            gridTemplateRows: `repeat(${laneCount}, minmax(52px, auto))`
+                                                        }}
                                                     >
-                                                        <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]">
+                                                        <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]" style={{ gridRow: `1 / span ${laneCount}` }}>
                                                             <div className="min-w-0">
                                                                 <p className="truncate text-sm font-semibold text-light-text dark:text-white">№ {room.label}</p>
                                                                 {room.floor ? <p className="truncate text-[11px] text-slate-400 dark:text-white/35">{room.floor}</p> : null}
@@ -1258,7 +1270,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                     type="button"
                                                                     key={`manager-board-cell-${room.id}-${dayIndex}`}
                                                                     className={`border-l border-slate-200/70 text-left transition hover:bg-cyan-50/70 dark:border-white/[0.04] dark:hover:bg-cyan-400/[0.05] ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
-                                                                    style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                                                                    style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
                                                                     onClick={() => showBookingModal(room, day)}
                                                                     title={`Поставить бронь на № ${room.label}`}
                                                                     aria-label={`Поставить бронь на номер ${room.label}`}
@@ -1269,8 +1281,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             <button
                                                                 key={`manager-board-stay-${item.stay.id}`}
                                                                 type="button"
-                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue)}`}
-                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: 1 }}
+                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue)}`}
+                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
                                                                 title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
                                                                 onClick={() => {
                                                                     if (item.stay.status === 'CHECKED_IN') {

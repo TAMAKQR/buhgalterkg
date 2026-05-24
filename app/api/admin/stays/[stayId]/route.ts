@@ -292,6 +292,38 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             updateData.paymentMethod = null;
         }
 
+        const nextScheduledCheckIn = updateData.scheduledCheckIn instanceof Date ? updateData.scheduledCheckIn : stay.scheduledCheckIn;
+        const nextScheduledCheckOut = updateData.scheduledCheckOut instanceof Date ? updateData.scheduledCheckOut : stay.scheduledCheckOut;
+        const nextStatus = payload.status ?? stay.status;
+
+        if (nextScheduledCheckOut <= nextScheduledCheckIn) {
+            return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });
+        }
+
+        if (nextStatus === StayStatus.SCHEDULED || nextStatus === StayStatus.CHECKED_IN) {
+            const conflictingStay = await prisma.roomStay.findFirst({
+                where: {
+                    id: { not: stay.id },
+                    roomId: stay.roomId,
+                    hotelId: stay.hotelId,
+                    status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                    scheduledCheckIn: { lt: nextScheduledCheckOut },
+                    scheduledCheckOut: { gt: nextScheduledCheckIn }
+                },
+                select: {
+                    id: true,
+                    guestName: true,
+                    scheduledCheckIn: true,
+                    scheduledCheckOut: true
+                }
+            });
+
+            if (conflictingStay) {
+                const guest = conflictingStay.guestName?.trim() || 'другая бронь';
+                return new NextResponse(`На эти даты уже есть ${guest} в этом номере`, { status: 409 });
+            }
+        }
+
         const updatedStay = await prisma.$transaction(async (tx) => {
             let result = await tx.roomStay.update({
                 where: { id: params.stayId },
