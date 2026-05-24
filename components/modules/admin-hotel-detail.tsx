@@ -592,6 +592,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isStayEditorOpen, setIsStayEditorOpen] = useState(false);
     const [isBookingFormOpen, setIsBookingFormOpen] = useState(false);
     const [isCreatingBooking, setIsCreatingBooking] = useState(false);
+    const [confirmingOnlineStayId, setConfirmingOnlineStayId] = useState<string | null>(null);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
@@ -617,6 +618,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const room = data.rooms.find((candidate) => candidate.id === stayFormValues.roomId);
         return room?.stays.find((stay) => stay.id === stayFormValues.stayId) ?? null;
     }, [data, stayFormValues.roomId, stayFormValues.stayId]);
+    const selectedRoomForEditor = useMemo(() => {
+        if (!data || !stayFormValues.roomId) {
+            return null;
+        }
+        return data.rooms.find((candidate) => candidate.id === stayFormValues.roomId) ?? null;
+    }, [data, stayFormValues.roomId]);
     const roomPaymentPreview = useMemo(
         () => ({
             totalBreakdown:
@@ -1534,6 +1541,45 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     });
 
+    const handleConfirmOnlinePayment = async (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
+        const onlineMinor = stay.onlinePaid ?? 0;
+        if (onlineMinor <= 0) {
+            return;
+        }
+
+        const cashMinor = stay.cashPaid ?? 0;
+        const nextCardMinor = (stay.cardPaid ?? 0) + onlineMinor;
+        const nextTotalMinor = cashMinor + nextCardMinor;
+
+        try {
+            setConfirmingOnlineStayId(stay.id);
+            await request(`/api/admin/stays/${stay.id}`, {
+                method: 'PATCH',
+                body: {
+                    cardPaid: nextCardMinor,
+                    onlinePaid: 0,
+                    amountPaid: nextTotalMinor
+                }
+            });
+
+            const refreshed = await mutate();
+            const snapshot = refreshed ?? data ?? null;
+            if (snapshot && stayEditForm.getValues('stayId') === stay.id) {
+                const updatedRoom = snapshot.rooms.find((candidate) => candidate.id === room.id);
+                const updatedStay = updatedRoom?.stays.find((candidate) => candidate.id === stay.id);
+                if (updatedRoom && updatedStay) {
+                    hydrateStayEditor(updatedRoom, updatedStay);
+                }
+            }
+            toast('Поступление с сайта подтверждено', 'success');
+        } catch (confirmError) {
+            console.error(confirmError);
+            toast('Не удалось подтвердить поступление', 'error');
+        } finally {
+            setConfirmingOnlineStayId(null);
+        }
+    };
+
     if (isLoading || !data) {
         return (
             <div className="flex min-h-screen flex-col gap-4 px-2 py-4 sm:px-6 sm:py-6">
@@ -2393,9 +2439,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                 </p>
                                                                                             ) : null}
                                                                                             {onlinePortion > 0 ? (
-                                                                                                <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-300">
-                                                                                                    Ожидает сайт: {formatCurrency(onlinePortion)}
-                                                                                                </p>
+                                                                                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                                                                                    <span className="font-medium">Ожидает сайт: {formatCurrency(onlinePortion)}</span>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        className="rounded-lg border border-amber-300/80 px-2 py-1 font-semibold transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-300/30 dark:hover:bg-amber-400/10"
+                                                                                                        disabled={confirmingOnlineStayId === stayEntry.id}
+                                                                                                        onClick={() => handleConfirmOnlinePayment(room, stayEntry)}
+                                                                                                    >
+                                                                                                        {confirmingOnlineStayId === stayEntry.id ? 'Подтверждаем...' : 'Подтвердить'}
+                                                                                                    </button>
+                                                                                                </div>
                                                                                             ) : null}
                                                                                             {transferLabel ? (
                                                                                                 <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">{transferLabel}</p>
@@ -2929,6 +2983,25 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     })}{' '}
                                     {hotelCur || 'KGS'}
                                 </div>
+                                {selectedStayForEditor && (selectedStayForEditor.onlinePaid ?? 0) > 0 && selectedRoomForEditor ? (
+                                    <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <span className="font-medium">
+                                                Ожидает поступления с сайта: {formatCurrency(selectedStayForEditor?.onlinePaid ?? 0)}
+                                            </span>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="secondary"
+                                                className="border-amber-300/80 bg-white text-amber-700 hover:bg-amber-100 dark:border-amber-300/30 dark:bg-white/[0.05] dark:text-amber-200 dark:hover:bg-amber-400/10"
+                                                disabled={confirmingOnlineStayId === selectedStayForEditor.id}
+                                                onClick={() => handleConfirmOnlinePayment(selectedRoomForEditor, selectedStayForEditor)}
+                                            >
+                                                {confirmingOnlineStayId === selectedStayForEditor.id ? 'Подтверждаем...' : 'Подтвердить поступление'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : null}
                                 <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
                                     <p className={modalLabelClass}>Кассовые записи по проживанию</p>
                                     {selectedStayForEditor?.ledgerEntries?.length ? (
