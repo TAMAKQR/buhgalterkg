@@ -24,6 +24,12 @@ type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTM
 type LedgerPaymentMethodValue = 'CASH' | 'CARD';
 type RoomOverviewMode = 'board' | 'history';
 
+type PendingOnlineStayDetail = RoomStayDetail & {
+    roomId: string;
+    roomLabel: string;
+    roomFloor?: string | null;
+};
+
 interface RoomStayDetail {
     id: string;
     guestName?: string | null;
@@ -138,6 +144,7 @@ interface HotelDetailPayload {
     }>;
     activeShift?: ShiftHistoryEntry | null;
     shiftHistory: ShiftHistoryEntry[];
+    pendingOnlineStays?: PendingOnlineStayDetail[];
     transactions: LedgerEntryDetail[];
     timezone?: string | null;
     currency?: string | null;
@@ -593,6 +600,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isBookingFormOpen, setIsBookingFormOpen] = useState(false);
     const [isCreatingBooking, setIsCreatingBooking] = useState(false);
     const [confirmingOnlineStayId, setConfirmingOnlineStayId] = useState<string | null>(null);
+    const [isPendingOnlineHistoryOpen, setIsPendingOnlineHistoryOpen] = useState(false);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
@@ -850,6 +858,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             .reduce((total, entry) => total + entry.amount, 0),
         [selectedShiftTransactions]
     );
+
+    const pendingOnlineHistory = useMemo(() => data?.pendingOnlineStays ?? [], [data]);
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
@@ -1541,7 +1551,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     });
 
-    const handleConfirmOnlinePayment = async (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
+    const handleConfirmOnlinePayment = async (room: Pick<HotelDetailPayload['rooms'][number], 'id'>, stay: RoomStayDetail) => {
         const onlineMinor = stay.onlinePaid ?? 0;
         if (onlineMinor <= 0) {
             return;
@@ -1753,6 +1763,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const occupancyRate = data.roomCount ? Math.round((data.occupiedRooms / data.roomCount) * 100) : 0;
     const managerCount = data.managers.length;
     const activeShiftLabel = data.activeShift ? `Смена №${data.activeShift.number}` : 'Нет активной смены';
+    const pendingOnlineValue = data.financials.pendingOnline ?? 0;
     const summaryCards = [
         {
             label: 'Загрузка',
@@ -1762,7 +1773,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         {
             label: 'Касса',
             value: formatCurrency(data.financials.netCash),
-            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано · ${formatCurrency(data.financials.collections)} инкас. · ${formatCurrency(data.financials.pendingOnline ?? 0)} ожидает`
+            caption: `${formatCurrency(data.financials.cashIn)} поступило · ${formatCurrency(data.financials.cashOut)} списано · ${formatCurrency(data.financials.collections)} инкас.`
         },
         {
             label: 'Команда',
@@ -1865,10 +1876,89 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 >
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">{item.label}</p>
                                     <p className="mt-3 text-xl font-semibold tracking-tight text-white">{item.value}</p>
-                                    <p className="mt-1 text-sm text-white/55">{item.caption}</p>
+                                    <p className="mt-1 text-sm text-white/55">
+                                        {item.caption}
+                                        {item.label === 'Касса' ? (
+                                            <>
+                                                {' · '}
+                                                <button
+                                                    type="button"
+                                                    className={`rounded-lg px-1.5 py-0.5 font-semibold transition ${pendingOnlineValue > 0 ? 'text-amber-200 hover:bg-amber-300/10 hover:text-amber-100' : 'cursor-default text-white/40'}`}
+                                                    onClick={() => pendingOnlineValue > 0 && setIsPendingOnlineHistoryOpen((current) => !current)}
+                                                    disabled={pendingOnlineValue <= 0}
+                                                    aria-expanded={isPendingOnlineHistoryOpen}
+                                                >
+                                                    {formatCurrency(pendingOnlineValue)} ожидает
+                                                </button>
+                                            </>
+                                        ) : null}
+                                    </p>
                                 </div>
                             ))}
                         </div>
+                        {isPendingOnlineHistoryOpen ? (
+                            <div className="rounded-[24px] border border-amber-300/20 bg-amber-400/10 p-4 text-amber-50">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Ожидающие поступления</p>
+                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineValue)}</p>
+                                    </div>
+                                    <Button type="button" variant="ghost" size="sm" className="text-amber-50 hover:bg-amber-300/10 hover:text-white" onClick={() => setIsPendingOnlineHistoryOpen(false)}>
+                                        Скрыть
+                                    </Button>
+                                </div>
+                                {pendingOnlineHistory.length ? (
+                                    <div className="mt-4 max-h-[440px] space-y-2 overflow-y-auto pr-1">
+                                        {pendingOnlineHistory.map((stay) => {
+                                            const guestLabel = stay.guestName?.trim() || 'Гость';
+                                            const detailLine = [
+                                                stay.bookingSource?.trim() ? `источник ${stay.bookingSource.trim()}` : null,
+                                                stay.companyName?.trim() ? `компания ${stay.companyName.trim()}` : null,
+                                                stay.guestPhone?.trim() ? `тел. ${stay.guestPhone.trim()}` : null,
+                                                stay.shiftNumber ? `смена №${stay.shiftNumber}` : null,
+                                                stay.shiftManagerName
+                                            ].filter(Boolean).join(' · ');
+
+                                            return (
+                                                <div key={`pending-online-${stay.id}`} className="rounded-2xl border border-amber-200/20 bg-black/15 px-3 py-3">
+                                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold">№ {stay.roomLabel}</span>
+                                                                <span className="text-sm font-semibold text-white">{guestLabel}</span>
+                                                                <Badge label={stayStatusLabels[stay.status]} tone={stayStatusTone[stay.status]} />
+                                                            </div>
+                                                            <p className="mt-2 text-xs text-amber-50/70">
+                                                                {formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn)} — {formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut)}
+                                                            </p>
+                                                            {detailLine ? <p className="mt-1 text-xs text-amber-50/55">{detailLine}</p> : null}
+                                                            {stay.notes?.trim() ? <p className="mt-1 text-xs text-amber-50/55">{stay.notes.trim()}</p> : null}
+                                                        </div>
+                                                        <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
+                                                            <span className="text-sm font-semibold text-amber-100">{formatCurrency(stay.onlinePaid ?? 0)}</span>
+                                                            <Button
+                                                                type="button"
+                                                                variant="secondary"
+                                                                size="sm"
+                                                                className="border-amber-300/50 bg-white/10 text-amber-50 hover:bg-amber-300/15 hover:text-white"
+                                                                disabled={confirmingOnlineStayId === stay.id}
+                                                                onClick={() => handleConfirmOnlinePayment({ id: stay.roomId }, stay)}
+                                                            >
+                                                                {confirmingOnlineStayId === stay.id ? 'Подтверждаем...' : 'Подтвердить'}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-amber-50/70">
+                                        Ожидающих поступлений нет.
+                                    </p>
+                                )}
+                            </div>
+                        ) : null}
                     </div>
                 </Card>
 

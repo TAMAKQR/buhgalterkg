@@ -170,7 +170,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         assertAdmin(session);
         const country = getCountryFromRequest(_request);
 
-        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift] = await prisma.$transaction([
+        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineStays] = await prisma.$transaction([
             prisma.hotel.findFirst({
                 where: { id: params.hotelId, country },
                 include: hotelDetailInclude
@@ -230,6 +230,29 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] }
                 },
                 _sum: { amountPaid: true, onlinePaid: true }
+            }),
+            prisma.roomStay.findMany({
+                where: {
+                    hotelId: params.hotelId,
+                    onlinePaid: { gt: 0 }
+                },
+                orderBy: [
+                    { scheduledCheckIn: 'desc' },
+                    { createdAt: 'desc' }
+                ],
+                include: {
+                    room: { select: { id: true, label: true, floor: true } },
+                    shift: {
+                        select: {
+                            id: true,
+                            number: true,
+                            status: true,
+                            openedAt: true,
+                            closedAt: true,
+                            manager: { select: { displayName: true } }
+                        }
+                    }
+                }
             })
         ]);
 
@@ -351,6 +374,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 };
             });
 
+        const pendingOnlineTotal = pendingOnlineStays.reduce((total, stay) => total + stay.onlinePaid, 0);
+
         const payload = {
             id: hotelRecord.id,
             name: hotelRecord.name,
@@ -456,6 +481,33 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 }
                 : null,
             shiftHistory,
+            pendingOnlineStays: pendingOnlineStays.map((stay) => ({
+                id: stay.id,
+                roomId: stay.roomId,
+                roomLabel: stay.room.label,
+                roomFloor: stay.room.floor,
+                guestName: stay.guestName,
+                guestPhone: stay.guestPhone,
+                companyName: stay.companyName,
+                status: stay.status,
+                scheduledCheckIn: stay.scheduledCheckIn,
+                scheduledCheckOut: stay.scheduledCheckOut,
+                actualCheckIn: stay.actualCheckIn,
+                actualCheckOut: stay.actualCheckOut,
+                amountPaid: stay.amountPaid,
+                paymentMethod: stay.paymentMethod,
+                cashPaid: stay.cashPaid,
+                cardPaid: stay.cardPaid,
+                onlinePaid: stay.onlinePaid,
+                bookingSource: stay.bookingSource,
+                shiftId: stay.shift?.id ?? null,
+                shiftNumber: stay.shift?.number ?? null,
+                shiftStatus: stay.shift?.status ?? null,
+                shiftOpenedAt: stay.shift?.openedAt ?? null,
+                shiftClosedAt: stay.shift?.closedAt ?? null,
+                shiftManagerName: stay.shift?.manager.displayName ?? null,
+                notes: stay.notes
+            })),
             transactions: ledgerEntries.map((entry) => ({
                 id: entry.id,
                 entryType: entry.entryType,
@@ -489,7 +541,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 collections: collectionsTotal,
                 payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT],
                 adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT],
-                pendingOnline: Array.from(shiftPendingOnline.values()).reduce((total, amount) => total + amount, 0),
+                pendingOnline: pendingOnlineTotal,
                 netCash:
                     ledgerTotals[LedgerEntryType.CASH_IN] -
                     ledgerTotals[LedgerEntryType.CASH_OUT] -
