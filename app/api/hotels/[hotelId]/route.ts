@@ -13,6 +13,43 @@ import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
+const roomStayDetailInclude = {
+    transfers: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+            fromRoom: { select: { label: true } },
+            toRoom: { select: { label: true } },
+        }
+    },
+    ledgerEntries: {
+        orderBy: { recordedAt: 'asc' },
+        select: {
+            id: true,
+            entryType: true,
+            method: true,
+            amount: true,
+            note: true,
+            recordedAt: true,
+            shift: { select: { number: true } },
+            manager: { select: { displayName: true } }
+        }
+    },
+    shift: {
+        select: {
+            id: true,
+            number: true,
+            status: true,
+            openedAt: true,
+            closedAt: true,
+            manager: {
+                select: {
+                    displayName: true
+                }
+            }
+        }
+    }
+} as const;
+
 const hotelDetailInclude = {
     expenseCategories: {
         orderBy: { name: 'asc' }
@@ -20,45 +57,13 @@ const hotelDetailInclude = {
     rooms: {
         orderBy: { label: 'asc' },
         include: {
+            currentStay: {
+                include: roomStayDetailInclude
+            },
             stays: {
                 orderBy: { scheduledCheckIn: 'desc' },
                 take: 20,
-                include: {
-                    transfers: {
-                        orderBy: { createdAt: 'asc' },
-                        include: {
-                            fromRoom: { select: { label: true } },
-                            toRoom: { select: { label: true } },
-                        }
-                    },
-                    ledgerEntries: {
-                        orderBy: { recordedAt: 'asc' },
-                        select: {
-                            id: true,
-                            entryType: true,
-                            method: true,
-                            amount: true,
-                            note: true,
-                            recordedAt: true,
-                            shift: { select: { number: true } },
-                            manager: { select: { displayName: true } }
-                        }
-                    },
-                    shift: {
-                        select: {
-                            id: true,
-                            number: true,
-                            status: true,
-                            openedAt: true,
-                            closedAt: true,
-                            manager: {
-                                select: {
-                                    displayName: true
-                                }
-                            }
-                        }
-                    }
-                }
+                include: roomStayDetailInclude
             } as never
         }
     },
@@ -89,6 +94,7 @@ type HotelDetailRecord = {
     shifts: Array<Shift & { manager: User }>;
     rooms: Array<
         Room & {
+            currentStay: HotelStayRecord | null;
             stays: Array<
                 RoomStay & {
                     transfers: Array<{
@@ -391,7 +397,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             roomCount: hotelRecord.rooms.length,
             occupiedRooms: hotelRecord.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
             rooms: hotelRecord.rooms.map((room) => {
-                const stayHistory = room.stays.map((stay) => {
+                const serializeStay = (stay: HotelStayRecord) => {
                     const stayRecord = stay as HotelStayRecord;
                     return {
                         id: stay.id,
@@ -434,8 +440,13 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         })),
                         notes: stay.notes
                     };
-                });
-                const latestStay = stayHistory[0] ?? null;
+                };
+                const stayHistory = room.stays.map((stay) => serializeStay(stay as HotelStayRecord));
+                const currentStay = room.currentStay ? serializeStay(room.currentStay) : null;
+                const checkedInStay = stayHistory.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? null;
+                const scheduledStay = stayHistory.find((stay) => stay.status === StayStatus.SCHEDULED) ?? null;
+                const historyStay = stayHistory.find((stay) => stay.status !== StayStatus.CHECKED_IN) ?? stayHistory[0] ?? null;
+                const latestStay = currentStay ?? (room.status === RoomStatus.OCCUPIED ? checkedInStay : null) ?? scheduledStay ?? historyStay;
 
                 return {
                     id: room.id,

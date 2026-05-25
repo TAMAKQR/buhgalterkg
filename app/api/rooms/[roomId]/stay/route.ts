@@ -257,9 +257,18 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             return NextResponse.json(stay);
         }
 
-        const currentStay = await prisma.roomStay.findFirst({
+        let currentStay = room.currentStayId
+            ? await prisma.roomStay.findFirst({
+                where: { id: room.currentStayId, roomId: room.id, status: StayStatus.CHECKED_IN }
+            })
+            : null;
+
+        currentStay ??= await prisma.roomStay.findFirst({
             where: { roomId: room.id, status: StayStatus.CHECKED_IN },
-            orderBy: { scheduledCheckIn: 'desc' }
+            orderBy: [
+                { updatedAt: 'desc' },
+                { scheduledCheckIn: 'desc' }
+            ]
         });
 
         if (!currentStay) {

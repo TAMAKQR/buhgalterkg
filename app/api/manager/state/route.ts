@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelAccess } from '@/lib/permissions';
-import { LedgerEntryType, PaymentMethod, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
@@ -267,7 +267,12 @@ export async function GET(request: NextRequest) {
             shiftStayRevenue,
             shiftLedger: serializedLedger,
             rooms: hotel.rooms.map((room) => {
-                const primaryStay = room.stays.find((stay) => stay.status === 'CHECKED_IN') ?? room.stays[0] ?? null;
+                const linkedStay = room.currentStayId
+                    ? room.stays.find((stay) => stay.id === room.currentStayId)
+                    : null;
+                const checkedInStay = room.stays.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? null;
+                const scheduledStay = room.stays.find((stay) => stay.status === StayStatus.SCHEDULED) ?? null;
+                const primaryStay = (room.status === RoomStatus.OCCUPIED ? linkedStay ?? checkedInStay : null) ?? scheduledStay ?? room.stays[0] ?? null;
                 const serializeStay = (stay: typeof room.stays[number]) => ({
                     id: stay.id,
                     guestName: stay.guestName,
