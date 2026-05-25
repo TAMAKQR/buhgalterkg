@@ -477,7 +477,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         return sortedRooms.map((room) => {
             const items = (room.stays ?? (room.stay ? [room.stay] : []))
-                .filter((stay) => stay.status !== 'CANCELLED')
+                .filter((stay) => stay.status === 'SCHEDULED' || stay.status === 'CHECKED_IN')
                 .map((stay) => {
                     const stayStart = Date.parse(stay.scheduledCheckIn);
                     const stayEnd = Date.parse(stay.scheduledCheckOut);

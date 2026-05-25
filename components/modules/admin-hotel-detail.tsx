@@ -896,7 +896,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
         return sortedRooms.map((room) => {
             const items = (room.stays ?? [])
-                .filter((stay) => stay.status !== 'CANCELLED')
+                .filter((stay) => stay.status === 'SCHEDULED' || stay.status === 'CHECKED_IN')
                 .map((stay) => {
                     const stayStart = Date.parse(stay.scheduledCheckIn);
                     const stayEnd = Date.parse(stay.scheduledCheckOut);
