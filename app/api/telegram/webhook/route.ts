@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 
 interface TelegramUpdate {
     message?: {
+        message_id: number;
         chat: { id: number; title?: string; type: string };
         text?: string;
     };
@@ -29,11 +30,12 @@ interface TelegramUpdate {
 }
 
 const CLEAN_CALLBACK_PREFIX = 'clean:';
+const CHAT_ID_COMMAND_PATTERN = /^\/(?:chatid|chat_id|id)(?:@[a-z0-9_]+)?(?:\s|$)/i;
 
 const isChatIdCommand = (text?: string | null) => {
     if (!text) return false;
     const normalized = text.trim();
-    return normalized === '/chatid' || normalized.startsWith('/chatid@');
+    return CHAT_ID_COMMAND_PATTERN.test(normalized);
 };
 
 const chatLabel = (chat: { id: number; title?: string; type: string }) => {
@@ -55,6 +57,14 @@ const sendTelegramRequest = async (method: string, body: Record<string, unknown>
         throw new Error(`Telegram API ${method} failed: ${detail}`);
     }
 };
+
+const formatChatIdReply = (chat: { id: number; title?: string; type: string }) => [
+    'ID текущего чата',
+    `${chatLabel(chat)}: ${chat.id}`,
+    '',
+    'Команды: /id, /chatid',
+    'Скопируйте это значение в настройках отеля (поле "ID чата уборки").'
+].join('\n');
 
 const formatCleanerName = (from?: { first_name?: string; last_name?: string; username?: string }) => {
     const fullName = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
@@ -163,15 +173,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true });
         }
 
-        const replyText = [
-            'ℹ️ ID текущего чата',
-            `${chatLabel(message.chat)}: ${message.chat.id}`,
-            'Скопируйте это значение в настройках отеля (поле "ID чата уборки").'
-        ].join('\n');
-
         await sendTelegramRequest('sendMessage', {
             chat_id: message.chat.id,
-            text: replyText
+            text: formatChatIdReply(message.chat),
+            reply_to_message_id: message.message_id
         });
 
         return NextResponse.json({ ok: true });

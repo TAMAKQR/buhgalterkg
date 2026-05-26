@@ -61,6 +61,10 @@ npm run dev
 
 Open `http://localhost:3000` in a browser and test flows.
 
+### Telegram service commands
+
+After adding the bot to a Telegram group, send `/id` or `/chatid` in that group. The bot replies with the current chat ID that can be copied into the hotel settings field "ID чата уборки".
+
 ### Linting & Build
 
 ```bash
