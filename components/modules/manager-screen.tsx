@@ -1284,10 +1284,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
-        const startDate = room.stay?.scheduledCheckIn ? new Date(room.stay.scheduledCheckIn) : new Date();
-        const endDate = room.stay?.scheduledCheckOut
-            ? new Date(room.stay.scheduledCheckOut)
-            : new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
 
         setCheckInModal({
             mode: 'checkin',
