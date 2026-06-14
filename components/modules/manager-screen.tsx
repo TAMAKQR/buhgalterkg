@@ -905,7 +905,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const groupPerRoomMinor = selectedGroupRooms.length ? Math.floor(groupTotalMinor / selectedGroupRooms.length) : 0;
     const showGroupExtranetFields = Boolean(groupCheckIn && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
     const showGroupBookingNumberField = Boolean(showGroupExtranetFields && groupCheckIn?.bookingSource.trim());
-    const showGroupTariffField = Boolean(groupCheckIn && (groupCheckIn.mode !== 'checkin' || groupCheckIn.bookingSource.trim()));
+    const showGroupTariffField = Boolean(groupCheckIn && groupCheckIn.mode !== 'checkin');
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
     const availableCount = useMemo(() => sortedRooms.filter((r) => r.status === 'AVAILABLE').length, [sortedRooms]);
@@ -1207,7 +1207,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const guestCount = groupCheckIn.guestCount ? Number(groupCheckIn.guestCount) : undefined;
         const hasBookingSource = Boolean(data.hotel.usesExtranets && groupCheckIn.bookingSource.trim());
         const bookingNumber = hasBookingSource ? groupCheckIn.bookingNumber.trim() : '';
-        const tariffValue = groupCheckIn.mode === 'checkin' && !hasBookingSource
+        const tariffValue = groupCheckIn.mode === 'checkin'
             ? totalValue
             : Number(groupCheckIn.tariffAmount || 0);
 
@@ -1818,7 +1818,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             (checkInModal.mode === 'checkin' || checkInModal.mode === 'book' || checkInModal.mode === 'edit') &&
             checkInModal.bookingSource.trim()
         );
-        const tariffValue = checkInModal.mode === 'checkin' && !hasModalBookingSource
+        const tariffValue = checkInModal.mode === 'checkin'
             ? directCheckInPaymentValue
             : rawTariffValue;
         const bookingNumber = hasModalBookingSource ? checkInModal.bookingNumber.trim() : '';
@@ -1952,7 +1952,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const showPaymentInputsInModal = Boolean(checkInModal && checkInModal.mode !== 'transfer' && checkInModal.mode !== 'edit');
     const showModalExtranetFields = Boolean(isStayDataModalMode && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
     const showModalBookingNumberField = Boolean(showModalExtranetFields && checkInModal?.bookingSource.trim());
-    const showModalTariffField = Boolean(isStayDataModalMode && (checkInModal?.mode !== 'checkin' || checkInModal?.bookingSource.trim()));
+    const showModalTariffField = Boolean(isStayDataModalMode && checkInModal?.mode !== 'checkin');
 
     if (!primaryHotel) {
         return (
