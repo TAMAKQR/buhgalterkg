@@ -1813,15 +1813,24 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const cashValue = Number(checkInModal.cashAmount || 0);
         const cardValue = Number(checkInModal.cardAmount || 0);
         const onlineValue = Number(checkInModal.onlineAmount || 0);
-        const tariffValue = Number(checkInModal.totalAmount || 0);
-        const bookingNumber = checkInModal.bookingNumber.trim();
+        const rawTariffValue = Number(checkInModal.totalAmount || 0);
+        const directCheckInPaymentValue = checkInModal.existingPaid / 100 + cashValue + cardValue + onlineValue;
+        const hasModalBookingSource = Boolean(
+            data?.hotel.usesExtranets &&
+            (checkInModal.mode === 'checkin' || checkInModal.mode === 'book' || checkInModal.mode === 'edit') &&
+            checkInModal.bookingSource.trim()
+        );
+        const tariffValue = checkInModal.mode === 'checkin' && !hasModalBookingSource
+            ? directCheckInPaymentValue
+            : rawTariffValue;
+        const bookingNumber = hasModalBookingSource ? checkInModal.bookingNumber.trim() : '';
 
         if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0 || !Number.isFinite(onlineValue) || onlineValue < 0) {
             setCheckInError('Сумма не может быть отрицательной или пустой');
             return;
         }
 
-        if ((checkInModal.mode === 'checkin' || checkInModal.mode === 'book' || checkInModal.mode === 'edit') && checkInModal.bookingSource.trim() && !bookingNumber) {
+        if (hasModalBookingSource && !bookingNumber) {
             setCheckInError('Укажите номер бронирования');
             return;
         }
@@ -1868,8 +1877,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         guestName: checkInModal.guestName.trim() || undefined,
                         guestPhone: checkInModal.guestPhone.trim() || undefined,
                         companyName: checkInModal.companyName.trim() || undefined,
-                        bookingSource: data?.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
-                        bookingNumber,
+                        bookingSource: hasModalBookingSource ? checkInModal.bookingSource || undefined : undefined,
+                        bookingNumber: bookingNumber || undefined,
                         totalAmount: tariffMinor,
                         mealPlan: canUseMealPlan ? checkInModal.mealPlan : [],
                         notes: checkInModal.notes.trim() || undefined,
@@ -1906,8 +1915,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     guestName: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestName.trim() || undefined : undefined,
                     guestPhone: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestPhone.trim() || undefined : undefined,
                     companyName: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.companyName.trim() || undefined : undefined,
-                    bookingSource: (checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && data?.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
-                    bookingNumber: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? bookingNumber : undefined,
+                    bookingSource: (checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && hasModalBookingSource ? checkInModal.bookingSource || undefined : undefined,
+                    bookingNumber: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? bookingNumber || undefined : undefined,
                     totalAmount: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? tariffMinor : undefined,
                     mealPlan: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? (canUseMealPlan ? checkInModal.mealPlan : []) : undefined,
                     notes: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.notes.trim() || undefined : undefined,
@@ -1943,6 +1952,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const isStayDataModalMode = checkInModal?.mode === 'checkin' || checkInModal?.mode === 'book' || checkInModal?.mode === 'edit';
     const showPaymentInputsInModal = Boolean(checkInModal && checkInModal.mode !== 'transfer' && checkInModal.mode !== 'edit');
+    const showModalExtranetFields = Boolean(isStayDataModalMode && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
+    const showModalBookingNumberField = Boolean(showModalExtranetFields && checkInModal?.bookingSource.trim());
+    const showModalTariffField = Boolean(isStayDataModalMode && (checkInModal?.mode !== 'checkin' || checkInModal?.bookingSource.trim()));
 
     if (!primaryHotel) {
         return (
@@ -3320,55 +3332,59 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     )}
                                     {checkInModal.mode !== 'transfer' && (
                                         <>
-                                            {isStayDataModalMode && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
+                                            {showModalExtranetFields && (
                                                 <div>
                                                     <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-source">Источник брони</label>
                                                     <Select
                                                         id="modal-booking-source"
                                                         value={checkInModal.bookingSource}
                                                         onChange={(event) =>
-                                                            setCheckInModal((prev) => (prev ? { ...prev, bookingSource: event.target.value } : prev))
+                                                            setCheckInModal((prev) => (prev ? { ...prev, bookingSource: event.target.value, bookingNumber: event.target.value ? prev.bookingNumber : '' } : prev))
                                                         }
                                                         className="text-white"
                                                     >
-                                                        <option value="">Без экстранета / прямой заезд</option>
-                                                        {(data.hotel.extranetNames ?? []).map((name) => (
+                                                        <option value="">Прямой заезд</option>
+                                                        {(data?.hotel.extranetNames ?? []).map((name) => (
                                                             <option key={`modal-booking-source-${name}`} value={name}>{name}</option>
                                                         ))}
                                                     </Select>
                                                 </div>
                                             )}
-                                            {isStayDataModalMode && (
-                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                                    <div>
-                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-number">Номер брони</label>
-                                                        <Input
-                                                            id="modal-booking-number"
-                                                            type="text"
-                                                            value={checkInModal.bookingNumber}
-                                                            onChange={(event) =>
-                                                                setCheckInModal((prev) => (prev ? { ...prev, bookingNumber: event.target.value } : prev))
-                                                            }
-                                                            placeholder="Booking #"
-                                                            className="text-white"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-total-amount">Общая сумма тарифа</label>
-                                                        <Input
-                                                            id="modal-total-amount"
-                                                            type="number"
-                                                            step="0.01"
-                                                            inputMode="decimal"
-                                                            min="0"
-                                                            value={checkInModal.totalAmount}
-                                                            onChange={(event) =>
-                                                                setCheckInModal((prev) => (prev ? { ...prev, totalAmount: event.target.value } : prev))
-                                                            }
-                                                            placeholder="150000"
-                                                            className="text-white"
-                                                        />
-                                                    </div>
+                                            {isStayDataModalMode && (showModalBookingNumberField || showModalTariffField) && (
+                                                <div className={`grid grid-cols-1 gap-2 ${showModalBookingNumberField && showModalTariffField ? 'sm:grid-cols-2' : ''}`}>
+                                                    {showModalBookingNumberField ? (
+                                                        <div>
+                                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-number">Номер брони</label>
+                                                            <Input
+                                                                id="modal-booking-number"
+                                                                type="text"
+                                                                value={checkInModal.bookingNumber}
+                                                                onChange={(event) =>
+                                                                    setCheckInModal((prev) => (prev ? { ...prev, bookingNumber: event.target.value } : prev))
+                                                                }
+                                                                placeholder="Booking #"
+                                                                className="text-white"
+                                                            />
+                                                        </div>
+                                                    ) : null}
+                                                    {showModalTariffField ? (
+                                                        <div>
+                                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-total-amount">Общая сумма тарифа</label>
+                                                            <Input
+                                                                id="modal-total-amount"
+                                                                type="number"
+                                                                step="0.01"
+                                                                inputMode="decimal"
+                                                                min="0"
+                                                                value={checkInModal.totalAmount}
+                                                                onChange={(event) =>
+                                                                    setCheckInModal((prev) => (prev ? { ...prev, totalAmount: event.target.value } : prev))
+                                                                }
+                                                                placeholder="150000"
+                                                                className="text-white"
+                                                            />
+                                                        </div>
+                                                    ) : null}
                                                 </div>
                                             )}
                                             {isStayDataModalMode && canUseMealPlan && (
