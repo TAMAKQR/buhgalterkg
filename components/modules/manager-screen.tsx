@@ -25,7 +25,7 @@ import {
     readManagerOfflineQueue,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, CalendarPlus, CheckCircle2, LogIn, LogOut, Pencil, Sparkles, Users } from 'lucide-react';
+import { ArrowRightLeft, Banknote, CalendarPlus, LogIn, LogOut, Pencil, Sparkles, Users } from 'lucide-react';
 
 type ManagerRoomStay = {
     id: string;
@@ -219,10 +219,6 @@ interface PaymentAdjustState {
     onlineAmount: string;
 }
 
-interface ConfirmTransfersState {
-    stayIds: string[];
-}
-
 type PanelKey = 'rooms' | 'shift' | 'cash' | 'history';
 type RoomViewMode = 'cards' | 'board';
 type BoardListPopupKind = 'scheduled' | 'checkedIn' | 'overdue' | 'freeDates';
@@ -371,9 +367,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [paymentAdjust, setPaymentAdjust] = useState<PaymentAdjustState | null>(null);
     const [isSubmittingPaymentAdjust, setIsSubmittingPaymentAdjust] = useState(false);
     const [paymentAdjustError, setPaymentAdjustError] = useState<string | null>(null);
-    const [confirmTransfers, setConfirmTransfers] = useState<ConfirmTransfersState | null>(null);
-    const [isConfirmingTransfers, setIsConfirmingTransfers] = useState(false);
-    const [confirmTransfersError, setConfirmTransfersError] = useState<string | null>(null);
     const [bookingDetails, setBookingDetails] = useState<{
         roomId: string;
         roomLabel: string;
@@ -566,35 +559,35 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         offlineSyncError ? `ошибка: ${offlineSyncError}` : null,
     ].filter(Boolean).join(' · ');
     const OfflineStatusBanner = () => {
-        if (!showOfflineStatus) {
-            return null;
-        }
-
         return (
-            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError
-                ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
-                : !isOnline || isUsingCachedState
-                    ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
-                    : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-100'
-                }`}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                        <p className="font-semibold">{offlineStatusTitle}</p>
-                        {offlineStatusDetail ? (
-                            <p className="mt-0.5 break-words opacity-80">{offlineStatusDetail}</p>
-                        ) : null}
+            <div className="min-h-[54px] sm:min-h-0">
+                {showOfflineStatus ? (
+                    <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError
+                        ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
+                        : !isOnline || isUsingCachedState
+                            ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
+                            : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-100'
+                        }`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <p className="font-semibold">{offlineStatusTitle}</p>
+                                {offlineStatusDetail ? (
+                                    <p className="mt-0.5 break-words opacity-80">{offlineStatusDetail}</p>
+                                ) : null}
+                            </div>
+                            {isOnline && pendingOfflineCount > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void flushOfflineOperations()}
+                                    disabled={isSyncingOffline}
+                                    className="min-w-0 max-w-full shrink-0 rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
+                                >
+                                    {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
+                                </button>
+                            ) : null}
+                        </div>
                     </div>
-                    {isOnline && pendingOfflineCount > 0 ? (
-                        <button
-                            type="button"
-                            onClick={() => void flushOfflineOperations()}
-                            disabled={isSyncingOffline}
-                            className="min-w-0 max-w-full shrink-0 rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
-                        >
-                            {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
-                        </button>
-                    ) : null}
-                </div>
+                ) : null}
             </div>
         );
     };
@@ -889,16 +882,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const availableGroupRooms = useMemo(
         () => sortedRooms.filter((room) => room.status === 'AVAILABLE' && !room.stay),
         [sortedRooms]
-    );
-
-    const pendingTransferRooms = useMemo(
-        () => sortedRooms.filter((room) => room.status === 'OCCUPIED' && (room.stay?.onlinePaid ?? 0) > 0),
-        [sortedRooms]
-    );
-
-    const pendingTransferTotal = useMemo(
-        () => pendingTransferRooms.reduce((total, room) => total + (room.stay?.onlinePaid ?? 0), 0),
-        [pendingTransferRooms]
     );
 
     const groupSelectableRooms = groupCheckIn?.mode === 'edit'
@@ -1280,52 +1263,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             setGroupCheckInError(error instanceof Error ? error.message : 'Не удалось создать групповой заезд');
         } finally {
             setIsSubmittingGroupCheckIn(false);
-        }
-    };
-
-    const showConfirmTransfersModal = () => {
-        if (!data?.shift) {
-            toast('Сначала откройте смену, чтобы подтвердить перевод', 'error');
-            return;
-        }
-        if (!canEditStayPayments) {
-            toast('Нет права редактировать суммы. Обратитесь к администратору', 'error');
-            return;
-        }
-        const stayIds = pendingTransferRooms.map((room) => room.stay?.id).filter((id): id is string => Boolean(id));
-        if (!stayIds.length) {
-            toast('Нет ожидающих переводов', 'error');
-            return;
-        }
-        setConfirmTransfers({ stayIds });
-        setConfirmTransfersError(null);
-    };
-
-    const handleConfirmTransfers = async () => {
-        if (!confirmTransfers || !data?.shift || !data.hotel.id) return;
-        if (!canEditStayPayments) {
-            setConfirmTransfersError('Нет права редактировать суммы. Обратитесь к администратору');
-            return;
-        }
-        setIsConfirmingTransfers(true);
-        try {
-            await sendManagerRequest('/api/rooms/group-stay', {
-                body: {
-                    action: 'confirm-transfer',
-                    hotelId: data.hotel.id,
-                    shiftId: data.shift.id,
-                    stayIds: confirmTransfers.stayIds,
-                },
-            }, 'Подтверждение переводов');
-            toast('Переводы подтверждены', 'success');
-            setConfirmTransfers(null);
-            setConfirmTransfersError(null);
-            void refreshManagerState();
-        } catch (error) {
-            console.error(error);
-            setConfirmTransfersError(error instanceof Error ? error.message : 'Не удалось подтвердить переводы');
-        } finally {
-            setIsConfirmingTransfers(false);
         }
     };
 
@@ -2181,19 +2118,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <Users className="h-4 w-4" aria-hidden="true" />
                                             Групповой заезд
                                         </Button>
-                                        {pendingTransferRooms.length ? (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="secondary"
-                                                className="gap-1.5 border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"
-                                                disabled={!hasOpenShift || !canEditStayPayments}
-                                                onClick={showConfirmTransfersModal}
-                                            >
-                                                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                                                Подтвердить {formatKgs(pendingTransferTotal)}
-                                            </Button>
-                                        ) : null}
                                         <div className="flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">
                                             <button
                                                 type="button"
@@ -2213,20 +2137,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <Badge label={`${sortedRooms.length} в учёте`} />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.035]">
                                         <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/30">Свободно</p>
                                         <p className="mt-1 text-base font-semibold text-light-text dark:text-white">{availableCount}</p>
                                     </div>
-                                    <button
-                                        type="button"
-                                        className={`rounded-2xl border px-3 py-2 text-left shadow-[0_10px_24px_-22px_rgba(15,23,42,0.34)] transition ${pendingTransferRooms.length ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200' : 'border-slate-200 bg-white text-slate-500 dark:border-white/[0.055] dark:bg-white/[0.035] dark:text-white/40'}`}
-                                        disabled={!pendingTransferRooms.length || !canEditStayPayments}
-                                        onClick={showConfirmTransfersModal}
-                                    >
-                                        <p className="text-[10px] uppercase tracking-[0.18em]">Ожидает перевода</p>
-                                        <p className="mt-1 text-base font-semibold">{pendingTransferRooms.length ? formatKgs(pendingTransferTotal) : '0'}</p>
-                                    </button>
                                     <div className={`rounded-2xl border px-3 py-2 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.34)] ${overdueCount ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/15 dark:bg-rose-500/15 dark:text-rose-300' : 'border-slate-200 bg-white text-slate-500 dark:border-white/[0.055] dark:bg-white/[0.035] dark:text-white/40'}`}>
                                         <p className="text-[10px] uppercase tracking-[0.18em]">Просрочено</p>
                                         <p className="mt-1 text-base font-semibold">{overdueCount}</p>
@@ -2411,12 +2326,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const guestLabel = room.stay?.guestName?.trim() || (isOccupied ? 'Гость' : 'Свободен');
                                         const cashPortion = room.stay?.cashPaid ?? 0;
                                         const cardPortion = room.stay?.cardPaid ?? 0;
-                                        const onlinePortion = room.stay?.onlinePaid ?? 0;
                                         const paymentLabel = (() => {
                                             const segments = [] as string[];
                                             if (cashPortion) segments.push(`нал ${formatKgs(cashPortion)}`);
                                             if (cardPortion) segments.push(`безнал ${formatKgs(cardPortion)}`);
-                                            if (onlinePortion) segments.push(`ожидает ${formatKgs(onlinePortion)}`);
                                             if (!segments.length && room.stay?.paymentMethod) {
                                                 return room.stay.paymentMethod === 'CARD' ? 'Безнал' : 'Наличные';
                                             }
@@ -3190,8 +3103,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, paymentMode: event.target.value as GroupCheckInState['paymentMode'] } : prev)}
                                                 className="text-white"
                                             >
-                                                <option value="PENDING_TRANSFER">Перевод ожидается</option>
-                                                <option value="CARD">Перевод уже пришёл</option>
+                                                <option value="PENDING_TRANSFER">Оплата позже</option>
+                                                <option value="CARD">Безналичная оплата</option>
                                                 <option value="CASH">Наличными</option>
                                             </Select>
                                         </div>
@@ -3257,7 +3170,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             rows={2}
                                             value={groupCheckIn.notes}
                                             onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, notes: event.target.value } : prev)}
-                                            placeholder="Например: оплата банковским переводом позже"
+                                            placeholder="Например: оплатят после заселения"
                                             className="text-white"
                                         />
                                     </div>
@@ -3270,7 +3183,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                                     {groupCheckIn.paymentMode === 'PENDING_TRANSFER' && groupCheckIn.mode === 'checkin' ? (
                                         <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-                                            Сумма будет распределена по выбранным номерам и останется в ожидании. Когда перевод придёт, подтвердите его одной кнопкой в списке номеров.
+                                            Сумма будет распределена по выбранным номерам как ожидаемая оплата. Когда деньги поступят, внесите оплату в карточке нужного номера.
                                         </p>
                                     ) : null}
 
@@ -3281,46 +3194,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </Button>
                                 </div>
                             </div>
-                        </div>
-                    )}
-
-                    {confirmTransfers && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm">
-                            <Card className="w-full max-w-md space-y-4 border-white/[0.08] bg-ink p-5 text-white shadow-2xl dark:bg-ink">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Перевод</p>
-                                        <h3 className="mt-1 text-lg font-semibold">Подтвердить поступление</h3>
-                                    </div>
-                                    <Button type="button" variant="ghost" size="sm" disabled={isConfirmingTransfers} onClick={() => setConfirmTransfers(null)}>
-                                        ×
-                                    </Button>
-                                </div>
-                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/75">
-                                    <p>Номеров: <span className="font-semibold text-white">{pendingTransferRooms.length}</span></p>
-                                    <p className="mt-1">Сумма: <span className="font-semibold text-white">{formatKgs(pendingTransferTotal)}</span></p>
-                                    <p className="mt-2 text-xs text-white/45">
-                                        После подтверждения сумма попадёт в безналичную кассу текущей смены.
-                                    </p>
-                                </div>
-                                <div className="max-h-40 space-y-1 overflow-y-auto text-xs text-white/55">
-                                    {pendingTransferRooms.map((room) => (
-                                        <div key={`pending-transfer-${room.id}`} className="flex items-center justify-between rounded-lg bg-white/[0.035] px-3 py-2">
-                                            <span>№ {room.label}</span>
-                                            <span>{formatKgs(room.stay?.onlinePaid ?? 0)}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                {confirmTransfersError && <p className="text-xs text-rose-300">{confirmTransfersError}</p>}
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    <Button type="button" variant="secondary" disabled={isConfirmingTransfers} onClick={() => setConfirmTransfers(null)}>
-                                        Отмена
-                                    </Button>
-                                    <Button type="button" disabled={isConfirmingTransfers} onClick={handleConfirmTransfers}>
-                                        {isConfirmingTransfers ? 'Подтверждаем...' : 'Подтвердить все'}
-                                    </Button>
-                                </div>
-                            </Card>
                         </div>
                     )}
 
