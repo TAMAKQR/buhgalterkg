@@ -81,6 +81,18 @@ export const formatDateTime = (
     return new Intl.DateTimeFormat("ru-RU", { ...options, timeZone }).format(date);
 };
 
+export const formatDateKey = (value?: Date | string | number | null, tz?: string, fallback = "") => {
+    if (value == null) return fallback;
+    const date = ensureDate(value);
+    if (!date) return fallback;
+    return new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        timeZone: tz || BISHKEK_TIMEZONE,
+    }).format(date);
+};
+
 export const formatInputValue = (value?: Date | string | number | null, tz?: string) => {
     if (value == null) return "";
     const date = ensureDate(value);

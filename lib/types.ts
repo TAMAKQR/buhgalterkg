@@ -40,8 +40,11 @@ export type RoomViewModel = {
         guestName?: string | null;
         guestPhone?: string | null;
         companyName?: string | null;
+        bookingNumber?: string | null;
         scheduledCheckIn: string;
         scheduledCheckOut: string;
         status: StayStatus;
+        amountPaid?: number | null;
+        totalAmount?: number | null;
     } | null;
 };

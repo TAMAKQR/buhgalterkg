@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-    /* Light theme - мягкие светлые цвета */
-    --bg-primary: #fafbfc;
-    --bg-secondary: #ffffff;
-    --bg-surface: #f5f7fa;
-    --bg-hover: #eef1f6;
-    --text-primary: #0f172a;
-    --text-secondary: #334155;
-    --text-tertiary: #64748b;
-    --border-color: #e8ecf2;
-    --shadow: rgba(0, 0, 0, 0.04);
+    /* Light theme */
+    --bg-primary: #edf2f7;
+    --bg-secondary: #edf2f7;
+    --bg-surface: #ffffff;
+    --bg-hover: #e2e8f0;
+    --text-primary: #111827;
+    --text-secondary: #1f2937;
+    --text-tertiary: #475569;
+    --border-color: #c5cfdd;
+    --shadow: rgba(15, 23, 42, 0.14);
 }
 
 .dark {
@@ -36,10 +36,9 @@ body {
     margin: 0;
     font-family: var(--font-sans), 'Space Grotesk', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
     background-color: var(--bg-secondary);
-    background-image:
-        radial-gradient(circle at top left, rgba(148, 163, 184, 0.12), transparent 28%),
-        radial-gradient(circle at top right, rgba(226, 232, 240, 0.28), transparent 24%);
+    background-image: none;
     color: var(--text-primary);
     transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -107,4 +106,13 @@ option {
 
 .animate-slide-up {
     animation: slide-up 0.2s ease-out;
+}
+
+.scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useForm } from 'react-hook-form';
 import { useEffect, useMemo, useState } from 'react';
@@ -41,11 +41,13 @@ interface RoomStayDetail {
     actualCheckIn?: string | null;
     actualCheckOut?: string | null;
     amountPaid?: number | null;
+    totalAmount?: number | null;
     paymentMethod?: string | null;
     cashPaid?: number | null;
     cardPaid?: number | null;
     onlinePaid?: number | null;
     bookingSource?: string | null;
+    bookingNumber?: string | null;
     shiftId?: string | null;
     shiftNumber?: number | null;
     shiftStatus?: ShiftStatusValue | null;
@@ -131,6 +133,7 @@ interface HotelDetailPayload {
         pinCode?: string | null;
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
+        canEditStayPayments?: boolean | null;
     }>;
     rooms: Array<{
         id: string;
@@ -176,6 +179,7 @@ interface AddManagerForm {
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
+    canEditStayPayments: boolean;
 }
 
 interface UpdateManagerForm {
@@ -186,6 +190,7 @@ interface UpdateManagerForm {
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
+    canEditStayPayments: boolean;
 }
 
 interface EditShiftForm {
@@ -235,10 +240,12 @@ interface StayEditForm {
     cashPaid: number;
     cardPaid: number;
     onlinePaid: number;
+    totalAmount: number;
     totalPaid: number;
     paymentMethod: PaymentMethodValue;
     shiftId: string;
     bookingSource: string;
+    bookingNumber: string;
     notes: string;
 }
 
@@ -250,6 +257,10 @@ interface BookingCreateForm {
     scheduledCheckIn: string;
     scheduledCheckOut: string;
     bookingSource: string;
+    bookingNumber: string;
+    totalAmount: number;
+    prepaymentAmount: number;
+    prepaymentMethod: 'CASH' | 'CARD' | 'ONLINE';
     notes: string;
 }
 
@@ -279,10 +290,12 @@ const createStayEditDefaults = (): StayEditForm => ({
     cashPaid: 0,
     cardPaid: 0,
     onlinePaid: 0,
+    totalAmount: 0,
     totalPaid: 0,
     paymentMethod: 'AUTO',
     shiftId: '',
     bookingSource: '',
+    bookingNumber: '',
     notes: ''
 });
 
@@ -294,6 +307,10 @@ const createBookingDefaults = (): BookingCreateForm => ({
     scheduledCheckIn: '',
     scheduledCheckOut: '',
     bookingSource: '',
+    bookingNumber: '',
+    totalAmount: 0,
+    prepaymentAmount: 0,
+    prepaymentMethod: 'CASH',
     notes: ''
 });
 
@@ -500,14 +517,10 @@ interface AdminHotelDetailProps {
 
 export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const { request, get } = useApi();
     const { toast } = useToast();
 
-    const country = searchParams.get('country')?.toUpperCase();
-    const countryQuery = country === 'KZ' || country === 'KG' ? `?country=${country}` : '';
-
-    const hotelKey = hotelId ? `/api/hotels/${hotelId}${countryQuery}` : null;
+    const hotelKey = hotelId ? `/api/hotels/${hotelId}` : null;
     const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(hotelKey, (url: string) => get<HotelDetailPayload>(url));
 
     const hotelTz = data?.timezone ?? undefined;
@@ -520,7 +533,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const formatStayDate = (value?: string | null) => formatDateTime(value, hotelTz, undefined, '—');
 
     const managerForm = useForm<AddManagerForm>({
-        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined }
+        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditStayPayments: false }
     });
     const updateManagerForm = useForm<UpdateManagerForm>({
         defaultValues: {
@@ -530,7 +543,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             username: '',
             pinCode: '',
             shiftPayAmount: undefined,
-            revenueSharePct: undefined
+            revenueSharePct: undefined,
+            canEditStayPayments: false
         }
     });
     const roomForm = useForm<CreateRoomsForm>({
@@ -656,6 +670,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             updateManagerForm.setFocus('pinCode');
         }
     }, [isUpdateManagerExpanded, selectedManagerId, updateManagerForm]);
+
+    useEffect(() => {
+        if (selectedManager) {
+            updateManagerForm.setValue('canEditStayPayments', Boolean(selectedManager.canEditStayPayments));
+        }
+    }, [selectedManager, updateManagerForm]);
 
     const handleGenerateManagerLogin = () => {
         const suggestion = createLoginSuggestion(managerForm.getValues('displayName'));
@@ -860,6 +880,27 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     );
 
     const pendingOnlineHistory = useMemo(() => data?.pendingOnlineStays ?? [], [data]);
+    const prepaidBookings = useMemo(() => {
+        if (!data) {
+            return [];
+        }
+
+        return data.rooms
+            .flatMap((room) =>
+                room.stays
+                    .filter((stay) => stay.status === 'SCHEDULED' && (stay.amountPaid ?? 0) > 0)
+                    .map((stay) => ({ room, stay }))
+            )
+            .sort((first, second) => {
+                const firstTime = new Date(first.stay.scheduledCheckIn).getTime();
+                const secondTime = new Date(second.stay.scheduledCheckIn).getTime();
+                return firstTime - secondTime;
+            });
+    }, [data]);
+    const prepaidBookingsTotal = useMemo(
+        () => prepaidBookings.reduce((total, item) => total + (item.stay.amountPaid ?? 0), 0),
+        [prepaidBookings]
+    );
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
@@ -917,6 +958,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         span,
                         guestLabel,
                         detailLabel: [
+                            stay.bookingNumber?.trim() ? `№ ${stay.bookingNumber.trim()}` : null,
+                            stay.totalAmount != null ? `тариф ${formatMoney(stay.totalAmount, hotelCur)}` : null,
                             stay.bookingSource?.trim(),
                             stay.companyName?.trim(),
                             stay.guestPhone?.trim()
@@ -937,7 +980,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [bookingBoardRange, sortedRooms]);
+    }, [bookingBoardRange, hotelCur, sortedRooms]);
 
     const filteredRoomStayHistory = useMemo(() => {
         const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
@@ -963,6 +1006,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             stay.guestPhone,
                             stay.companyName,
                             stay.bookingSource,
+                            stay.bookingNumber,
                             stay.notes,
                             stay.shiftNumber ? `смена ${stay.shiftNumber}` : null,
                             stay.shiftManagerName,
@@ -1121,6 +1165,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleClearShiftHistory = async () => {
+        if (!window.confirm('Очистить закрытые смены этого объекта? Действие нельзя отменить.')) {
+            return;
+        }
+
         setIsClearingHistory(true);
         try {
             await request('/api/admin/shifts/clear', {
@@ -1137,6 +1185,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleRemoveManager = async (assignmentId: string) => {
+        const manager = data?.managers.find((item) => item.assignmentId === assignmentId);
+        const managerName = manager?.displayName || manager?.loginName || 'этого менеджера';
+        if (!window.confirm(`Удалить назначение менеджера ${managerName}?`)) {
+            return;
+        }
+
         setRemovingManagerId(assignmentId);
         try {
             await request('/api/hotel-assignments', {
@@ -1153,6 +1207,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleDeleteRoom = async (roomId: string) => {
+        const room = data?.rooms.find((item) => item.id === roomId);
+        const roomLabel = room?.label ? `№ ${room.label}` : 'этот номер';
+        if (!window.confirm(`Удалить ${roomLabel}? История по номеру также будет удалена.`)) {
+            return;
+        }
+
         setRemovingRoomId(roomId);
         try {
             await request('/api/rooms', {
@@ -1230,6 +1290,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleDeleteBonusTier = async (tierId: string) => {
+        if (!window.confirm('Удалить этот бонусный порог?')) {
+            return;
+        }
+
         setRemovingTierId(tierId);
         try {
             await request(`/api/admin/bonus-tiers/${tierId}`, { method: 'DELETE' });
@@ -1299,6 +1363,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleDeleteExpenseCategory = async (categoryId: string) => {
+        const category = data?.expenseCategories?.find((item) => item.id === categoryId);
+        const categoryName = category?.name ? `«${category.name}»` : 'эту категорию';
+        if (!window.confirm(`Удалить категорию расходов ${categoryName}?`)) {
+            return;
+        }
+
         setRemovingExpenseCategoryId(categoryId);
         try {
             await request(`/api/admin/expense-categories/${categoryId}`, { method: 'DELETE' });
@@ -1383,6 +1453,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             return;
         }
 
+        if (!window.confirm('Удалить эту кассовую операцию? Балансы смены будут пересчитаны.')) {
+            return;
+        }
+
         try {
             await request(`/api/admin/ledger/${entryId}`, { method: 'DELETE' });
             await mutate();
@@ -1431,9 +1505,37 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const handleCreateBooking = bookingCreateForm.handleSubmit(async (values) => {
         const scheduledCheckIn = fromDateTimeInputValue(values.scheduledCheckIn);
         const scheduledCheckOut = fromDateTimeInputValue(values.scheduledCheckOut);
+        const prepaymentAmount = Number.isFinite(values.prepaymentAmount) ? values.prepaymentAmount || 0 : 0;
+        const totalAmount = Number.isFinite(values.totalAmount) ? values.totalAmount || 0 : 0;
+        const bookingNumber = normalizeOptionalText(values.bookingNumber);
 
         if (!values.roomId || !scheduledCheckIn || !scheduledCheckOut) {
             toast('Выберите номер и даты брони', 'error');
+            return;
+        }
+
+        if (values.bookingSource.trim() && !bookingNumber) {
+            toast('Укажите номер бронирования', 'error');
+            return;
+        }
+
+        if (totalAmount <= 0) {
+            toast('Укажите общую сумму тарифа', 'error');
+            return;
+        }
+
+        if (prepaymentAmount < 0) {
+            toast('Сумма предоплаты не может быть отрицательной', 'error');
+            return;
+        }
+
+        if (prepaymentAmount > totalAmount) {
+            toast('Предоплата не может быть больше тарифа', 'error');
+            return;
+        }
+
+        if (prepaymentAmount > 0 && values.prepaymentMethod !== 'ONLINE' && !activeShiftId) {
+            toast('Для наличной или безналичной предоплаты нужна активная смена', 'error');
             return;
         }
 
@@ -1448,6 +1550,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     scheduledCheckIn,
                     scheduledCheckOut,
                     bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined,
+                    bookingNumber,
+                    totalAmount: toMinor(totalAmount),
+                    shiftId: prepaymentAmount > 0 && values.prepaymentMethod !== 'ONLINE' ? activeShiftId : undefined,
+                    prepaymentAmount: toMinor(prepaymentAmount),
+                    prepaymentMethod: prepaymentAmount > 0 ? values.prepaymentMethod : undefined,
                     notes: normalizeOptionalText(values.notes)
                 }
             });
@@ -1482,6 +1589,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             cardPaid: (stay.cardPaid ?? 0) / 100,
             onlinePaid: (stay.onlinePaid ?? 0) / 100,
             totalPaid: (stayBreakdownTotal > 0 ? stayBreakdownTotal : stay.amountPaid ?? 0) / 100,
+            totalAmount: (stay.totalAmount ?? 0) / 100,
             paymentMethod:
                 (stay.onlinePaid ?? 0) > 0 && !(stay.cashPaid ?? 0) && !(stay.cardPaid ?? 0)
                     ? 'ONLINE'
@@ -1490,6 +1598,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         : 'AUTO',
             shiftId: stay.shiftId ?? '',
             bookingSource: stay.bookingSource ?? '',
+            bookingNumber: stay.bookingNumber ?? '',
             notes: stay.notes ?? ''
         });
     };
@@ -1510,6 +1619,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const onlineMinor = toOptionalMinorValue(values.onlinePaid);
         const breakdownTotalMinor = (cashMinor ?? 0) + (cardMinor ?? 0) + (onlineMinor ?? 0);
         const totalMinor = breakdownTotalMinor > 0 ? breakdownTotalMinor : toOptionalMinorValue(values.totalPaid);
+        const totalAmountMinor = toOptionalMinorValue(values.totalAmount);
+        const bookingNumber = normalizeOptionalText(values.bookingNumber);
+
+        if ((values.status === 'SCHEDULED' || values.status === 'CHECKED_IN') && values.bookingSource.trim() && !bookingNumber) {
+            toast('Укажите номер бронирования', 'error');
+            return;
+        }
+
+        if ((values.status === 'SCHEDULED' || values.status === 'CHECKED_IN') && (!totalAmountMinor || totalAmountMinor <= 0)) {
+            toast('Укажите общую сумму тарифа', 'error');
+            return;
+        }
+
+        if ((totalMinor ?? 0) > (totalAmountMinor ?? 0) && (values.status === 'SCHEDULED' || values.status === 'CHECKED_IN')) {
+            toast('Оплата не может быть больше тарифа', 'error');
+            return;
+        }
 
         try {
             await request(`/api/admin/stays/${values.stayId}`, {
@@ -1528,9 +1654,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     cardPaid: cardMinor,
                     onlinePaid: onlineMinor,
                     amountPaid: totalMinor,
+                    totalAmount: totalAmountMinor ?? undefined,
                     paymentMethod: values.paymentMethod === 'AUTO' || values.paymentMethod === 'ONLINE' ? null : values.paymentMethod,
                     shiftId: values.shiftId || null,
-                    bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined
+                    bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined,
+                    bookingNumber
                 }
             });
 
@@ -1626,10 +1754,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 username: values.username?.trim() || undefined,
                 pinCode: values.pinCode,
                 shiftPayAmount: shiftPayAmount ?? undefined,
-                revenueSharePct: revenueSharePct ?? undefined
+                revenueSharePct: revenueSharePct ?? undefined,
+                canEditStayPayments: values.canEditStayPayments
             }
         });
-        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined });
+        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditStayPayments: false });
         mutate();
     });
 
@@ -1644,7 +1773,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             username: values.username.trim() || undefined,
             pinCode: values.pinCode.trim() || undefined,
             shiftPayAmount: shiftPayAmount ?? undefined,
-            revenueSharePct: revenueSharePct ?? undefined
+            revenueSharePct: revenueSharePct ?? undefined,
+            canEditStayPayments: values.canEditStayPayments
         };
 
         const hasUpdates =
@@ -1653,7 +1783,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             Boolean(payload.username) ||
             Boolean(payload.pinCode) ||
             shiftPayAmount !== null ||
-            revenueSharePct !== null;
+            revenueSharePct !== null ||
+            values.canEditStayPayments !== Boolean(selectedManager?.canEditStayPayments);
 
         if (!hasUpdates) {
             updateManagerForm.setError('assignmentId', {
@@ -1676,7 +1807,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 username: '',
                 pinCode: '',
                 shiftPayAmount: undefined,
-                revenueSharePct: undefined
+                revenueSharePct: undefined,
+                canEditStayPayments: values.canEditStayPayments
             });
             mutate();
             toast('Менеджер обновлён', 'success');
@@ -1697,7 +1829,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             username: '',
             pinCode: '',
             shiftPayAmount: target?.shiftPayAmount != null ? toMajorValue(target.shiftPayAmount) : undefined,
-            revenueSharePct: target?.revenueSharePct ?? undefined
+            revenueSharePct: target?.revenueSharePct ?? undefined,
+            canEditStayPayments: Boolean(target?.canEditStayPayments)
         });
     };
 
@@ -1828,32 +1961,32 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         ].filter((item): item is string => Boolean(item))
         : [];
     const formLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/40';
-    const formPanelClass = 'mt-5 rounded-[26px] border p-4 sm:p-5';
+    const formPanelClass = 'mt-4 rounded-2xl border p-3.5 sm:mt-5 sm:rounded-[26px] sm:p-5';
     const modalLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/35';
 
     return (
         <>
-            <div className="flex min-h-screen flex-col gap-4 px-3 pb-24 pt-4 sm:gap-6 sm:px-6 sm:pt-6">
-                <Card className="overflow-hidden border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.14),_rgba(255,255,255,0.05)_42%,_rgba(7,10,18,0.88)_100%)] p-0 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_rgba(255,255,255,0.04)_42%,_rgba(7,10,18,0.92)_100%)]">
-                    <div className="flex flex-col gap-6 px-4 py-5 sm:px-6 sm:py-6">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex min-h-screen flex-col gap-3 px-3 pb-24 pt-3 sm:gap-6 sm:px-6 sm:pt-6">
+                <Card className="overflow-hidden border-slate-200 bg-[linear-gradient(135deg,_#ffffff_0%,_#f8fafc_45%,_#e8eef7_100%)] p-0 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_rgba(255,255,255,0.04)_42%,_rgba(7,10,18,0.92)_100%)] dark:shadow-none">
+                    <div className="flex flex-col gap-4 px-3.5 py-4 sm:gap-6 sm:px-6 sm:py-6">
+                        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
                             <div className="min-w-0 space-y-3">
-                                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/45">
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/45">
                                     <span>Объект</span>
                                     {data.timezone && <span>{data.timezone}</span>}
                                     {hotelCur && <span>{hotelCur}</span>}
                                 </div>
                                 <div className="space-y-2">
-                                    <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">{data.name}</h1>
-                                    <p className="max-w-2xl text-sm text-white/65 sm:text-base">{data.address}</p>
+                                    <h1 className="break-words text-xl font-semibold tracking-tight text-slate-950 sm:text-4xl dark:text-white">{data.name}</h1>
+                                    <p className="max-w-2xl text-sm text-slate-600 sm:text-base dark:text-white/65">{data.address}</p>
                                 </div>
-                                <div className="flex flex-wrap gap-2 text-xs text-white/70">
+                                <div className="flex flex-wrap gap-2 text-xs text-slate-700 dark:text-white/70">
                                     <Badge label={activeShiftLabel} tone={data.activeShift ? 'warning' : 'default'} />
                                     <Badge label={`${data.roomCount} номеров`} />
                                     <Badge label={`${managerCount} менеджеров`} />
                                 </div>
                             </div>
-                            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+                            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
                                 <Button
                                     type="button"
                                     variant="secondary"
@@ -1862,28 +1995,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 >
                                     Панель управления
                                 </Button>
-                                <Link href={`/${countryQuery}`}>
+                                <Link href="/">
                                     <Button variant="ghost" size="sm">Назад</Button>
                                 </Link>
                             </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
                             {summaryCards.map((item) => (
                                 <div
                                     key={item.label}
-                                    className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-4 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.9)] backdrop-blur"
+                                    className="min-w-0 rounded-2xl border border-slate-200 bg-white/82 px-3 py-3 shadow-[0_14px_34px_-32px_rgba(15,23,42,0.45)] backdrop-blur sm:rounded-[24px] sm:px-4 sm:py-4 dark:border-white/10 dark:bg-white/[0.045] dark:shadow-[0_14px_34px_-32px_rgba(15,23,42,0.75)]"
                                 >
-                                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">{item.label}</p>
-                                    <p className="mt-3 text-xl font-semibold tracking-tight text-white">{item.value}</p>
-                                    <p className="mt-1 text-sm text-white/55">
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/40">{item.label}</p>
+                                    <p className="mt-2 break-words text-lg font-semibold tracking-tight text-slate-950 sm:mt-3 sm:text-xl dark:text-white">{item.value}</p>
+                                    <p className="mt-1 break-words text-xs text-slate-600 sm:text-sm dark:text-white/55">
                                         {item.caption}
                                         {item.label === 'Касса' ? (
                                             <>
                                                 {' · '}
                                                 <button
                                                     type="button"
-                                                    className={`rounded-lg px-1.5 py-0.5 font-semibold transition ${pendingOnlineValue > 0 ? 'text-amber-200 hover:bg-amber-300/10 hover:text-amber-100' : 'cursor-default text-white/40'}`}
+                                                    className={`rounded-lg px-1.5 py-0.5 font-semibold transition ${pendingOnlineValue > 0 ? 'text-amber-700 hover:bg-amber-100 hover:text-amber-800 dark:text-amber-200 dark:hover:bg-amber-300/10 dark:hover:text-amber-100' : 'cursor-default text-slate-400 dark:text-white/40'}`}
                                                     onClick={() => pendingOnlineValue > 0 && setIsPendingOnlineHistoryOpen((current) => !current)}
                                                     disabled={pendingOnlineValue <= 0}
                                                     aria-expanded={isPendingOnlineHistoryOpen}
@@ -1897,13 +2030,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             ))}
                         </div>
                         {isPendingOnlineHistoryOpen ? (
-                            <div className="rounded-[24px] border border-amber-300/20 bg-amber-400/10 p-4 text-amber-50">
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-amber-800 sm:rounded-[24px] sm:p-4 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Ожидающие поступления</p>
                                         <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineValue)}</p>
                                     </div>
-                                    <Button type="button" variant="ghost" size="sm" className="text-amber-50 hover:bg-amber-300/10 hover:text-white" onClick={() => setIsPendingOnlineHistoryOpen(false)}>
+                                    <Button type="button" variant="ghost" size="sm" className="text-amber-700 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-50 dark:hover:bg-amber-300/10 dark:hover:text-white" onClick={() => setIsPendingOnlineHistoryOpen(false)}>
                                         Скрыть
                                     </Button>
                                 </div>
@@ -1912,6 +2045,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         {pendingOnlineHistory.map((stay) => {
                                             const guestLabel = stay.guestName?.trim() || 'Гость';
                                             const detailLine = [
+                                                stay.bookingNumber?.trim() ? `бронь № ${stay.bookingNumber.trim()}` : null,
+                                                stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : null,
                                                 stay.bookingSource?.trim() ? `источник ${stay.bookingSource.trim()}` : null,
                                                 stay.companyName?.trim() ? `компания ${stay.companyName.trim()}` : null,
                                                 stay.guestPhone?.trim() ? `тел. ${stay.guestPhone.trim()}` : null,
@@ -1920,19 +2055,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             ].filter(Boolean).join(' · ');
 
                                             return (
-                                                <div key={`pending-online-${stay.id}`} className="rounded-2xl border border-amber-200/20 bg-black/15 px-3 py-3">
+                                                <div key={`pending-online-${stay.id}`} className="rounded-2xl border border-amber-200/80 bg-white px-3 py-3 dark:border-amber-200/20 dark:bg-black/15">
                                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                                         <div className="min-w-0">
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span className="rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold">№ {stay.roomLabel}</span>
-                                                                <span className="text-sm font-semibold text-white">{guestLabel}</span>
+                                                                <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-white/10 dark:text-amber-50">№ {stay.roomLabel}</span>
+                                                                <span className="text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
                                                                 <Badge label={stayStatusLabels[stay.status]} tone={stayStatusTone[stay.status]} />
                                                             </div>
-                                                            <p className="mt-2 text-xs text-amber-50/70">
+                                                            <p className="mt-2 text-xs text-amber-700 dark:text-amber-50/70">
                                                                 {formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn)} — {formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut)}
                                                             </p>
-                                                            {detailLine ? <p className="mt-1 text-xs text-amber-50/55">{detailLine}</p> : null}
-                                                            {stay.notes?.trim() ? <p className="mt-1 text-xs text-amber-50/55">{stay.notes.trim()}</p> : null}
+                                                            {detailLine ? <p className="mt-1 text-xs text-amber-700/75 dark:text-amber-50/55">{detailLine}</p> : null}
+                                                            {stay.notes?.trim() ? <p className="mt-1 text-xs text-amber-700/75 dark:text-amber-50/55">{stay.notes.trim()}</p> : null}
                                                         </div>
                                                         <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                                                             <span className="text-sm font-semibold text-amber-100">{formatCurrency(stay.onlinePaid ?? 0)}</span>
@@ -1940,7 +2075,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 type="button"
                                                                 variant="secondary"
                                                                 size="sm"
-                                                                className="border-amber-300/50 bg-white/10 text-amber-50 hover:bg-amber-300/15 hover:text-white"
+                                                                className="border-amber-300/80 bg-white text-amber-700 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-300/50 dark:bg-white/10 dark:text-amber-50 dark:hover:bg-amber-300/15 dark:hover:text-white"
                                                                 disabled={confirmingOnlineStayId === stay.id}
                                                                 onClick={() => handleConfirmOnlinePayment({ id: stay.roomId }, stay)}
                                                             >
@@ -1953,10 +2088,63 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         })}
                                     </div>
                                 ) : (
-                                    <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-amber-50/70">
+                                    <p className="mt-4 rounded-2xl border border-amber-200/80 bg-white px-3 py-3 text-sm text-amber-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-amber-50/70">
                                         Ожидающих поступлений нет.
                                     </p>
                                 )}
+                            </div>
+                        ) : null}
+                        {prepaidBookings.length > 0 ? (
+                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3.5 text-cyan-900 sm:rounded-[24px] sm:p-4 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-700/60 dark:text-cyan-100/55">Предоплаты по броням</p>
+                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(prepaidBookingsTotal)}</p>
+                                    </div>
+                                    <Badge label={`${prepaidBookings.length} броней`} tone="default" />
+                                </div>
+                                <div className="mt-4 grid gap-2 lg:grid-cols-2">
+                                    {prepaidBookings.slice(0, 6).map(({ room, stay }) => {
+                                        const paymentParts = [
+                                            (stay.cashPaid ?? 0) > 0 ? `нал ${formatCurrency(stay.cashPaid)}` : null,
+                                            (stay.cardPaid ?? 0) > 0 ? `безнал ${formatCurrency(stay.cardPaid)}` : null,
+                                            (stay.onlinePaid ?? 0) > 0 ? `онлайн ${formatCurrency(stay.onlinePaid)}` : null
+                                        ].filter(Boolean).join(' · ');
+                                        const guestLabel = stay.guestName?.trim() || 'Гость';
+                                        const bookingContext = [
+                                            stay.bookingNumber?.trim() ? `бронь № ${stay.bookingNumber.trim()}` : null,
+                                            stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : null
+                                        ].filter(Boolean).join(' · ');
+
+                                        return (
+                                            <button
+                                                key={`prepaid-booking-${stay.id}`}
+                                                type="button"
+                                                className="min-w-0 rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 text-left transition hover:border-cyan-300 hover:bg-cyan-100/70 dark:border-cyan-200/20 dark:bg-black/15 dark:hover:border-cyan-200/35 dark:hover:bg-cyan-300/10"
+                                                onClick={() => handleSelectStayForEdit(room, stay)}
+                                            >
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="rounded-lg bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800 dark:bg-white/10 dark:text-cyan-50">№ {room.label}</span>
+                                                    <span className="min-w-0 truncate text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
+                                                </div>
+                                                <p className="mt-2 text-xs text-cyan-800/75 dark:text-cyan-50/65">
+                                                    {formatStayDate(stay.scheduledCheckIn)} — {formatStayDate(stay.scheduledCheckOut)}
+                                                </p>
+                                                <p className="mt-1 text-sm font-semibold text-cyan-800 dark:text-cyan-100">
+                                                    {formatCurrency(stay.amountPaid ?? 0)}{paymentParts ? ` · ${paymentParts}` : ''}
+                                                </p>
+                                                {bookingContext ? (
+                                                    <p className="mt-1 text-xs text-cyan-800/70 dark:text-cyan-50/55">{bookingContext}</p>
+                                                ) : null}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {prepaidBookings.length > 6 ? (
+                                    <p className="mt-3 text-xs text-cyan-800/70 dark:text-cyan-50/55">
+                                        Показаны ближайшие 6. Полный список доступен в истории броней.
+                                    </p>
+                                ) : null}
                             </div>
                         ) : null}
                     </div>
@@ -2012,7 +2200,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <div className="space-y-4">
                                                 <div className="flex flex-wrap items-start justify-between gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                     <div>
-                                                        <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-white/70">
                                                             <Badge label={`Смена №${selectedShift.number}`} />
                                                             <Badge
                                                                 label={selectedShift.status === 'CLOSED' ? 'Закрыта' : 'Открыта'}
@@ -2028,7 +2216,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                     <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-right dark:border-white/[0.06] dark:bg-white/[0.04]">
                                                         <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Статус кассы</p>
-                                                        <p className="mt-2 text-2xl font-semibold text-emerald-300">{selectedShiftCash ? formatCurrency(selectedShiftCash.currentCash) : '—'}</p>
+                                                        <p className="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-300">{selectedShiftCash ? formatCurrency(selectedShiftCash.currentCash) : '—'}</p>
                                                         {selectedShift.handoverCash != null && (
                                                             <p className="mt-1 text-xs text-slate-500 dark:text-white/50">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
                                                         )}
@@ -2413,7 +2601,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <>
                                                         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px]">
                                                             <Input
-                                                                placeholder="Поиск: номер, гость, телефон, компания, источник"
+                                                                placeholder="Поиск: номер, гость, номер брони, телефон, компания, источник"
                                                                 value={stayHistoryQuery}
                                                                 onChange={(event) => setStayHistoryQuery(event.target.value)}
                                                             />
@@ -2484,6 +2672,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     const onlinePortion = stayEntry.onlinePaid ?? 0;
                                                                                     const paymentBreakdownTotal = cashPortion + cardPortion + onlinePortion;
                                                                                     const displayAmount = paymentBreakdownTotal > 0 ? paymentBreakdownTotal : stayEntry.amountPaid;
+                                                                                    const tariffAmount = stayEntry.totalAmount ?? null;
+                                                                                    const remainingAmount = tariffAmount != null ? Math.max(tariffAmount - (displayAmount ?? 0), 0) : null;
                                                                                     const paymentLabel = (() => {
                                                                                         const segments: string[] = [];
                                                                                         if (cashPortion) segments.push(`нал ${formatCurrency(cashPortion)}`);
@@ -2494,6 +2684,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         return segments.join(' · ') || undefined;
                                                                                     })();
                                                                                     const sourceLabel = stayEntry.bookingSource?.trim() ? `источник ${stayEntry.bookingSource.trim()}` : undefined;
+                                                                                    const bookingNumberLabel = stayEntry.bookingNumber?.trim() ? `бронь № ${stayEntry.bookingNumber.trim()}` : undefined;
                                                                                     const phoneLabel = stayEntry.guestPhone?.trim() ? `тел. ${stayEntry.guestPhone.trim()}` : undefined;
                                                                                     const companyLabel = stayEntry.companyName?.trim() ? `компания ${stayEntry.companyName.trim()}` : undefined;
                                                                                     const transferLabel = stayEntry.transfers?.length
@@ -2519,10 +2710,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             </div>
                                                                                             <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                                                                                                 {checkInLabel} — {checkOutLabel}
-                                                                                                {displayAmount != null && (
-                                                                                                    <> · {formatCurrency(displayAmount)}{paymentLabel ? ` · ${paymentLabel}` : ''}{sourceLabel ? ` · ${sourceLabel}` : ''}</>
+                                                                                                {tariffAmount != null ? (
+                                                                                                    <> · тариф {formatCurrency(tariffAmount)} · оплачено {formatCurrency(displayAmount ?? 0)}{remainingAmount ? ` · остаток ${formatCurrency(remainingAmount)}` : ''}</>
+                                                                                                ) : displayAmount != null && (
+                                                                                                    <> · оплачено {formatCurrency(displayAmount)}</>
                                                                                                 )}
                                                                                             </p>
+                                                                                            {(paymentLabel || sourceLabel || bookingNumberLabel) ? (
+                                                                                                <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">
+                                                                                                    {[paymentLabel, sourceLabel, bookingNumberLabel].filter(Boolean).join(' · ')}
+                                                                                                </p>
+                                                                                            ) : null}
                                                                                             {(phoneLabel || companyLabel || stayEntry.notes) ? (
                                                                                                 <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">
                                                                                                     {[companyLabel, phoneLabel, stayEntry.notes?.trim()].filter(Boolean).join(' · ')}
@@ -2652,7 +2850,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <Input type="datetime-local" step="60" {...shiftEditForm.register('closedAt')} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KZT'})`}</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -2667,11 +2865,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KZT'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('closingCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KZT'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...shiftEditForm.register('handoverCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1 md:col-span-2 lg:col-span-1">
@@ -2785,7 +2983,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <Input type="datetime-local" step="60" {...createShiftForm.register('closedAt')} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KGS'}) *`}</label>
+                                    <label className={formLabelClass}>{`На начало (${hotelCur || 'KZT'}) *`}</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -2800,11 +2998,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Касса факт (${hotelCur || 'KZT'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...createShiftForm.register('closingCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KGS'})`}</label>
+                                    <label className={formLabelClass}>{`Передано (${hotelCur || 'KZT'})`}</label>
                                     <Input type="number" step="0.01" placeholder="—" {...createShiftForm.register('handoverCash', { valueAsNumber: true })} />
                                 </div>
                                 <div className="space-y-1 md:col-span-2 lg:col-span-1">
@@ -2886,12 +3084,50 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <div className="space-y-1">
+                                        <label className={modalLabelClass}>Номер брони</label>
+                                        <Input placeholder="Booking #" {...bookingCreateForm.register('bookingNumber')} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Общая сумма тарифа (${hotelCur || 'KZT'})`}</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            placeholder="150000"
+                                            {...bookingCreateForm.register('totalAmount', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
                                         <label className={modalLabelClass}>Заезд</label>
                                         <Input type="datetime-local" step="60" {...bookingCreateForm.register('scheduledCheckIn')} />
                                     </div>
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>Выезд</label>
                                         <Input type="datetime-local" step="60" {...bookingCreateForm.register('scheduledCheckOut')} />
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Предоплата (${hotelCur || 'KZT'})`}</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            placeholder="0"
+                                            {...bookingCreateForm.register('prepaymentAmount', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>Способ предоплаты</label>
+                                        <Select {...bookingCreateForm.register('prepaymentMethod')}>
+                                            <option value="CASH">Наличные</option>
+                                            <option value="CARD">Безнал</option>
+                                            <option value="ONLINE">На сайте / онлайн</option>
+                                        </Select>
                                     </div>
                                 </div>
                                 <div className="space-y-1">
@@ -2985,6 +3221,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 )}
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <div className="space-y-1">
+                                        <label className={modalLabelClass}>Номер брони</label>
+                                        <Input placeholder="Booking #" {...stayEditForm.register('bookingNumber')} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className={modalLabelClass}>{`Общая сумма тарифа (${hotelCur || 'KZT'})`}</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...stayEditForm.register('totalAmount', { valueAsNumber: true })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <div className="space-y-1">
                                         <label className={modalLabelClass}>Планируемый заезд</label>
                                         <Input type="datetime-local" step="60" {...stayEditForm.register('scheduledCheckIn')} />
                                     </div>
@@ -3029,7 +3280,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-4">
                                     <div className="space-y-1">
-                                        <label className={modalLabelClass}>{`Наличные (${hotelCur || 'KGS'})`}</label>
+                                        <label className={modalLabelClass}>{`Наличные (${hotelCur || 'KZT'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -3038,7 +3289,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className={modalLabelClass}>{`Безнал (${hotelCur || 'KGS'})`}</label>
+                                        <label className={modalLabelClass}>{`Безнал (${hotelCur || 'KZT'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -3047,7 +3298,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className={modalLabelClass}>{`На сайте (${hotelCur || 'KGS'})`}</label>
+                                        <label className={modalLabelClass}>{`На сайте (${hotelCur || 'KZT'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -3056,7 +3307,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className={modalLabelClass}>{`Общая оплата (${hotelCur || 'KGS'})`}</label>
+                                        <label className={modalLabelClass}>{`Общая оплата (${hotelCur || 'KZT'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -3066,12 +3317,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </div>
                                 </div>
                                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3 text-xs text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/60">
-                                    По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {hotelCur || 'KGS'}
+                                    По разбивке: {roomPaymentPreview.totalBreakdown.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {hotelCur || 'KZT'}
                                     {' • '}Поле «Общая оплата»: {roomPaymentPreview.totalField.toLocaleString('ru-RU', {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2
                                     })}{' '}
-                                    {hotelCur || 'KGS'}
+                                    {hotelCur || 'KZT'}
                                 </div>
                                 {selectedStayForEditor && (selectedStayForEditor.onlinePaid ?? 0) > 0 && selectedRoomForEditor ? (
                                     <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
@@ -3168,7 +3419,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </Select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className={modalLabelClass}>{`Сумма (${hotelCur || 'KGS'})`}</label>
+                                        <label className={modalLabelClass}>{`Сумма (${hotelCur || 'KZT'})`}</label>
                                         <Input type="number" step="0.01" min="0.01" {...ledgerEditForm.register('amount', { valueAsNumber: true })} />
                                         {ledgerEditForm.formState.errors.amount && (
                                             <p className="text-xs text-rose-400">{ledgerEditForm.formState.errors.amount.message}</p>
@@ -3232,7 +3483,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 {isManagementPanelOpen && (
                     <div className="fixed inset-0 z-50">
                         <div className="absolute inset-0 bg-black/70" onClick={() => setIsManagementPanelOpen(false)} />
-                        <div className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur sm:p-5 dark:border-white/[0.08] dark:bg-[#090d16]/95 md:max-w-xl">
+                        <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-white/95 p-3 shadow-2xl backdrop-blur sm:p-5 md:max-w-xl md:border-l md:border-slate-200/80 dark:md:border-white/[0.08] dark:bg-[#090d16]/95">
                             <div className="mb-4 flex items-center justify-between gap-3">
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/35">Панель управления</p>
@@ -3248,8 +3499,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     Закрыть
                                 </Button>
                             </div>
-                            <div className="flex-1 space-y-5 overflow-y-auto pr-2">
-                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                            <div className="flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-5 sm:pr-2">
+                                <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader title="Менеджеры" />
                                     <div className="space-y-4">
                                         <div className="space-y-2">
@@ -3257,7 +3508,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 data.managers.map((manager) => (
                                                     <div
                                                         key={manager.assignmentId}
-                                                        className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[0.06] dark:bg-white/[0.03]"
+                                                        className="flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-200/65 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 dark:border-white/[0.055] dark:bg-white/[0.03]"
                                                     >
                                                         <div>
                                                             <p className="text-sm font-medium text-slate-900 dark:text-white">{manager.displayName}</p>
@@ -3272,9 +3523,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
                                                                 Процент: {manager.revenueSharePct != null ? formatPercentage(manager.revenueSharePct) : '—'}
                                                             </p>
+                                                            <p className="text-xs text-slate-500 dark:text-white/50">
+                                                                Исправления: {manager.canEditStayPayments ? 'разрешены' : 'без доступа'}
+                                                            </p>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                                                             <Badge label="Менеджер" />
+                                                            {manager.canEditStayPayments ? <Badge label="Суммы" tone="success" /> : null}
                                                             <Button
                                                                 type="button"
                                                                 size="sm"
@@ -3362,7 +3617,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             type="number"
                                                             step="0.01"
                                                             min="0"
-                                                            placeholder={`Ставка за смену (${hotelCur || 'KGS'})`}
+                                                            placeholder={`Ставка за смену (${hotelCur || 'KZT'})`}
                                                             {...managerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
                                                         />
                                                         <Input
@@ -3372,6 +3627,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             placeholder="Процент с оборота"
                                                             {...managerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
                                                         />
+                                                        <label className="flex items-start gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                                                                {...managerForm.register('canEditStayPayments')}
+                                                            />
+                                                            <span>Разрешить исправлять суммы и отменять операции</span>
+                                                        </label>
                                                         <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
                                                         <Button type="submit" className="w-full">
                                                             Добавить менеджера
@@ -3470,7 +3733,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             placeholder={
                                                                 selectedManager?.shiftPayAmount != null
                                                                     ? `Ставка (сейчас ${formatCurrency(selectedManager.shiftPayAmount)})`
-                                                                    : `Новая ставка за смену (${hotelCur || 'KGS'})`
+                                                                    : `Новая ставка за смену (${hotelCur || 'KZT'})`
                                                             }
                                                             {...updateManagerForm.register('shiftPayAmount', { valueAsNumber: true, min: 0 })}
                                                         />
@@ -3485,6 +3748,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             }
                                                             {...updateManagerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
                                                         />
+                                                        <label className="flex items-start gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                                                                {...updateManagerForm.register('canEditStayPayments')}
+                                                            />
+                                                            <span>Разрешить исправлять суммы и отменять операции</span>
+                                                        </label>
                                                         <Button type="submit" className="w-full" variant="secondary">
                                                             Обновить менеджера
                                                         </Button>
@@ -3496,7 +3767,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </div>
                                 </Card>
 
-                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader
                                         title="Категории расходов"
                                         actions={
@@ -3580,14 +3851,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     {savingExpenseCategoryId === 'new' ? 'Добавляем…' : 'Добавить'}
                                                 </Button>
                                             </div>
-                                            <p className="text-[11px] text-slate-400 dark:text-white/30">
+                                            <p className="text-[11px] text-slate-600 dark:text-white/30">
                                                 Эти категории будут доступны менеджеру в форме расхода. Удаление категории не удаляет старые записи, только снимает привязку.
                                             </p>
                                         </div>
                                     )}
                                 </Card>
 
-                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader
                                         title="Бонусы за кассу"
                                         actions={
@@ -3605,7 +3876,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     {isBonusTiersExpanded && (
                                         <div className="space-y-3">
                                             {(data?.bonusTiers ?? []).length > 0 && (
-                                                <div className="divide-y divide-white/[0.06]">
+                                                <div className="divide-y divide-slate-200 dark:divide-white/[0.06]">
                                                     {data!.bonusTiers!.map((tier) => (
                                                         <div key={tier.id} className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                             <span className="text-sm text-slate-900 dark:text-white">
@@ -3681,7 +3952,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {savingTier ? 'Добавляем…' : 'Добавить порог'}
                                                     </Button>
                                                 </div>
-                                                <p className="text-[11px] text-slate-400 dark:text-white/30">
+                                                <p className="text-[11px] text-slate-600 dark:text-white/30">
                                                     При достижении порога кассы за смену менеджер получает бонус. Применяется наивысший достигнутый порог.
                                                 </p>
                                             </div>
@@ -3689,7 +3960,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </Card>
 
-                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader
                                         title="Номера"
                                         actions={
@@ -3730,7 +4001,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     )}
                                 </Card>
 
-                                <Card className="border-slate-200/80 bg-slate-50/80 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.06] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader
                                         title={`Список номеров (${sortedRooms.length})`}
                                         actions={
@@ -3804,8 +4075,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <div className="flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                            <span className="text-sm font-medium text-slate-900 dark:text-white">№ {room.label}</span>
+                                                        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-slate-200/65 bg-white px-3 py-2.5 dark:border-white/[0.055] dark:bg-white/[0.03]">
+                                                            <span className="min-w-0 break-words text-sm font-medium text-slate-900 dark:text-white">№ {room.label}</span>
                                                             {room.floor && <span className="text-[11px] text-slate-400 dark:text-white/30">{room.floor}</span>}
                                                             {room.notes && <span className="max-w-[120px] truncate text-[11px] text-slate-400 dark:text-white/25" title={room.notes}>{room.notes}</span>}
                                                             <Badge
@@ -3823,7 +4094,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 }
                                                             />
                                                             {!room.isActive && <span className="text-[11px] text-rose-300">выкл</span>}
-                                                            <span className="flex-1" />
+                                                            <span className="min-w-[1rem] flex-1" />
                                                             <button
                                                                 type="button"
                                                                 className="text-[11px] text-slate-400 transition hover:text-slate-700 dark:text-white/30 dark:hover:text-white"

@@ -151,7 +151,7 @@ const updateHotelSchema = z
     .object({
         name: z.string().min(2).optional(),
         address: z.string().min(4).optional(),
-        country: z.string().length(2).optional(),
+        country: z.enum(['KG', 'KZ']).optional(),
         timezone: z.string().min(1).max(50).optional(),
         currency: z.string().min(1).max(10).optional(),
         usesExtranets: z.boolean().optional(),
@@ -410,11 +410,14 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         actualCheckIn: stay.actualCheckIn,
                         actualCheckOut: stay.actualCheckOut,
                         amountPaid: stay.amountPaid,
+                        totalAmount: stay.totalAmount,
                         paymentMethod: stay.paymentMethod,
                         cashPaid: stay.cashPaid,
                         cardPaid: stay.cardPaid,
                         onlinePaid: stayRecord.onlinePaid,
                         bookingSource: stayRecord.bookingSource,
+                        bookingNumber: stayRecord.bookingNumber,
+                        mealPlan: stayRecord.mealPlan,
                         shiftId: stayRecord.shift?.id ?? null,
                         shiftNumber: stayRecord.shift?.number ?? null,
                         shiftStatus: stayRecord.shift?.status ?? null,
@@ -468,7 +471,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 username: assignment.user.username,
                 pinCode: assignment.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,
-                revenueSharePct: assignment.revenueSharePct
+                revenueSharePct: assignment.revenueSharePct,
+                canEditStayPayments: assignment.canEditStayPayments
             })),
             activeShift: activeShiftRecord
                 ? {
@@ -506,11 +510,14 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 actualCheckIn: stay.actualCheckIn,
                 actualCheckOut: stay.actualCheckOut,
                 amountPaid: stay.amountPaid,
+                totalAmount: stay.totalAmount,
                 paymentMethod: stay.paymentMethod,
                 cashPaid: stay.cashPaid,
                 cardPaid: stay.cardPaid,
                 onlinePaid: stay.onlinePaid,
                 bookingSource: stay.bookingSource,
+                bookingNumber: stay.bookingNumber,
+                mealPlan: stay.mealPlan,
                 shiftId: stay.shift?.id ?? null,
                 shiftNumber: stay.shift?.number ?? null,
                 shiftStatus: stay.shift?.status ?? null,

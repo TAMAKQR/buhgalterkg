@@ -23,7 +23,7 @@ const cleaningChatIdSchema = z
 const createHotelSchema = z.object({
     name: z.string().min(2),
     address: z.string().min(4),
-    country: z.string().length(2).optional(),
+    country: z.enum(['KG', 'KZ']).optional(),
     timezone: z.string().min(1).max(50).optional(),
     currency: z.string().min(1).max(10).optional(),
     usesExtranets: z.boolean().optional(),
@@ -295,7 +295,6 @@ export async function POST(request: NextRequest) {
 
         const payload = createHotelSchema.parse(body);
 
-        // Получаем страну из middleware заголовка, если не указана явно
         const headerCountry = request.headers.get('x-country-code');
         const country = payload.country || (headerCountry === 'KZ' || headerCountry === 'KG'
             ? headerCountry

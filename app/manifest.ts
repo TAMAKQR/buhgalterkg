@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
     return {
         name: 'Hotel Ops',
         short_name: 'Hotel Ops',
-        description: 'Управление отелями, сменами и складами.',
+        description: 'Управление отелем, номерами, сменами и кассой.',
         lang: 'ru',
         start_url: '/',
         scope: '/',

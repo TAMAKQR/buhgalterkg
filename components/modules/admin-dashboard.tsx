@@ -4,6 +4,19 @@ import Link from "next/link";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
+import {
+    Activity,
+    BarChart3,
+    Building2,
+    CircleDollarSign,
+    Download,
+    Hotel,
+    LogOut,
+    Settings2,
+    SlidersHorizontal,
+    Users,
+    type LucideIcon,
+} from "lucide-react";
 import { useCountryContext } from '@/hooks/useCountryContext';
 
 import { getCountryConfig, type CountryCode } from "@/lib/country";
@@ -196,7 +209,7 @@ type HotelFormState = {
 const DEFAULT_COUNTRY: CountryCode = "KG";
 
 const getDisplaySettings = (country?: string | null) => {
-    const countryCode: CountryCode = country === "KZ" ? "KZ" : DEFAULT_COUNTRY;
+    const countryCode: CountryCode = country === "KZ" || country === "KG" ? country : DEFAULT_COUNTRY;
     const config = getCountryConfig(countryCode);
     return {
         country: countryCode,
@@ -282,7 +295,7 @@ const expenseAmountTone = (entry: ExpenseEntry) =>
         ? "text-sky-600 dark:text-sky-300"
         : "text-rose-500 dark:text-rose-300";
 
-const selectClassName = "h-11 w-full rounded-2xl border border-slate-200/70 dark:border-white/[0.06] bg-white/72 dark:bg-white/[0.05] px-3.5 text-sm text-light-text dark:text-white shadow-[0_8px_22px_-20px_rgba(15,23,42,0.22)] transition-[border-color,box-shadow,background-color] focus:border-slate-300 dark:focus:border-white/15 focus:bg-white/90 dark:focus:bg-white/[0.08] focus:outline-none focus:ring-4 focus:ring-slate-200/50 dark:focus:ring-white/[0.06] disabled:opacity-40";
+const selectClassName = "h-10 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm text-light-text shadow-[0_8px_22px_-22px_rgba(15,23,42,0.32)] transition-[border-color,box-shadow,background-color] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:opacity-40 sm:h-11 sm:rounded-2xl sm:px-3.5 dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white dark:focus:border-white/15 dark:focus:bg-white/[0.08] dark:focus:ring-white/[0.06]";
 
 const toDateInputValue = (value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -321,11 +334,11 @@ const createPeriodFilters = (preset: PeriodPreset, timeZone: string): OverviewFi
 
 function SectionCard({ title, subtitle, actions, className, children }: { title: string; subtitle?: string; actions?: React.ReactNode; className?: string; children: React.ReactNode }) {
     return (
-        <Card className={`!border-slate-200/60 !bg-slate-50/82 !shadow-[0_18px_46px_-40px_rgba(15,23,42,0.32)] dark:!border-white/[0.06] dark:!bg-white/[0.04] dark:!shadow-none p-4 sm:p-5 ${className ?? ""}`}>
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <Card className={`!border-slate-200 !bg-white !shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] p-3.5 sm:p-5 lg:!rounded-lg lg:p-4 dark:!border-white/[0.055] dark:!bg-white/[0.04] dark:!shadow-none ${className ?? ""}`}>
+            <div className="mb-3 flex flex-col gap-3 sm:mb-4 sm:flex-row sm:items-start sm:justify-between lg:mb-3">
                 <div className="min-w-0">
-                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/30">{subtitle}</p> : null}
-                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">{title}</h2>
+                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">{subtitle}</p> : null}
+                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg lg:text-base">{title}</h2>
                 </div>
                 {actions}
             </div>
@@ -338,10 +351,10 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
     return (
         <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-white/35" htmlFor={htmlFor}>
+                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-600 dark:text-white/35" htmlFor={htmlFor}>
                     {label}
                 </label>
-                {hint ? <span className="text-[11px] text-slate-500 dark:text-white/28">{hint}</span> : null}
+                {hint ? <span className="text-[11px] text-slate-600 dark:text-white/28">{hint}</span> : null}
             </div>
             {children}
         </div>
@@ -350,8 +363,8 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
 
 function StatPill({ label, value }: { label: string; value: string }) {
     return (
-        <div className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/28">{label}</p>
+        <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.055] dark:bg-white/[0.03] sm:rounded-2xl lg:rounded-md">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 dark:text-white/28">{label}</p>
             <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-800 dark:text-white">{value}</p>
         </div>
     );
@@ -366,6 +379,8 @@ function BusinessTargetCard({
     currency?: string;
     hotelLabel?: string;
 }) {
+    const [helpOpen, setHelpOpen] = useState(false);
+
     if (!target) return null;
 
     const breakdown = [
@@ -376,21 +391,37 @@ function BusinessTargetCard({
         { label: "Прочее", value: target.costs.other },
     ];
     const hasPlan = target.monthlyRequiredRevenue > 0;
+    const helpText = hasPlan
+        ? `Показывает, сколько нужно заработать за ${target.periodLabel}, чтобы закрыть основные ежемесячные затраты.`
+        : "Заполни в управлении объектом ежемесячные ориентиры по зарплатам, аренде, коммуналке, хозтоварам и прочим тратам. Тогда сводка начнет показывать, сколько выручки нужно в месяц и какой темп нужен до конца месяца.";
 
     return (
         <Card className="col-span-1 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 max-w-3xl">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Финансовый ориентир</p>
-                    <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
-                        {hotelLabel ? `План для ${hotelLabel}` : `План по объектам: ${target.hotelsInScope}`}
-                    </h3>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-white/45">
-                        {hasPlan
-                            ? `Показывает, сколько нужно заработать за ${target.periodLabel}, чтобы закрыть основные ежемесячные затраты.`
-                            : "Добавь ежемесячные затраты по объектам, и здесь появится ориентир по выручке и темпу."}
-                    </p>
-                    {hasPlan ? (
+                    <div className="flex items-start gap-2">
+                        <div className="min-w-0">
+                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Финансовый ориентир</p>
+                            <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
+                                {hotelLabel ? `План для ${hotelLabel}` : `План по объектам: ${target.hotelsInScope}`}
+                            </h3>
+                        </div>
+                        <button
+                            type="button"
+                            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-800 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/45 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                            onClick={() => setHelpOpen((current) => !current)}
+                            aria-label="Пояснение финансового ориентира"
+                            aria-expanded={helpOpen}
+                        >
+                            ?
+                        </button>
+                    </div>
+                    {helpOpen ? (
+                        <p className="mt-2 max-w-2xl rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/45">
+                            {helpText}
+                        </p>
+                    ) : null}
+                    {hasPlan && helpOpen ? (
                         <p className="mt-2 text-xs text-slate-500 dark:text-white/40">
                             {target.mixedCycleDays
                                 ? "У объектов разные даты начала расчетного месяца. Сводка считает каждый филиал по его собственному периоду."
@@ -421,7 +452,7 @@ function BusinessTargetCard({
                         <StatPill label="Нужно дальше" value={target.requiredDailyAverage > 0 ? `${formatCurrency(target.requiredDailyAverage, currency)}/день` : "цель закрыта"} />
                     </div>
 
-                    <div className="mt-4 rounded-3xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                    <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                         <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                             <span className="text-slate-600 dark:text-white/55">Покрытие плана</span>
                             <span className="font-semibold text-slate-900 dark:text-white">{formatPercentInt(target.coveredPct * 100)}</span>
@@ -446,18 +477,14 @@ function BusinessTargetCard({
 
                     <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-5">
                         {breakdown.map((item) => (
-                            <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">{item.label}</p>
+                            <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-600 dark:text-white/35">{item.label}</p>
                                 <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
                             </div>
                         ))}
                     </div>
                 </>
-            ) : (
-                <div className="mt-4 rounded-3xl border border-dashed border-slate-200/80 px-4 py-5 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/45">
-                    Заполни в управлении объектом ежемесячные ориентиры по зарплатам, аренде, коммуналке, хозтоварам и прочим тратам. Тогда сводка начнет показывать, сколько выручки нужно в месяц и какой темп нужен до конца месяца.
-                </div>
-            )}
+            ) : null}
         </Card>
     );
 }
@@ -481,7 +508,7 @@ function ExpenseFeed({
         <Card className={`p-4 ${className ?? ""}`}>
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Операции</p>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Операции</p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
                 </div>
                 <span className="text-[11px] text-slate-500 dark:text-white/35">{entries.length}</span>
@@ -494,7 +521,7 @@ function ExpenseFeed({
                     const noteDetails = expenseNoteLabel(entry);
 
                     return (
-                        <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                        <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{note}</p>
@@ -546,11 +573,11 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
 
     return (
         <Card className={`p-4 ${className ?? ""}`}>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Структура расходов</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Структура расходов</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По категориям</h3>
             <div className="mt-4 space-y-2.5">
                 {grouped.length ? grouped.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
                         <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{item.label}</p>
                             <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
@@ -605,7 +632,7 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
         <Card className={`p-4 ${className ?? ""}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Журнал операций</p>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Журнал операций</p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все операции по фильтру</h3>
                 </div>
                 <div className="w-full sm:max-w-xs">
@@ -619,7 +646,7 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
                 <div className="max-h-[28rem] overflow-auto">
                     <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-white/[0.06]">
-                        <thead className="bg-slate-50/80 dark:bg-white/[0.03]">
+                        <thead className="bg-slate-50 dark:bg-white/[0.03]">
                             <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">
                                 <th className="px-3 py-2.5 font-medium">Причина</th>
                                 <th className="px-3 py-2.5 font-medium">Детали</th>
@@ -705,9 +732,9 @@ function SummaryCard({ label, value, valueColor, detail }: {
 }) {
     const [open, setOpen] = useState(false);
     return (
-        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
+        <Card className="overflow-hidden p-4 text-light-text transition-colors hover:border-slate-300 dark:text-white dark:hover:border-white/10 lg:!rounded-lg">
             <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 text-[10px] uppercase leading-tight tracking-[0.16em] text-slate-500 dark:text-white/30 sm:text-[11px] sm:tracking-[0.22em]">{label}</p>
+                <p className="min-w-0 text-[10px] uppercase leading-tight tracking-[0.16em] text-slate-600 dark:text-white/30 sm:text-[11px] sm:tracking-[0.22em]">{label}</p>
                 <button
                     onClick={() => setOpen((v) => !v)}
                     className="sm:hidden flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 text-[11px] font-bold leading-none dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-white/40"
@@ -1209,6 +1236,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             const payload: CreateHotelPayload = {
                 name: formData.get("name") as string,
                 address: formData.get("address") as string,
+                country: formData.get("country") as string,
+                timezone: formData.get("timezone") as string,
+                currency: formData.get("currency") as string,
                 notes: (formData.get("notes") as string) || undefined,
             };
 
@@ -1216,12 +1246,6 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             if (rawCleaningChatId) {
                 payload.cleaningChatId = rawCleaningChatId;
             }
-            const rawCountry = (formData.get("country") as string | null)?.trim();
-            if (rawCountry) payload.country = rawCountry;
-            const rawTimezone = (formData.get("timezone") as string | null)?.trim();
-            if (rawTimezone) payload.timezone = rawTimezone;
-            const rawCurrency = (formData.get("currency") as string | null)?.trim();
-            if (rawCurrency) payload.currency = rawCurrency;
             payload.usesExtranets = formData.get('usesExtranets') === 'on';
             payload.extranetNames = parseExtranetNamesText(formData.get('extranetNames') as string | null);
             payload.financialCycleStartDay = toCycleDay(formData.get("financialCycleStartDay") as string | null) ?? 1;
@@ -1291,8 +1315,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     address: editForm.address.trim(),
                     notes: editForm.notes.trim(),
                     cleaningChatId: editForm.cleaningChatId.trim() ? editForm.cleaningChatId.trim() : null,
-                    timezone: editForm.timezone || "Asia/Bishkek",
-                    currency: editForm.currency || "KGS",
+                    timezone: editForm.timezone || "Asia/Almaty",
+                    currency: editForm.currency || "KZT",
                     usesExtranets: editForm.usesExtranets,
                     extranetNames: parseExtranetNamesText(editForm.extranetNames),
                     financialCycleStartDay: toCycleDay(editForm.financialCycleStartDay) ?? 1,
@@ -1359,10 +1383,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         }
     }, [mutate, notify, overviewDisplay, selectedHotelId, withCountry]);
 
-    const adminTabs: Array<{ id: AdminTab; label: string; hint?: string }> = [
-        { id: "overview", label: "Сводка" },
-        { id: "hotels", label: "Объекты", hint: hotels.length ? String(hotels.length) : undefined },
-        { id: "manage", label: "Управление" },
+    const adminTabs: Array<{ id: AdminTab; label: string; hint?: string; description: string; icon: LucideIcon }> = [
+        { id: "overview", label: "Сводка", description: "Финансы, загрузка и темп", icon: BarChart3 },
+        { id: "hotels", label: "Объекты", hint: hotels.length ? String(hotels.length) : undefined, description: "Состояние филиалов", icon: Hotel },
+        { id: "manage", label: "Управление", description: "Настройки и доступы", icon: Settings2 },
     ];
 
     const managerOptions = useMemo(() => {
@@ -1458,132 +1482,274 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         URL.revokeObjectURL(url);
     }, [overview, filters.startDate, filters.endDate, overviewCurrency]);
 
+    const activeTabConfig = adminTabs.find((tab) => tab.id === activeTab) ?? adminTabs[0];
+    const ActiveTabIcon = activeTabConfig.icon;
+    const visibleHotelCount = filters.hotelId ? 1 : overviewHotels.length;
+    const desktopPeriodLabel = [filters.startDate || "начало", filters.endDate || "сегодня"].join(" - ");
+    const desktopStats = [
+        {
+            label: "Баланс",
+            value: overview ? formatCurrency(overview.totals.netCash, overviewCurrency) : "—",
+            icon: CircleDollarSign,
+            tone: overview && overview.totals.netCash < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300",
+        },
+        {
+            label: "Загрузка",
+            value: overview ? formatPercent(overview.occupancy.rate) : "—",
+            icon: Activity,
+            tone: "text-slate-800 dark:text-white",
+        },
+        {
+            label: "Объекты",
+            value: String(visibleHotelCount),
+            icon: Building2,
+            tone: "text-slate-800 dark:text-white",
+        },
+        {
+            label: "Менеджеры",
+            value: String(managerOptions.length),
+            icon: Users,
+            tone: "text-slate-800 dark:text-white",
+        },
+    ];
+
     return (
-        <div className="min-h-screen bg-[#eef3f8] dark:bg-night">
-            <div className="desktop-container">
-                <div className="flex min-h-screen flex-col gap-4 px-3 pb-16 pt-4 sm:px-5 lg:gap-5 lg:px-8 lg:pt-6">
-                    <header className="flex flex-col gap-4 rounded-[28px] border border-slate-200/60 bg-slate-50/82 p-4 shadow-[0_18px_46px_-40px_rgba(15,23,42,0.32)] backdrop-blur-sm dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none lg:flex-row lg:items-center lg:justify-between lg:p-5">
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400 dark:text-white/30">Администрирование</p>
-                            <h1 className="mt-1 text-xl font-semibold text-light-text dark:text-white lg:text-2xl">{user.displayName}</h1>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Чистая сводка по объектам, финансам и настройкам без перегруженных форм.</p>
+        <div className="min-h-screen bg-[#f4f6f8] text-light-text dark:bg-[#0f1218]">
+            <div className="lg:grid lg:min-h-screen lg:grid-cols-[17rem_minmax(0,1fr)]">
+                <aside className="hidden border-r border-slate-200 bg-white/94 px-4 py-5 shadow-[12px_0_34px_-34px_rgba(15,23,42,0.48)] dark:border-white/[0.065] dark:bg-[#11151d]/96 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+                    <div className="flex items-center gap-3 border-b border-slate-200 pb-5 dark:border-white/[0.06]">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white dark:bg-white dark:text-slate-950">
+                            <Building2 className="h-5 w-5" aria-hidden="true" />
                         </div>
-                        <div className="flex items-center gap-2 self-start lg:self-auto">
-                            <ThemeToggle />
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleLogout}
-                            >
-                                Выйти
-                            </Button>
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-950 dark:text-white">Hotel Ops</p>
+                            <p className="truncate text-xs text-slate-500 dark:text-white/42">{user.displayName}</p>
+                        </div>
+                    </div>
+
+                    <nav className="mt-5 space-y-1.5">
+                        {adminTabs.map((tab) => {
+                            const Icon = tab.icon;
+                            const active = activeTab === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active
+                                        ? "bg-slate-950 text-white shadow-[0_14px_30px_-22px_rgba(15,23,42,0.7)] dark:bg-white dark:text-slate-950"
+                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/58 dark:hover:bg-white/[0.055] dark:hover:text-white"
+                                        }`}
+                                >
+                                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-sm font-medium">{tab.label}</span>
+                                        <span className={`block truncate text-[11px] ${active ? "text-white/62 dark:text-slate-500" : "text-slate-400 dark:text-white/30"}`}>{tab.description}</span>
+                                    </span>
+                                    {tab.hint ? <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/14 text-white dark:bg-slate-900/8 dark:text-slate-500" : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/38"}`}>{tab.hint}</span> : null}
+                                </button>
+                            );
+                        })}
+                    </nav>
+
+                    <div className="mt-6 space-y-2 border-t border-slate-200 pt-5 dark:border-white/[0.06]">
+                        {desktopStats.slice(0, 3).map((item) => {
+                            const Icon = item.icon;
+                            return (
+                                <div key={item.label} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.055] dark:bg-white/[0.035]">
+                                    <Icon className="h-4 w-4 text-slate-400 dark:text-white/32" aria-hidden="true" />
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-white/28">{item.label}</p>
+                                        <p className={`truncate text-sm font-semibold ${item.tone}`}>{item.value}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.06]">
+                        <ThemeToggle />
+                        <Button type="button" size="sm" variant="ghost" className="gap-2" onClick={handleLogout}>
+                            <LogOut className="h-4 w-4" aria-hidden="true" />
+                            Выйти
+                        </Button>
+                    </div>
+                </aside>
+
+                <div className="min-w-0">
+                    <header className="flex flex-col gap-4 border-b border-slate-200 bg-white px-3 py-4 shadow-[0_14px_34px_-32px_rgba(15,23,42,0.38)] dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none sm:px-5 lg:hidden">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-600 dark:text-white/30">Администрирование</p>
+                                <h1 className="mt-1 truncate text-xl font-semibold text-light-text dark:text-white">{user.displayName}</h1>
+                                <p className="mt-1 text-sm text-slate-600 dark:text-white/45">Сводка, объекты и доступы.</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                <ThemeToggle />
+                                <Button type="button" size="icon" variant="ghost" aria-label="Выйти" onClick={handleLogout}>
+                                    <LogOut className="h-4 w-4" aria-hidden="true" />
+                                </Button>
+                            </div>
                         </div>
                     </header>
-                    <div className="sticky top-0 z-10 -mx-3 px-3 py-1 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-                        <div className="rounded-[24px] border border-slate-200/60 bg-slate-50/78 p-1.5 shadow-[0_14px_38px_-32px_rgba(15,23,42,0.28)] backdrop-blur-md dark:border-white/[0.06] dark:bg-night/82 dark:shadow-none">
-                            <div className="flex gap-1 rounded-[18px] bg-slate-200/42 p-1 text-sm font-medium text-slate-600 dark:bg-white/[0.04] dark:text-white/50">
-                                {adminTabs.map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        type="button"
-                                        onClick={() => setActiveTab(tab.id)}
-                                        className={`flex-1 rounded-lg px-3 py-1.5 transition-all ${activeTab === tab.id
-                                            ? "bg-slate-50/95 text-slate-800 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.32)] dark:bg-white/[0.12] dark:text-white"
-                                            : "hover:text-slate-700 dark:hover:text-white/70"
-                                            }`}
-                                    >
-                                        <span>{tab.label}</span>
-                                        {tab.hint ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/[0.06] dark:text-white/40">{tab.hint}</span> : null}
-                                    </button>
-                                ))}
+                    <div className="sticky top-0 z-10 bg-[#f4f6f8]/94 px-3 py-2 backdrop-blur-md dark:bg-[#0f1218]/94 sm:px-5 lg:hidden">
+                        <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.045]">
+                            <div className="flex gap-1 text-sm font-medium text-slate-700 dark:text-white/50">
+                                {adminTabs.map((tab) => {
+                                    const Icon = tab.icon;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            onClick={() => setActiveTab(tab.id)}
+                                            className={`flex-1 rounded-md px-2.5 py-1.5 transition-all ${activeTab === tab.id
+                                                ? "bg-white text-slate-950 shadow-sm dark:bg-white/[0.12] dark:text-white"
+                                                : "hover:text-slate-950 dark:hover:text-white/70"
+                                                }`}
+                                        >
+                                            <span className="flex items-center justify-center gap-1.5">
+                                                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                                                <span>{tab.label}</span>
+                                                {tab.hint ? <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-white/[0.06] dark:text-white/40">{tab.hint}</span> : null}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
 
+                    <main className="px-3 pb-16 pt-3 sm:px-5 lg:px-6 lg:py-6 xl:px-8">
+                        <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-800 dark:border-white/[0.06] dark:bg-white/[0.045] dark:text-white">
+                                    <ActiveTabIcon className="h-5 w-5" aria-hidden="true" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/32">{activeTabConfig.description}</p>
+                                    <h1 className="truncate text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">{activeTabConfig.label}</h1>
+                                </div>
+                            </div>
+                            <div className="flex min-w-0 items-center gap-2">
+                                <div className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.035] xl:block">
+                                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">Период</p>
+                                    <p className="text-xs font-medium text-slate-700 dark:text-white/62">{desktopPeriodLabel}</p>
+                                </div>
+                                {overview ? (
+                                    <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={handleExportCSV}>
+                                        <Download className="h-4 w-4" aria-hidden="true" />
+                                        CSV
+                                    </Button>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="mb-5 hidden grid-cols-4 gap-3 lg:grid">
+                            {desktopStats.map((item) => {
+                                const Icon = item.icon;
+                                return (
+                                    <div key={item.label} className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_28px_-26px_rgba(15,23,42,0.36)] dark:border-white/[0.06] dark:bg-white/[0.035] dark:shadow-none">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="truncate text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">{item.label}</p>
+                                            <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/32" aria-hidden="true" />
+                                        </div>
+                                        <p className={`mt-2 truncate text-lg font-semibold ${item.tone}`}>{item.value}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
                     {activeTab === "overview" && (
-                        <>
+                        <div className="space-y-3">
                             <SectionCard
                                 title="Фильтры обзора"
                                 subtitle="Overview"
+                                className="lg:!rounded-lg lg:p-4"
                                 actions={overview ? (
-                                    <Button type="button" size="sm" variant="secondary" className="w-full sm:w-auto" onClick={handleExportCSV}>
+                                    <Button type="button" size="sm" variant="secondary" className="w-full gap-2 sm:w-auto" onClick={handleExportCSV}>
+                                        <Download className="h-4 w-4" aria-hidden="true" />
                                         Скачать CSV
                                     </Button>
                                 ) : undefined}
                             >
-                                <div className="mb-4 flex flex-wrap gap-2">
-                                    {([
-                                        { id: "today", label: "Сегодня" },
-                                        { id: "week", label: "Неделя" },
-                                        { id: "month", label: "Месяц" },
-                                        { id: "year", label: "Год" },
-                                    ] as Array<{ id: PeriodPreset; label: string }>).map((preset) => (
-                                        <button
-                                            key={preset.id}
-                                            type="button"
-                                            onClick={() => handlePeriodPreset(preset.id)}
-                                            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${periodPreset === preset.id
-                                                ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                                                : "border-slate-200/80 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
-                                                }`}
-                                        >
-                                            {preset.label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 xl:grid-cols-4">
+                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(12rem,auto)_repeat(4,minmax(0,1fr))] lg:items-end">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-white/[0.055] dark:bg-white/[0.03] dark:text-white/45">
+                                            <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                            <span className="truncate">{desktopPeriodLabel}</span>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-1.5">
+                                            {([
+                                                { id: "today", label: "Сегодня" },
+                                                { id: "week", label: "Неделя" },
+                                                { id: "month", label: "Месяц" },
+                                                { id: "year", label: "Год" },
+                                            ] as Array<{ id: PeriodPreset; label: string }>).map((preset) => (
+                                                <button
+                                                    key={preset.id}
+                                                    type="button"
+                                                    onClick={() => handlePeriodPreset(preset.id)}
+                                                    className={`h-9 rounded-md border px-2 text-xs font-medium transition ${periodPreset === preset.id
+                                                        ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
+                                                        }`}
+                                                >
+                                                    {preset.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                     <Field label="Период от" htmlFor="overview-start">
-                                        <Input
-                                            id="overview-start"
-                                            type="date"
-                                            className="min-w-0"
-                                            value={filters.startDate}
-                                            onChange={(event) => handleFilterInput("startDate", event.target.value)}
-                                            placeholder="С даты"
-                                        />
-                                    </Field>
-                                    <Field label="Период до" htmlFor="overview-end">
-                                        <Input
-                                            id="overview-end"
-                                            type="date"
-                                            className="min-w-0"
-                                            value={filters.endDate}
-                                            min={filters.startDate || undefined}
-                                            onChange={(event) => handleFilterInput("endDate", event.target.value)}
-                                            placeholder="По дату"
-                                        />
-                                    </Field>
-                                    <Field label="Объект" htmlFor="overview-hotel">
-                                        <select
-                                            id="overview-hotel"
-                                            value={filters.hotelId}
-                                            onChange={(event) => handleHotelFilterChange(event.target.value)}
-                                            className={selectClassName}
-                                        >
-                                            <option value="">Все объекты</option>
-                                            {hotels.map((hotel) => (
-                                                <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                                            ))}
-                                        </select>
-                                    </Field>
-                                    <Field label="Менеджер" htmlFor="overview-manager" hint={managerOptions.length ? `${managerOptions.length} доступно` : undefined}>
-                                        <select
-                                            id="overview-manager"
-                                            value={filters.managerId}
-                                            onChange={(event) => handleFilterInput("managerId", event.target.value)}
-                                            disabled={!managerOptions.length}
-                                            className={selectClassName}
-                                        >
-                                            <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
-                                            {managerOptions.map((manager) => (
-                                                <option key={manager.id} value={manager.id}>{manager.label}</option>
-                                            ))}
-                                        </select>
-                                    </Field>
+                                            <Input
+                                                id="overview-start"
+                                                type="date"
+                                                className="min-w-0"
+                                                value={filters.startDate}
+                                                onChange={(event) => handleFilterInput("startDate", event.target.value)}
+                                                placeholder="С даты"
+                                            />
+                                        </Field>
+                                        <Field label="Период до" htmlFor="overview-end">
+                                            <Input
+                                                id="overview-end"
+                                                type="date"
+                                                className="min-w-0"
+                                                value={filters.endDate}
+                                                min={filters.startDate || undefined}
+                                                onChange={(event) => handleFilterInput("endDate", event.target.value)}
+                                                placeholder="По дату"
+                                            />
+                                        </Field>
+                                        <Field label="Объект" htmlFor="overview-hotel">
+                                            <select
+                                                id="overview-hotel"
+                                                value={filters.hotelId}
+                                                onChange={(event) => handleHotelFilterChange(event.target.value)}
+                                                className={selectClassName}
+                                            >
+                                                <option value="">Все объекты</option>
+                                                {hotels.map((hotel) => (
+                                                    <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                                ))}
+                                            </select>
+                                        </Field>
+                                        <Field label="Менеджер" htmlFor="overview-manager" hint={managerOptions.length ? `${managerOptions.length}` : undefined}>
+                                            <select
+                                                id="overview-manager"
+                                                value={filters.managerId}
+                                                onChange={(event) => handleFilterInput("managerId", event.target.value)}
+                                                disabled={!managerOptions.length}
+                                                className={selectClassName}
+                                            >
+                                                <option value="">{managerOptions.length ? "Все менеджеры" : "—"}</option>
+                                                {managerOptions.map((manager) => (
+                                                    <option key={manager.id} value={manager.id}>{manager.label}</option>
+                                                ))}
+                                            </select>
+                                        </Field>
                                 </div>
                             </SectionCard>
-                            <section className="grid grid-cols-1 gap-2 lg:grid-cols-4">
+                            <section className="grid grid-cols-1 gap-2 lg:grid-cols-4 lg:gap-3 xl:gap-4">
                                 {overview ? (
                                     <>
                                         <BusinessTargetCard
@@ -1591,8 +1757,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             currency={overviewCurrency}
                                             hotelLabel={overviewHotelLabel}
                                         />
-                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
-                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Баланс</p>
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:!rounded-lg lg:p-4">
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Баланс</p>
                                             <p className="mt-2 text-lg sm:text-2xl lg:text-[1.75rem] font-semibold tracking-tight truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
                                             <div className="mt-4 grid grid-cols-2 gap-2">
                                                 <StatPill label="Загрузка" value={formatPercent(overview.occupancy.rate)} />
@@ -1602,17 +1768,17 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         <SummaryCard
                                             label="Вход"
                                             value={formatCurrency(overview.totals.cashIn, overviewCurrency)}
-                                            valueColor="text-emerald-400"
+                                            valueColor="text-emerald-600 dark:text-emerald-400"
                                             detail={`нал ${formatCurrency(overview.totals.cashInBreakdown.cash, overviewCurrency)} · карта ${formatCurrency(overview.totals.cashInBreakdown.card, overviewCurrency)}`}
                                         />
                                         <SummaryCard
                                             label="Выход"
                                             value={formatCurrency(overview.totals.cashOut + overview.totals.collections, overviewCurrency)}
-                                            valueColor="text-rose-400"
+                                            valueColor="text-rose-600 dark:text-rose-400"
                                             detail={`расход ${formatCurrency(overview.totals.cashOut, overviewCurrency)} · инкас ${formatCurrency(overview.totals.collections, overviewCurrency)}`}
                                         />
-                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
-                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Загрузка</p>
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:!rounded-lg">
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Загрузка</p>
                                             <p className="mt-2 text-base sm:text-lg font-semibold">
                                                 {formatPercent(overview.occupancy.rate)}
                                             </p>
@@ -1666,7 +1832,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     <OverviewSkeleton />
                                 )}
                             </section>
-                        </>
+                        </div>
                     )}
 
                     {activeTab === "hotels" && (
@@ -1683,16 +1849,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     return (
                                         <Card
                                             key={hotel.id}
-                                            className="p-4 lg:flex lg:h-full lg:flex-col lg:p-5"
+                                            className="p-4 transition-colors hover:border-slate-300 dark:hover:border-white/10 lg:!rounded-lg lg:flex lg:h-full lg:flex-col lg:p-4"
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <h3 className="text-base font-semibold text-light-text dark:text-white truncate">{hotel.name}</h3>
                                                     <p className="mt-1 text-xs text-slate-500 dark:text-white/40">{hotel.address || "—"}</p>
                                                 </div>
-                                                <div className="shrink-0 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                     <p className="text-lg font-semibold text-light-text dark:text-white">{hotel.occupiedRooms}/{hotel.roomCount}</p>
-                                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-white/30">занято</p>
+                                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-600 dark:text-white/30">занято</p>
                                                 </div>
                                             </div>
                                             {hotel.activeShift && (
@@ -1727,7 +1893,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <span className="text-[10px] text-slate-500 dark:text-white/30">+{hotel.managers.length - 4}</span>
                                                     )}
                                                 </div>
-                                                <Link href={`/admin/hotels/${hotel.id}?country=${hotel.country ?? overviewDisplay.country}`}>
+                                                <Link href={`/admin/hotels/${hotel.id}`}>
                                                     <Button size="sm" variant="secondary">
                                                         Открыть
                                                     </Button>
@@ -1782,8 +1948,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         <Field label="Страна" htmlFor="country">
                                             <select id="country" name="country" defaultValue={overviewDisplay.country} className={selectClassName}>
-                                                <option value="KG">🇰🇬 Кыргызстан</option>
-                                                <option value="KZ">🇰🇿 Казахстан</option>
+                                                <option value="KG">Кыргызстан</option>
+                                                <option value="KZ">Казахстан</option>
                                             </select>
                                         </Field>
                                         <Field label="Часовой пояс" htmlFor="timezone">
@@ -1794,10 +1960,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         </Field>
                                         <Field label="Валюта" htmlFor="currency">
                                             <select id="currency" name="currency" defaultValue={overviewDisplay.currency} className={selectClassName}>
-                                                <option value="KGS">KGS (сом)</option>
-                                                <option value="KZT">KZT (тенге)</option>
+                                                <option value="KGS">KGS</option>
+                                                <option value="KZT">KZT</option>
                                             </select>
                                         </Field>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         <Field label="Начало расчетного месяца" htmlFor="financialCycleStartDay" hint="1-31">
                                             <Input id="financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" defaultValue="1" placeholder="1" />
                                         </Field>
@@ -1920,8 +2088,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 </Field>
                                                 <Field label="Валюта" htmlFor="edit-currency">
                                                     <select id="edit-currency" name="currency" value={editForm.currency} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className={selectClassName}>
-                                                        <option value="KGS">KGS (сом)</option>
-                                                        <option value="KZT">KZT (тенге)</option>
+                                                        <option value="KGS">KGS</option>
+                                                        <option value="KZT">KZT</option>
                                                     </select>
                                                 </Field>
                                                 <Field label="Начало расчетного месяца" htmlFor="edit-financialCycleStartDay" hint="1-31">
@@ -1997,7 +2165,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 {observers && observers.length > 0 && (
                                     <div className="mb-5 space-y-2">
                                         {observers.map((obs) => (
-                                            <div key={obs.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
+                                            <div key={obs.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-medium text-light-text dark:text-white truncate">{obs.displayName}</p>
                                                     <p className="mt-1 text-xs text-slate-500 dark:text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
@@ -2026,7 +2194,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Reset password inline */}
                                 {resetPasswordId && (
-                                    <div className="mb-5 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                    <div className="mb-5 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <p className="text-xs text-slate-600 dark:text-white/60">Новый пароль (мин. 6 символов)</p>
                                         <div className="flex flex-col gap-2 sm:flex-row">
                                             <Input
@@ -2057,7 +2225,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Create observer form */}
                                 <form className="space-y-3" onSubmit={handleCreateObserver}>
-                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">Новый доступ</p>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Новый доступ</p>
                                     <div className="grid grid-cols-1 gap-3 xs:grid-cols-2">
                                         <Field label="Имя">
                                             <Input
@@ -2132,6 +2300,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                     )}
 
+                    </main>
                 </div>
             </div>
         </div>

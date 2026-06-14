@@ -9,6 +9,7 @@ import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
+import { normalizeMealPlan } from '@/lib/meal-plan';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,12 +24,15 @@ const updateStaySchema = z
         actualCheckOut: z.string().datetime().optional().nullable(),
         status: z.nativeEnum(StayStatus).optional(),
         bookingSource: z.string().max(80).optional().nullable(),
+        bookingNumber: z.string().max(80).optional().nullable(),
+        totalAmount: z.number().int().positive().optional(),
         amountPaid: z.number().int().min(0).optional(),
         cashPaid: z.number().int().min(0).optional(),
         cardPaid: z.number().int().min(0).optional(),
         onlinePaid: z.number().int().min(0).optional(),
         paymentMethod: z.nativeEnum(PaymentMethod).optional().nullable(),
         shiftId: z.string().cuid().optional().nullable(),
+        mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
         notes: z.string().max(500).optional().nullable()
     })
     .refine((values) => Object.values(values).some((value) => value !== undefined), {
@@ -135,6 +139,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const updateData = {} as Prisma.RoomStayUpdateInput & {
             onlinePaid?: number;
             bookingSource?: string | null;
+            bookingNumber?: string | null;
+            totalAmount?: number;
         };
         let requestedShift: { id: string; managerId: string } | null | undefined;
 
@@ -177,6 +183,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
 
         if (payload.notes !== undefined) {
             updateData.notes = normalizeOptionalText(payload.notes);
+        }
+
+        if (payload.bookingNumber !== undefined) {
+            updateData.bookingNumber = normalizeOptionalText(payload.bookingNumber);
+        }
+
+        if (payload.totalAmount !== undefined) {
+            updateData.totalAmount = payload.totalAmount;
+        }
+
+        if (payload.mealPlan !== undefined) {
+            updateData.mealPlan = normalizeMealPlan(payload.mealPlan);
         }
 
         if (payload.scheduledCheckIn !== undefined) {
@@ -295,6 +313,38 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const nextScheduledCheckIn = updateData.scheduledCheckIn instanceof Date ? updateData.scheduledCheckIn : stay.scheduledCheckIn;
         const nextScheduledCheckOut = updateData.scheduledCheckOut instanceof Date ? updateData.scheduledCheckOut : stay.scheduledCheckOut;
         const nextStatus = payload.status ?? stay.status;
+        const nextPaymentTotal = hasPaymentBreakdownPayload
+            ? nextBreakdownTotal
+            : payload.amountPaid ?? stayRecord.amountPaid ?? 0;
+        const nextTariffTotal = payload.totalAmount ?? stayRecord.totalAmount ?? 0;
+        const nextBookingNumber = payload.bookingNumber !== undefined
+            ? normalizeOptionalText(payload.bookingNumber)
+            : stayRecord.bookingNumber;
+        const nextBookingSource = updateData.bookingSource !== undefined
+            ? updateData.bookingSource
+            : stayRecord.bookingSource;
+
+        if (payload.status === StayStatus.CHECKED_IN && stay.status !== StayStatus.CHECKED_IN && nextPaymentTotal <= 0) {
+            return new NextResponse('Укажите сумму оплаты перед заселением', { status: 400 });
+        }
+
+        const shouldValidateBookingIdentity =
+            nextStatus === StayStatus.SCHEDULED ||
+            nextStatus === StayStatus.CHECKED_IN ||
+            payload.bookingNumber !== undefined ||
+            payload.totalAmount !== undefined;
+
+        if (shouldValidateBookingIdentity && (nextStatus === StayStatus.SCHEDULED || nextStatus === StayStatus.CHECKED_IN)) {
+            if (nextBookingSource && !nextBookingNumber) {
+                return new NextResponse('Укажите номер бронирования', { status: 400 });
+            }
+            if (nextTariffTotal <= 0) {
+                return new NextResponse('Укажите общую сумму тарифа', { status: 400 });
+            }
+            if (nextPaymentTotal > nextTariffTotal) {
+                return new NextResponse('Оплата не может быть больше общей суммы тарифа', { status: 400 });
+            }
+        }
 
         if (nextScheduledCheckOut <= nextScheduledCheckIn) {
             return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });

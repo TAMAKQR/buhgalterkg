@@ -8,7 +8,7 @@ const grotesk = Space_Grotesk({ subsets: ['latin', 'latin-ext'], variable: '--fo
 
 export const metadata: Metadata = {
     title: 'Hotel Ops',
-    description: 'Панель управления отелями для администраторов и менеджеров.',
+    description: 'Панель управления отелем для администраторов и менеджеров.',
     applicationName: 'Hotel Ops',
     manifest: '/manifest.webmanifest',
     icons: {
@@ -36,7 +36,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className={`${grotesk.variable} dark`} suppressHydrationWarning>
+        <html lang="ru" className={`${grotesk.variable} dark`} suppressHydrationWarning>
             <body className="min-h-screen bg-night dark:bg-night bg-light-bg text-light-text dark:text-mist antialiased font-sans">
                 <ThemeProvider>
                     <ToastProvider>

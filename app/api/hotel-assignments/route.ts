@@ -27,7 +27,8 @@ const assignmentSchema = z.object({
     pinCode: z.string().regex(/^[\d]{6}$/),
     telegramId: z.string().min(3).max(32).optional(),
     shiftPayAmount: z.number().int().nonnegative().optional(),
-    revenueSharePct: z.number().int().min(0).max(100).optional()
+    revenueSharePct: z.number().int().min(0).max(100).optional(),
+    canEditStayPayments: z.boolean().optional()
 });
 
 const updateAssignmentSchema = z
@@ -38,7 +39,8 @@ const updateAssignmentSchema = z
         username: z.string().min(3).max(32).optional(),
         pinCode: z.string().regex(/^[\d]{6}$/).optional(),
         shiftPayAmount: z.number().int().nonnegative().optional(),
-        revenueSharePct: z.number().int().min(0).max(100).optional()
+        revenueSharePct: z.number().int().min(0).max(100).optional(),
+        canEditStayPayments: z.boolean().optional()
     })
     .refine(
         (values) =>
@@ -47,7 +49,8 @@ const updateAssignmentSchema = z
             values.username !== undefined ||
             values.pinCode !== undefined ||
             values.shiftPayAmount !== undefined ||
-            values.revenueSharePct !== undefined,
+            values.revenueSharePct !== undefined ||
+            values.canEditStayPayments !== undefined,
         {
             message: 'Нет данных для обновления'
         }
@@ -175,7 +178,8 @@ export async function POST(request: NextRequest) {
                 pinCode: payload.pinCode,
                 pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
-                revenueSharePct: payload.revenueSharePct ?? null
+                revenueSharePct: payload.revenueSharePct ?? null,
+                canEditStayPayments: payload.canEditStayPayments ?? false
             },
             create: {
                 hotelId: payload.hotelId,
@@ -184,7 +188,8 @@ export async function POST(request: NextRequest) {
                 pinCode: payload.pinCode,
                 pinHash: hashPin(payload.pinCode),
                 shiftPayAmount: payload.shiftPayAmount ?? null,
-                revenueSharePct: payload.revenueSharePct ?? null
+                revenueSharePct: payload.revenueSharePct ?? null,
+                canEditStayPayments: payload.canEditStayPayments ?? false
             }
         });
 
@@ -198,7 +203,8 @@ export async function POST(request: NextRequest) {
                 username: user.username,
                 pinCode: assignment.pinCode,
                 shiftPayAmount: assignment.shiftPayAmount,
-                revenueSharePct: assignment.revenueSharePct
+                revenueSharePct: assignment.revenueSharePct,
+                canEditStayPayments: assignment.canEditStayPayments
             }
         });
     } catch (error) {
@@ -296,6 +302,10 @@ export async function PATCH(request: NextRequest) {
             assignmentUpdates.revenueSharePct = payload.revenueSharePct;
         }
 
+        if (payload.canEditStayPayments !== undefined) {
+            assignmentUpdates.canEditStayPayments = payload.canEditStayPayments;
+        }
+
         if (Object.keys(assignmentUpdates).length) {
             operations.push(
                 prisma.hotelAssignment.update({
@@ -328,7 +338,8 @@ export async function PATCH(request: NextRequest) {
                 username: updated.user.username,
                 pinCode: updated.pinCode,
                 shiftPayAmount: updated.shiftPayAmount,
-                revenueSharePct: updated.revenueSharePct
+                revenueSharePct: updated.revenueSharePct,
+                canEditStayPayments: updated.canEditStayPayments
             }
         });
     } catch (error) {

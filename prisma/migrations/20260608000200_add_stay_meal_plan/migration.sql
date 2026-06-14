@@ -1,0 +1,2 @@
+ALTER TABLE "RoomStay"
+ADD COLUMN "meal_plan" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

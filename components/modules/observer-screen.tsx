@@ -66,11 +66,13 @@ interface ObserverStateResponse {
         actualCheckOut: string | null;
         status: string;
         amountPaid: number;
+        totalAmount: number | null;
         paymentMethod: string | null;
         cashPaid: number | null;
         cardPaid: number | null;
         onlinePaid: number | null;
         bookingSource: string | null;
+        bookingNumber: string | null;
     }>;
     ledger: Array<{
         id: string;
@@ -547,7 +549,7 @@ function StaysTab({
                         <span>Выезд: {fmtDate(s.scheduledCheckOut)}</span>
                     </div>
                     <div className="text-xs text-white/60">
-                        {fmt(s.amountPaid)}
+                        {s.totalAmount != null ? `Тариф ${fmt(s.totalAmount)} · оплачено ${fmt(s.amountPaid)}` : fmt(s.amountPaid)}
                         {s.paymentMethod && (
                             <span className="text-white/30"> · {s.paymentMethod === 'CASH' ? 'Нал' : 'Карта'}</span>
                         )}
@@ -563,7 +565,13 @@ function StaysTab({
                         {s.bookingSource && (
                             <span className="text-white/30"> · {s.bookingSource}</span>
                         )}
+                        {s.bookingNumber && (
+                            <span className="text-white/30"> · бронь № {s.bookingNumber}</span>
+                        )}
                     </div>
+                    {s.totalAmount != null && s.totalAmount > s.amountPaid ? (
+                        <p className="text-[11px] text-white/35">Остаток: {fmt(s.totalAmount - s.amountPaid)}</p>
+                    ) : null}
                 </Card>
             ))}
         </div>

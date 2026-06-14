@@ -9,7 +9,7 @@ export const ThemeToggle = () => {
         <button
             type="button"
             onClick={toggleTheme}
-            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 transition-colors hover:bg-slate-50 dark:border-white/[0.06] dark:bg-white/5 dark:hover:bg-white/10"
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-white/[0.06] dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
             aria-label={theme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
             title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
         >

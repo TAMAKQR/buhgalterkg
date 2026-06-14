@@ -66,6 +66,7 @@ model HotelAssignment {
   pinHash   String?  @map("pin_hash")
   shiftPayAmount Int? @map("shift_pay_amount")
   revenueSharePct Int? @map("revenue_share_pct")
+  canEditStayPayments Boolean @default(false) @map("can_edit_stay_payments")
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
@@ -102,6 +103,7 @@ model RoomStay {
   guestPhone        String?        @map("guest_phone")
   companyName       String?        @map("company_name")
   bookingSource     String?        @map("booking_source")
+  bookingNumber     String?        @map("booking_number")
   scheduledCheckIn  DateTime
   scheduledCheckOut DateTime
   actualCheckIn     DateTime?
@@ -111,16 +113,21 @@ model RoomStay {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   amountPaid        Int?
+  totalAmount       Int?           @map("total_amount")
   paymentMethod     PaymentMethod?
   cashPaid          Int            @default(0)
   cardPaid          Int            @default(0)
   onlinePaid        Int            @default(0) @map("online_paid")
+  mealPlan          String[]       @default([]) @map("meal_plan")
+  groupRef          String?        @map("group_ref")
   ledgerEntries     CashEntry[]
   currentRoom       Room?          @relation("RoomCurrentStay")
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
   shift             Shift?         @relation(fields: [shiftId], references: [id])
   transfers         StayTransfer[]
+
+  @@index([hotelId, groupRef])
 }
 
 model StayTransfer {

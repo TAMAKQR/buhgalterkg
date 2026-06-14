@@ -46,7 +46,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                                 ? 'bg-emerald-500/90 text-white'
                                 : t.type === 'error'
                                     ? 'bg-rose-500/90 text-white'
-                                    : 'bg-white/[0.12] text-white backdrop-blur-md';
+                                    : 'bg-white text-slate-900 ring-1 ring-slate-200 dark:bg-white/[0.12] dark:text-white dark:backdrop-blur-md';
                         return (
                             <button
                                 key={t.id}

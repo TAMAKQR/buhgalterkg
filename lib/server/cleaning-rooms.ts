@@ -15,7 +15,7 @@ type RoomWithLatestStay = {
 
 const toParts = (value: Date, timezone?: string) =>
     new Intl.DateTimeFormat('ru-RU', {
-        timeZone: timezone || 'Asia/Bishkek',
+        timeZone: timezone || 'Asia/Almaty',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -40,7 +40,7 @@ const sameDayInTimezone = (left: Date, right: Date, timezone?: string) => {
 
 const formatDateTime = (value: Date, timezone?: string, includeDate = false) =>
     new Intl.DateTimeFormat('ru-RU', {
-        timeZone: timezone || 'Asia/Bishkek',
+        timeZone: timezone || 'Asia/Almaty',
         ...(includeDate
             ? { day: '2-digit' as const, month: '2-digit' as const }
             : {}),
