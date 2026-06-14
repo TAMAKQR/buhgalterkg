@@ -253,7 +253,8 @@ export async function GET(request: NextRequest) {
                 timezone: hotel.timezone,
                 currency: hotel.currency,
                 usesExtranets: hotel.usesExtranets,
-                extranetNames: hotel.extranetNames
+                extranetNames: hotel.extranetNames,
+                hasMealPlan: hotel.hasMealPlan
             },
             expenseCategories: hotel.expenseCategories.map((category) => ({
                 id: category.id,

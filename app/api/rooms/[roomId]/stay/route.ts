@@ -169,7 +169,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         guestName: normalizeOptionalText(payload.guestName),
                         guestPhone: normalizeOptionalText(payload.guestPhone),
                         companyName: normalizeOptionalText(payload.companyName),
-                        mealPlan: normalizeMealPlan(payload.mealPlan),
+                        mealPlan: room.hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: normalizeOptionalText(payload.notes),
                         amountPaid: totalAmount,
                         totalAmount: totalTariffAmount,
@@ -332,7 +332,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     scheduledCheckIn,
                     scheduledCheckOut,
                     totalAmount: totalTariffAmount,
-                    mealPlan: payload.mealPlan !== undefined ? normalizeMealPlan(payload.mealPlan) : targetStay.mealPlan,
+                    mealPlan: room.hotel.hasMealPlan
+                        ? payload.mealPlan !== undefined ? normalizeMealPlan(payload.mealPlan) : targetStay.mealPlan
+                        : [],
                     notes: normalizeOptionalText(payload.notes)
                 }
             });
@@ -572,7 +574,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         guestName: normalizeOptionalText(payload.guestName) ?? scheduledStay.guestName,
                         guestPhone: normalizeOptionalText(payload.guestPhone) ?? scheduledStay.guestPhone,
                         companyName: normalizeOptionalText(payload.companyName) ?? scheduledStay.companyName,
-                        mealPlan: payload.mealPlan !== undefined ? normalizeMealPlan(payload.mealPlan) : scheduledStay.mealPlan,
+                        mealPlan: room.hotel.hasMealPlan
+                            ? payload.mealPlan !== undefined ? normalizeMealPlan(payload.mealPlan) : scheduledStay.mealPlan
+                            : [],
                         notes: normalizeOptionalText(payload.notes) ?? scheduledStay.notes,
                         amountPaid: totalAmount,
                         totalAmount: nextTotalTariffAmount,
@@ -598,7 +602,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         guestName: normalizeOptionalText(payload.guestName),
                         guestPhone: normalizeOptionalText(payload.guestPhone),
                         companyName: normalizeOptionalText(payload.companyName),
-                        mealPlan: normalizeMealPlan(payload.mealPlan),
+                        mealPlan: room.hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: normalizeOptionalText(payload.notes),
                         amountPaid: totalAmount,
                         totalAmount: nextTotalTariffAmount,

@@ -89,6 +89,7 @@ type HotelDetailRecord = {
     notes: string | null;
     usesExtranets: boolean;
     extranetNames: string[];
+    hasMealPlan: boolean;
     expenseCategories: ExpenseCategory[];
     assignments: Array<HotelAssignment & { user: User }>;
     shifts: Array<Shift & { manager: User }>;
@@ -156,6 +157,7 @@ const updateHotelSchema = z
         currency: z.string().min(1).max(10).optional(),
         usesExtranets: z.boolean().optional(),
         extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
+        hasMealPlan: z.boolean().optional(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -390,6 +392,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             currency: hotelRecord.currency,
             usesExtranets: hotelRecord.usesExtranets,
             extranetNames: hotelRecord.extranetNames,
+            hasMealPlan: hotelRecord.hasMealPlan,
             financialCycleStartDay: hotelRecord.financialCycleStartDay,
             managerSharePct: hotelRecord.managerSharePct,
             cleaningChatId: hotelRecord.cleaningChatId,

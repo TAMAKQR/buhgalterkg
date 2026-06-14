@@ -1,0 +1,1 @@
+ALTER TABLE "Hotel" ADD COLUMN "has_meal_plan" BOOLEAN NOT NULL DEFAULT false;

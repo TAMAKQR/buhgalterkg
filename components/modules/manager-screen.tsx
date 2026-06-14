@@ -57,6 +57,7 @@ interface ManagerStateResponse {
         currency?: string;
         usesExtranets?: boolean;
         extranetNames?: string[];
+        hasMealPlan?: boolean;
     };
     shift?: {
         id: string;
@@ -337,6 +338,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const hotelTz = data?.hotel?.timezone;
     const hotelCur = data?.hotel?.currency;
+    const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatDateInputValue = (date: Date) => formatInputValue(date, hotelTz);
 
@@ -746,7 +748,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     const detailLabel = [
                         stay.bookingNumber?.trim() ? `№ ${stay.bookingNumber.trim()}` : null,
                         stay.totalAmount != null ? `тариф ${formatKgs(stay.totalAmount)}` : null,
-                        ...mealPlanLabels(stay.mealPlan),
+                        ...(canUseMealPlan ? mealPlanLabels(stay.mealPlan) : []),
                         stay.bookingSource?.trim(),
                         stay.companyName?.trim(),
                         stay.guestPhone?.trim()
@@ -768,7 +770,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [formatKgs, roomBoardRange, sortedRooms]);
+    }, [canUseMealPlan, formatKgs, roomBoardRange, sortedRooms]);
 
     const roomBoardSections = useMemo(() => {
         const sections = new Map<string, {
@@ -901,6 +903,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }, [groupCheckIn?.totalAmount]);
 
     const groupPerRoomMinor = selectedGroupRooms.length ? Math.floor(groupTotalMinor / selectedGroupRooms.length) : 0;
+    const showGroupExtranetFields = Boolean(groupCheckIn && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
+    const showGroupBookingNumberField = Boolean(showGroupExtranetFields && groupCheckIn?.bookingSource.trim());
+    const showGroupTariffField = Boolean(groupCheckIn && (groupCheckIn.mode !== 'checkin' || groupCheckIn.bookingSource.trim()));
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
     const availableCount = useMemo(() => sortedRooms.filter((r) => r.status === 'AVAILABLE').length, [sortedRooms]);
@@ -943,7 +948,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     : formatShareDate(room.stay.scheduledCheckOut, hotelTz);
 
                 const guestName = room.stay.guestName?.trim();
-                const mealLabel = mealPlanLabels(room.stay.mealPlan).join('/');
+                const mealLabel = canUseMealPlan ? mealPlanLabels(room.stay.mealPlan).join('/') : '';
                 const prefix = isPastDate(room.stay.scheduledCheckOut, now) ? 'просрочено с' : 'до';
                 const guestPart = [guestName, mealLabel].filter(Boolean).join(' · ');
                 return guestPart ? `${prefix} ${checkoutLabel} - ${guestPart}` : `${prefix} ${checkoutLabel}`;
@@ -980,7 +985,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             '',
             `На смене: ${managerName}`,
         ].join('\n');
-    }, [data, formatKgs, hotelTz, managerName, shiftCashValue, shiftOtherReceipts, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, shiftStayRevenue, sortedRooms]);
+    }, [canUseMealPlan, data, formatKgs, hotelTz, managerName, shiftCashValue, shiftOtherReceipts, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, shiftStayRevenue, sortedRooms]);
 
     const handleCopyState = async () => {
         if (!shareMessage || typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -1199,9 +1204,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const scheduledCheckIn = parseInputValue(groupCheckIn.checkIn, hotelTz);
         const scheduledCheckOut = parseInputValue(groupCheckIn.checkOut, hotelTz);
         const totalValue = Number(groupCheckIn.totalAmount || 0);
-        const tariffValue = Number(groupCheckIn.tariffAmount || 0);
         const guestCount = groupCheckIn.guestCount ? Number(groupCheckIn.guestCount) : undefined;
-        const bookingNumber = groupCheckIn.bookingNumber.trim();
+        const hasBookingSource = Boolean(data.hotel.usesExtranets && groupCheckIn.bookingSource.trim());
+        const bookingNumber = hasBookingSource ? groupCheckIn.bookingNumber.trim() : '';
+        const tariffValue = groupCheckIn.mode === 'checkin' && !hasBookingSource
+            ? totalValue
+            : Number(groupCheckIn.tariffAmount || 0);
 
         if (!groupCheckIn.roomIds.length) {
             setGroupCheckInError('Выберите номера для группы');
@@ -1211,16 +1219,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             setGroupCheckInError('Проверьте даты заезда и выезда');
             return;
         }
-        if (groupCheckIn.bookingSource.trim() && !bookingNumber) {
+        if (hasBookingSource && !bookingNumber) {
             setGroupCheckInError('Укажите номер бронирования');
-            return;
-        }
-        if (!Number.isFinite(tariffValue) || tariffValue <= 0) {
-            setGroupCheckInError('Укажите общую сумму тарифа');
             return;
         }
         if (!Number.isFinite(totalValue) || totalValue < 0 || (groupCheckIn.mode === 'checkin' && totalValue <= 0)) {
             setGroupCheckInError(groupCheckIn.mode === 'booking' ? 'Проверьте сумму предоплаты' : 'Укажите общую сумму оплаты');
+            return;
+        }
+        if (!Number.isFinite(tariffValue) || tariffValue <= 0) {
+            setGroupCheckInError(groupCheckIn.mode === 'checkin' ? 'Укажите общую сумму оплаты' : 'Укажите общую сумму тарифа');
             return;
         }
         if (totalValue > tariffValue) {
@@ -1243,14 +1251,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     roomIds: groupCheckIn.roomIds,
                     guestName: groupCheckIn.guestName.trim() || undefined,
                     guestCount,
-                    bookingSource: data.hotel.usesExtranets ? groupCheckIn.bookingSource || undefined : undefined,
-                    bookingNumber,
+                    bookingSource: hasBookingSource ? groupCheckIn.bookingSource || undefined : undefined,
+                    bookingNumber: bookingNumber || undefined,
                     scheduledCheckIn: scheduledCheckIn.toISOString(),
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     tariffAmount: toMinor(tariffValue),
                     totalAmount: toMinor(totalValue),
                     paymentMode: groupCheckIn.paymentMode,
-                    mealPlan: groupCheckIn.mealPlan,
+                    mealPlan: canUseMealPlan ? groupCheckIn.mealPlan : [],
                     notes: groupCheckIn.notes.trim() || undefined,
                 },
             }, groupCheckIn.mode === 'edit' ? 'Редактирование группы' : groupCheckIn.mode === 'booking' ? 'Групповая бронь' : 'Групповой заезд');
@@ -1863,7 +1871,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         bookingSource: data?.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
                         bookingNumber,
                         totalAmount: tariffMinor,
-                        mealPlan: checkInModal.mealPlan,
+                        mealPlan: canUseMealPlan ? checkInModal.mealPlan : [],
                         notes: checkInModal.notes.trim() || undefined,
                         scheduledCheckIn: scheduledCheckIn!.toISOString(),
                         scheduledCheckOut: scheduledCheckOut.toISOString()
@@ -1901,7 +1909,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     bookingSource: (checkInModal.mode === 'checkin' || checkInModal.mode === 'book') && data?.hotel.usesExtranets ? checkInModal.bookingSource || undefined : undefined,
                     bookingNumber: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? bookingNumber : undefined,
                     totalAmount: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? tariffMinor : undefined,
-                    mealPlan: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.mealPlan : undefined,
+                    mealPlan: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? (canUseMealPlan ? checkInModal.mealPlan : []) : undefined,
                     notes: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.notes.trim() || undefined : undefined,
                     scheduledCheckIn: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
@@ -2341,7 +2349,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const paidTotal = room.stay?.amountPaid ?? 0;
                                         const remainingTotal = totalTariff != null ? Math.max(totalTariff - paidTotal, 0) : null;
                                         const contactLabel = [room.stay?.companyName?.trim(), room.stay?.guestPhone?.trim()].filter(Boolean).join(' · ');
-                                        const roomMealLabels = mealPlanLabels(room.stay?.mealPlan);
+                                        const roomMealLabels = canUseMealPlan ? mealPlanLabels(room.stay?.mealPlan) : [];
 
                                         return (
                                             <article key={room.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] transition hover:border-slate-300 hover:shadow-md dark:border-white/[0.055] dark:bg-white/[0.035] dark:shadow-none">
@@ -3013,49 +3021,36 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
 
-                                    {data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0 && (
-                                        <div>
-                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-booking-source">Источник брони</label>
-                                            <Select
-                                                id="group-booking-source"
-                                                value={groupCheckIn.bookingSource}
-                                                onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, bookingSource: event.target.value } : prev)}
-                                                className="text-white"
-                                            >
-                                                <option value="">Без экстранета / прямой заезд</option>
-                                                {(data.hotel.extranetNames ?? []).map((name) => (
-                                                    <option key={`group-booking-source-${name}`} value={name}>{name}</option>
-                                                ))}
-                                            </Select>
+                                    {showGroupExtranetFields ? (
+                                        <div className={`grid grid-cols-1 gap-2 ${showGroupBookingNumberField ? 'sm:grid-cols-2' : ''}`}>
+                                            <div>
+                                                <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-booking-source">Источник брони</label>
+                                                <Select
+                                                    id="group-booking-source"
+                                                    value={groupCheckIn.bookingSource}
+                                                    onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, bookingSource: event.target.value, bookingNumber: event.target.value ? prev.bookingNumber : '' } : prev)}
+                                                    className="text-white"
+                                                >
+                                                    <option value="">Прямой заезд</option>
+                                                    {(data?.hotel.extranetNames ?? []).map((name) => (
+                                                        <option key={`group-booking-source-${name}`} value={name}>{name}</option>
+                                                    ))}
+                                                </Select>
+                                            </div>
+                                            {showGroupBookingNumberField ? (
+                                                <div>
+                                                    <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-booking-number">Номер брони</label>
+                                                    <Input
+                                                        id="group-booking-number"
+                                                        value={groupCheckIn.bookingNumber}
+                                                        onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, bookingNumber: event.target.value } : prev)}
+                                                        placeholder="Booking #"
+                                                        className="text-white"
+                                                    />
+                                                </div>
+                                            ) : null}
                                         </div>
-                                    )}
-
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        <div>
-                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-booking-number">Номер брони</label>
-                                            <Input
-                                                id="group-booking-number"
-                                                value={groupCheckIn.bookingNumber}
-                                                onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, bookingNumber: event.target.value } : prev)}
-                                                placeholder="Booking #"
-                                                className="text-white"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-tariff">Общая сумма тарифа</label>
-                                            <Input
-                                                id="group-tariff"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={groupCheckIn.tariffAmount}
-                                                onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, tariffAmount: event.target.value } : prev)}
-                                                placeholder="150000"
-                                                className="text-white"
-                                            />
-                                        </div>
-                                    </div>
+                                    ) : null}
 
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <div>
@@ -3080,9 +3075,25 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <div className={`grid grid-cols-1 gap-2 ${showGroupTariffField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                                        {showGroupTariffField ? (
+                                            <div>
+                                                <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-tariff">Общая сумма тарифа</label>
+                                                <Input
+                                                    id="group-tariff"
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    inputMode="decimal"
+                                                    value={groupCheckIn.tariffAmount}
+                                                    onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, tariffAmount: event.target.value } : prev)}
+                                                    placeholder="150000"
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                        ) : null}
                                         <div>
-                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-total">{groupCheckIn.mode === 'checkin' ? 'Общая сумма' : 'Общая предоплата'}</label>
+                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-total">{groupCheckIn.mode === 'checkin' ? 'Сумма проживания' : 'Общая предоплата'}</label>
                                             <Input
                                                 id="group-total"
                                                 type="number"
@@ -3141,28 +3152,30 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <p className="mb-2 text-[11px] text-white/40">Питание</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {MEAL_PLAN_OPTIONS.map((option) => {
-                                                const checked = groupCheckIn.mealPlan.includes(option.value);
-                                                return (
-                                                    <label
-                                                        key={`group-meal-${option.value}`}
-                                                        className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={checked}
-                                                            onChange={() => toggleGroupMealPlan(option.value)}
-                                                            className="accent-emerald-500"
-                                                        />
-                                                        {option.label}
-                                                    </label>
-                                                );
-                                            })}
+                                    {canUseMealPlan ? (
+                                        <div>
+                                            <p className="mb-2 text-[11px] text-white/40">Питание</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {MEAL_PLAN_OPTIONS.map((option) => {
+                                                    const checked = groupCheckIn.mealPlan.includes(option.value);
+                                                    return (
+                                                        <label
+                                                            key={`group-meal-${option.value}`}
+                                                            className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => toggleGroupMealPlan(option.value)}
+                                                                className="accent-emerald-500"
+                                                            />
+                                                            {option.label}
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
+                                    ) : null}
 
                                     <div>
                                         <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-notes">Комментарий</label>
@@ -3358,7 +3371,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                 </div>
                                             )}
-                                            {isStayDataModalMode && (
+                                            {isStayDataModalMode && canUseMealPlan && (
                                                 <div>
                                                     <p className="mb-2 text-[11px] text-white/40">Питание</p>
                                                     <div className="flex flex-wrap gap-2">
@@ -3733,7 +3746,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <p className="mt-1 text-sm font-semibold text-emerald-100">{formatKgs(bookingDetails.stay.amountPaid)}</p>
                                         </div>
                                     ) : null}
-                                    {mealPlanLabels(bookingDetails.stay.mealPlan).length ? (
+                                    {canUseMealPlan && mealPlanLabels(bookingDetails.stay.mealPlan).length ? (
                                         <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2.5">
                                             <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-100/55">Питание</p>
                                             <div className="mt-2 flex flex-wrap gap-1.5">

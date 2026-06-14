@@ -119,6 +119,7 @@ interface HotelDetailPayload {
     address: string;
     usesExtranets?: boolean | null;
     extranetNames?: string[];
+    hasMealPlan?: boolean | null;
     managerSharePct?: number | null;
     notes?: string | null;
     roomCount: number;

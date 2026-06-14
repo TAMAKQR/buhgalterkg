@@ -242,6 +242,7 @@ export async function POST(request: NextRequest) {
                 select: {
                     usesExtranets: true,
                     extranetNames: true,
+                    hasMealPlan: true,
                 },
             });
 
@@ -335,7 +336,7 @@ export async function POST(request: NextRequest) {
                             bookingNumber,
                             scheduledCheckIn,
                             scheduledCheckOut,
-                            mealPlan: normalizeMealPlan(payload.mealPlan),
+                            mealPlan: hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                             notes: baseNote,
                             amountPaid: portion,
                             totalAmount: tariffPortion,
@@ -412,6 +413,7 @@ export async function POST(request: NextRequest) {
             select: {
                 usesExtranets: true,
                 extranetNames: true,
+                hasMealPlan: true,
             },
         });
 
@@ -470,7 +472,7 @@ export async function POST(request: NextRequest) {
                         bookingSource: resolvedBookingSource,
                         bookingNumber,
                         groupRef,
-                        mealPlan: normalizeMealPlan(payload.mealPlan),
+                        mealPlan: hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: baseNote,
                         amountPaid: portion,
                         totalAmount: tariffPortion,
