@@ -2963,8 +2963,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     )}
 
                     {groupCheckIn && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
-                            <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-xl bg-ink p-3 text-white shadow-2xl sm:rounded-2xl sm:p-5">
+                        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
+                            <div className="mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-xl bg-ink p-3 text-white shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5">
                                 <div className="mb-3 flex items-center justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">Группа</p>
@@ -3005,7 +3005,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
                                     ) : null}
 
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 [&>*]:min-w-0">
                                         <div className="sm:col-span-2">
                                             <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-guest-name">Название группы</label>
                                             <Input
@@ -3032,7 +3032,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
 
                                     {showGroupExtranetFields ? (
-                                        <div className={`grid grid-cols-1 gap-2 ${showGroupBookingNumberField ? 'sm:grid-cols-2' : ''}`}>
+                                        <div className={`grid grid-cols-1 gap-2 [&>*]:min-w-0 ${showGroupBookingNumberField ? 'sm:grid-cols-2' : ''}`}>
                                             <div>
                                                 <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-booking-source">Источник брони</label>
                                                 <Select
@@ -3062,7 +3062,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     ) : null}
 
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
                                         <div>
                                             <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-checkin">Заезд</label>
                                             <Input
@@ -3085,7 +3085,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
 
-                                    <div className={`grid grid-cols-1 gap-2 ${showGroupTariffField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                                    <div className={`grid grid-cols-1 gap-2 [&>*]:min-w-0 ${showGroupTariffField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                                         {showGroupTariffField ? (
                                             <div>
                                                 <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-tariff">Общая сумма тарифа</label>
@@ -3137,7 +3137,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <label className="text-[11px] text-white/40">Номера</label>
                                             <span className="text-[11px] text-white/35">{selectedGroupRooms.length} выбрано · {groupPerRoomMinor ? `${formatKgs(groupPerRoomMinor)} / номер` : groupCheckIn.mode === 'booking' ? 'без предоплаты' : 'сумма не указана'}</span>
                                         </div>
-                                        <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
+                                        <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-1 xs:grid-cols-2 sm:grid-cols-4 [&>*]:min-w-0">
                                             {groupSelectableRooms.map((room) => {
                                                 const checked = groupCheckIn.roomIds.includes(room.id);
                                                 return (
@@ -3222,8 +3222,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     )}
 
                     {checkInModal && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
-                            <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-xl bg-ink p-3 text-white shadow-2xl sm:rounded-2xl sm:p-5">
+                        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
+                            <div className="mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-xl bg-ink p-3 text-white shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5">
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="text-base font-semibold">
                                         {checkInModal.mode === 'book'
@@ -3257,7 +3257,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         />
                                     </div>
                                     {isStayDataModalMode && (
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
                                             <div>
                                                 <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-guest-phone">Телефон</label>
                                                 <Input
@@ -3288,7 +3288,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     )}
                                     {checkInModal.mode === 'transfer' && (
                                         <>
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
                                                 <div>
                                                     <label className="text-[11px] text-white/40 mb-1 block">Текущий номер</label>
                                                     <Input value={`№ ${checkInModal.label}`} className="text-white" readOnly />
@@ -3349,7 +3349,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </div>
                                             )}
                                             {isStayDataModalMode && (showModalBookingNumberField || showModalTariffField) && (
-                                                <div className={`grid grid-cols-1 gap-2 ${showModalBookingNumberField && showModalTariffField ? 'sm:grid-cols-2' : ''}`}>
+                                                <div className={`grid grid-cols-1 gap-2 [&>*]:min-w-0 ${showModalBookingNumberField && showModalTariffField ? 'sm:grid-cols-2' : ''}`}>
                                                     {showModalBookingNumberField ? (
                                                         <div>
                                                             <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-booking-number">Номер брони</label>
@@ -3425,7 +3425,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </div>
                                             )}
                                             {isStayDataModalMode ? (
-                                                <div className="grid grid-cols-2 gap-2">
+                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-checkin">Заезд</label>
                                                         <Input
@@ -3452,7 +3452,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="grid grid-cols-2 gap-2">
+                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-current-checkout">Текущий выезд</label>
                                                         <Input
@@ -3487,7 +3487,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
                                             )}
                                             {showPaymentInputsInModal ? (
-                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 [&>*]:min-w-0">
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'book' ? 'Предоплата нал' : checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
                                                         <Input
