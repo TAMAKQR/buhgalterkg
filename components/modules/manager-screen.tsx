@@ -202,7 +202,7 @@ interface GroupCheckInState {
     checkOut: string;
     tariffAmount: string;
     totalAmount: string;
-    paymentMode: 'CARD' | 'CASH' | 'PENDING_TRANSFER';
+    paymentMode: 'CARD' | 'CASH' | 'SITE' | 'PENDING_TRANSFER';
     mealPlan: string[];
     notes: string;
     roomIds: string[];
@@ -1154,7 +1154,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             checkOut: formatDateInputValue(endDate),
             tariffAmount: '',
             totalAmount: '',
-            paymentMode: 'PENDING_TRANSFER',
+            paymentMode: 'CASH',
             mealPlan: [],
             notes: '',
             roomIds: [],
@@ -3103,9 +3103,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, paymentMode: event.target.value as GroupCheckInState['paymentMode'] } : prev)}
                                                 className="text-white"
                                             >
-                                                <option value="PENDING_TRANSFER">Оплата позже</option>
-                                                <option value="CARD">Безналичная оплата</option>
                                                 <option value="CASH">Наличными</option>
+                                                <option value="CARD">Картой / терминал</option>
+                                                <option value="SITE">Оплачено на сайте</option>
+                                                <option value="PENDING_TRANSFER">Оплата позже</option>
                                             </Select>
                                         </div>
                                     </div>

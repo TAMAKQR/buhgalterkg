@@ -11,6 +11,16 @@ import { normalizeMealPlan } from '@/lib/meal-plan';
 
 export const dynamic = 'force-dynamic';
 
+const groupPaymentModeSchema = z.enum(['CASH', 'CARD', 'SITE', 'PENDING_TRANSFER']);
+
+const isCardLikePayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
+    paymentMode === 'CARD' || paymentMode === 'SITE'
+);
+
+const groupPaymentNote = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
+    paymentMode === 'SITE' ? ' · сайт' : ''
+);
+
 const groupCheckInSchema = z.object({
     action: z.literal('group-checkin'),
     hotelId: z.string().cuid(),
@@ -24,7 +34,7 @@ const groupCheckInSchema = z.object({
     scheduledCheckOut: z.string().datetime(),
     tariffAmount: z.number().int().positive(),
     totalAmount: z.number().int().positive(),
-    paymentMode: z.enum(['CASH', 'CARD', 'PENDING_TRANSFER']),
+    paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
     notes: z.string().max(500).optional().nullable(),
 });
@@ -42,7 +52,7 @@ const groupBookingSchema = z.object({
     scheduledCheckOut: z.string().datetime(),
     tariffAmount: z.number().int().positive(),
     totalAmount: z.number().int().min(0),
-    paymentMode: z.enum(['CASH', 'CARD', 'PENDING_TRANSFER']),
+    paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
     notes: z.string().max(500).optional().nullable(),
 });
@@ -68,7 +78,7 @@ const editGroupSchema = z.object({
     scheduledCheckOut: z.string().datetime(),
     tariffAmount: z.number().int().positive(),
     totalAmount: z.number().int().min(0),
-    paymentMode: z.enum(['CASH', 'CARD', 'PENDING_TRANSFER']),
+    paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
     notes: z.string().max(500).optional().nullable(),
 });
@@ -307,7 +317,7 @@ export async function POST(request: NextRequest) {
                     const portion = portions[index] ?? 0;
                     const tariffPortion = tariffPortions[index] ?? 0;
                     const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
-                    const cardPaid = payload.paymentMode === 'CARD' ? portion : 0;
+                    const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
                     const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
 
                     await tx.cashEntry.deleteMany({
@@ -339,7 +349,7 @@ export async function POST(request: NextRequest) {
                     const ledgerMethod =
                         payload.paymentMode === 'CASH'
                             ? PaymentMethod.CASH
-                            : payload.paymentMode === 'CARD'
+                            : isCardLikePayment(payload.paymentMode)
                                 ? PaymentMethod.CARD
                                 : null;
 
@@ -353,7 +363,7 @@ export async function POST(request: NextRequest) {
                                 entryType: LedgerEntryType.CASH_IN,
                                 method: ledgerMethod,
                                 amount: portion,
-                                note: `Предоплата группы №${stay.room.label}`,
+                                note: `Предоплата группы №${stay.room.label}${groupPaymentNote(payload.paymentMode)}`,
                                 meta: {
                                     source: 'room_stay',
                                     kind: 'group_booking_prepayment',
@@ -444,7 +454,7 @@ export async function POST(request: NextRequest) {
                 const portion = portions[index] ?? 0;
                 const tariffPortion = tariffPortions[index] ?? 0;
                 const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
-                const cardPaid = payload.paymentMode === 'CARD' ? portion : 0;
+                const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
                 const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
 
                 const stay = await tx.roomStay.create({
@@ -484,7 +494,7 @@ export async function POST(request: NextRequest) {
                 const ledgerMethod =
                     payload.paymentMode === 'CASH'
                         ? PaymentMethod.CASH
-                        : payload.paymentMode === 'CARD'
+                        : isCardLikePayment(payload.paymentMode)
                             ? PaymentMethod.CARD
                             : null;
 
@@ -498,7 +508,7 @@ export async function POST(request: NextRequest) {
                             entryType: LedgerEntryType.CASH_IN,
                             method: ledgerMethod,
                             amount: portion,
-                            note: isGroupBooking ? `Предоплата группы №${room.label}` : `Групповой заезд №${room.label}`,
+                            note: `${isGroupBooking ? `Предоплата группы №${room.label}` : `Групповой заезд №${room.label}`}${groupPaymentNote(payload.paymentMode)}`,
                             meta: {
                                 source: 'room_stay',
                                 kind: isGroupBooking ? 'group_booking_prepayment' : 'group_checkin',
