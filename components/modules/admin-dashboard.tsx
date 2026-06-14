@@ -1877,14 +1877,6 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <StatPill label="Доход" value={`+${formatCurrency(inflow, hotel.currency ?? undefined)}`} />
                                                 <StatPill label="Расход" value={`-${formatCurrency(outflow, hotel.currency ?? undefined)}`} />
                                             </div>
-                                            <div className="mt-4">
-                                                <ExpenseFeed
-                                                    title="Последние расходы"
-                                                    entries={hotel.recentExpenses ?? []}
-                                                    defaultCurrency={hotel.currency ?? undefined}
-                                                    defaultTimezone={hotel.timezone ?? undefined}
-                                                />
-                                            </div>
                                             <div className="mt-4 flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5">
                                                     {hotel.managers.slice(0, 4).map((m) => (
