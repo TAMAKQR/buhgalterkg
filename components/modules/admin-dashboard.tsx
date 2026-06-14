@@ -1892,7 +1892,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <span className="text-[10px] text-slate-500 dark:text-white/30">+{hotel.managers.length - 4}</span>
                                                     )}
                                                 </div>
-                                                <Link href={`/admin/hotels/${hotel.id}`}>
+                                                <Link href={withCountry(`/admin/hotels/${hotel.id}`)}>
                                                     <Button size="sm" variant="secondary">
                                                         Открыть
                                                     </Button>

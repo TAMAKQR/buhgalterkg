@@ -561,35 +561,35 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         offlineSyncError ? `ошибка: ${offlineSyncError}` : null,
     ].filter(Boolean).join(' · ');
     const OfflineStatusBanner = () => {
+        if (!showOfflineStatus) {
+            return null;
+        }
+
         return (
-            <div className="min-h-[54px] sm:min-h-0">
-                {showOfflineStatus ? (
-                    <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError
-                        ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
-                        : !isOnline || isUsingCachedState
-                            ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
-                            : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-100'
-                        }`}>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="min-w-0">
-                                <p className="font-semibold">{offlineStatusTitle}</p>
-                                {offlineStatusDetail ? (
-                                    <p className="mt-0.5 break-words opacity-80">{offlineStatusDetail}</p>
-                                ) : null}
-                            </div>
-                            {isOnline && pendingOfflineCount > 0 ? (
-                                <button
-                                    type="button"
-                                    onClick={() => void flushOfflineOperations()}
-                                    disabled={isSyncingOffline}
-                                    className="min-w-0 max-w-full shrink-0 rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
-                                >
-                                    {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
-                                </button>
-                            ) : null}
-                        </div>
+            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError
+                ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
+                : !isOnline || isUsingCachedState
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
+                    : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-100'
+                }`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                        <p className="font-semibold">{offlineStatusTitle}</p>
+                        {offlineStatusDetail ? (
+                            <p className="mt-0.5 break-words opacity-80">{offlineStatusDetail}</p>
+                        ) : null}
                     </div>
-                ) : null}
+                    {isOnline && pendingOfflineCount > 0 ? (
+                        <button
+                            type="button"
+                            onClick={() => void flushOfflineOperations()}
+                            disabled={isSyncingOffline}
+                            className="min-w-0 max-w-full shrink-0 rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
+                        >
+                            {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
+                        </button>
+                    ) : null}
+                </div>
             </div>
         );
     };
@@ -1950,6 +1950,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const isStayDataModalMode = checkInModal?.mode === 'checkin' || checkInModal?.mode === 'book' || checkInModal?.mode === 'edit';
     const showPaymentInputsInModal = Boolean(checkInModal && checkInModal.mode !== 'transfer' && checkInModal.mode !== 'edit');
+    const modalDateTimeInputClass = 'max-w-full px-2 text-[13px] text-white sm:px-3.5 sm:text-sm';
     const showModalExtranetFields = Boolean(isStayDataModalMode && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
     const showModalBookingNumberField = Boolean(showModalExtranetFields && checkInModal?.bookingSource.trim());
     const showModalTariffField = Boolean(isStayDataModalMode && checkInModal?.mode !== 'checkin');
@@ -2122,19 +2123,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                         {activePanel === 'rooms' && (
                             <section className="space-y-2.5 sm:space-y-3">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center justify-between gap-2">
                                     <h2 className="text-lg font-semibold text-light-text dark:text-white">Номера</h2>
-                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2">
                                         <Button
                                             type="button"
                                             size="sm"
                                             variant="secondary"
-                                            className="gap-1.5"
+                                            className="h-9 w-9 px-0 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3"
+                                            aria-label="Групповой заезд"
+                                            title="Групповой заезд"
                                             disabled={!hasOpenShift || !sortedRooms.length}
                                             onClick={showGroupCheckInModal}
                                         >
                                             <Users className="h-4 w-4" aria-hidden="true" />
-                                            Групповой заезд
+                                            <span className="hidden sm:inline">Групповой заезд</span>
                                         </Button>
                                         <div className="flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">
                                             <button
@@ -2152,7 +2155,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 Шахматка
                                             </button>
                                         </div>
-                                        <Badge label={`${sortedRooms.length} в учёте`} />
+                                        <div className="hidden sm:block">
+                                            <Badge label={`${sortedRooms.length} в учёте`} />
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3012,7 +3017,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 id="group-guest-name"
                                                 value={groupCheckIn.guestName}
                                                 onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, guestName: event.target.value } : prev)}
-                                                placeholder="Футбольная команда"
+                                                placeholder="Например: группа гостей"
                                                 className="text-white"
                                             />
                                         </div>
@@ -3070,7 +3075,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 type="datetime-local"
                                                 value={groupCheckIn.checkIn}
                                                 onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, checkIn: event.target.value } : prev)}
-                                                className="text-white"
+                                                className={modalDateTimeInputClass}
                                             />
                                         </div>
                                         <div>
@@ -3080,7 +3085,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 type="datetime-local"
                                                 value={groupCheckIn.checkOut}
                                                 onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, checkOut: event.target.value } : prev)}
-                                                className="text-white"
+                                                className={modalDateTimeInputClass}
                                             />
                                         </div>
                                     </div>
@@ -3127,7 +3132,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <option value="CASH">Наличными</option>
                                                 <option value="CARD">Картой / терминал</option>
                                                 <option value="SITE">Оплачено на сайте</option>
-                                                <option value="PENDING_TRANSFER">Оплата позже</option>
+                                                <option value="PENDING_TRANSFER">Банковский перевод</option>
                                             </Select>
                                         </div>
                                     </div>
@@ -3435,7 +3440,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             onChange={(event) =>
                                                                 setCheckInModal((prev) => (prev ? { ...prev, checkIn: event.target.value } : prev))
                                                             }
-                                                            className="text-white"
+                                                            className={modalDateTimeInputClass}
                                                         />
                                                     </div>
                                                     <div>
@@ -3447,7 +3452,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             onChange={(event) =>
                                                                 setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
                                                             }
-                                                            className="text-white"
+                                                            className={modalDateTimeInputClass}
                                                         />
                                                     </div>
                                                 </div>
@@ -3459,7 +3464,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             id="modal-current-checkout"
                                                             type="datetime-local"
                                                             value={checkInModal.currentCheckOut ?? checkInModal.checkOut}
-                                                            className="text-white"
+                                                            className={modalDateTimeInputClass}
                                                             readOnly
                                                         />
                                                     </div>
@@ -3472,7 +3477,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             onChange={(event) =>
                                                                 setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
                                                             }
-                                                            className="text-white"
+                                                            className={modalDateTimeInputClass}
                                                         />
                                                     </div>
                                                 </div>
