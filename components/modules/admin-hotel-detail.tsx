@@ -66,6 +66,9 @@ interface RoomStayDetail {
         entryType: LedgerEntryTypeValue;
         method: LedgerPaymentMethodValue;
         amount: number;
+        originalAmount?: number | null;
+        originalCurrency?: string | null;
+        exchangeRate?: number | null;
         note?: string | null;
         recordedAt: string;
         shiftNumber?: number | null;
@@ -79,6 +82,9 @@ interface LedgerEntryDetail {
     entryType: LedgerEntryTypeValue;
     method: LedgerPaymentMethodValue;
     amount: number;
+    originalAmount?: number | null;
+    originalCurrency?: string | null;
+    exchangeRate?: number | null;
     note?: string | null;
     category?: {
         id: string;
@@ -529,6 +535,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const formatCurrency = (value?: number | null) => {
         if (typeof value !== 'number' || Number.isNaN(value)) return '—';
         return formatMoney(value, hotelCur);
+    };
+    const formatLedgerAmount = (entry: Pick<LedgerEntryDetail, 'amount' | 'originalAmount' | 'originalCurrency' | 'entryType'>) => {
+        const sign = ledgerSignSymbol[entry.entryType];
+        if (entry.originalCurrency && entry.originalCurrency !== hotelCur && typeof entry.originalAmount === 'number') {
+            const original = `${sign}${formatMoney(entry.originalAmount, entry.originalCurrency)}`;
+            return entry.amount ? `${original} / ${formatCurrency(entry.amount)}` : original;
+        }
+        return `${sign}${formatCurrency(entry.amount)}`;
     };
     const formatShiftAmount = (value?: number | null) => (value == null ? '—' : formatCurrency(value));
     const formatStayDate = (value?: string | null) => formatDateTime(value, hotelTz, undefined, '—');
@@ -2411,8 +2425,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         </div>
                                                                         <div className="text-right">
                                                                             <p className={`text-lg font-semibold ${ledgerDisplayAmountClass(entry)}`}>
-                                                                                {ledgerSignSymbol[entry.entryType]}
-                                                                                {formatCurrency(entry.amount)}
+                                                                                {formatLedgerAmount(entry)}
                                                                             </p>
                                                                             <p className="text-xs text-slate-400 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                                         </div>
@@ -3361,7 +3374,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             {entry.note ? ` · ${entry.note}` : ''}
                                                         </p>
                                                     </div>
-                                                    <p className="font-semibold text-emerald-600 dark:text-emerald-300">{formatCurrency(entry.amount)}</p>
+                                                    <p className="font-semibold text-emerald-600 dark:text-emerald-300">{formatLedgerAmount(entry)}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -3394,7 +3407,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Редактирование операции</p>
                                     <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
-                                        {ledgerDisplayLabel(editingLedgerEntry)} · {formatCurrency(editingLedgerEntry.amount)}
+                                        {ledgerDisplayLabel(editingLedgerEntry)} · {formatLedgerAmount(editingLedgerEntry)}
                                     </h3>
                                 </div>
                                 <Button type="button" variant="ghost" size="sm" className="border border-slate-200/80 dark:border-white/10" onClick={handleCloseLedgerEditor}>
@@ -4148,7 +4161,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <span>{formatDateTime(entry.recordedAt, hotelTz)}</span>
                                                     <span>{entry.managerName ?? 'Система'}</span>
                                                 </div>
-                                                <p className="mt-2 text-lg font-semibold text-rose-300">-{formatCurrency(entry.amount)}</p>
+                                                <p className="mt-2 text-lg font-semibold text-rose-300">{formatLedgerAmount(entry)}</p>
                                                 <p className="text-xs text-slate-500 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                 <p className="mt-1 text-xs text-slate-400 dark:text-white/40">{note || categoryName || 'Расход'}</p>
                                             </div>

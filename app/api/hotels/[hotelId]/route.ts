@@ -28,6 +28,9 @@ const roomStayDetailInclude = {
             entryType: true,
             method: true,
             amount: true,
+            originalAmount: true,
+            originalCurrency: true,
+            exchangeRate: true,
             note: true,
             recordedAt: true,
             shift: { select: { number: true } },
@@ -126,6 +129,9 @@ type HotelStayRecord = RoomStay & {
         entryType: LedgerEntryType;
         method: 'CASH' | 'CARD';
         amount: number;
+        originalAmount: number | null;
+        originalCurrency: string;
+        exchangeRate: number | null;
         note: string | null;
         recordedAt: Date;
         shift: { number: number } | null;
@@ -439,6 +445,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                             entryType: entry.entryType,
                             method: entry.method,
                             amount: entry.amount,
+                            originalAmount: entry.originalAmount,
+                            originalCurrency: entry.originalCurrency,
+                            exchangeRate: entry.exchangeRate,
                             note: entry.note,
                             recordedAt: entry.recordedAt,
                             shiftNumber: entry.shift?.number ?? null,
@@ -534,6 +543,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 entryType: entry.entryType,
                 method: entry.method,
                 amount: entry.amount,
+                originalAmount: entry.originalAmount,
+                originalCurrency: entry.originalCurrency,
+                exchangeRate: entry.exchangeRate,
                 note: entry.note,
                 category: entry.expenseCategory
                     ? {
