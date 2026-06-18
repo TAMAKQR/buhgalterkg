@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useForm } from 'react-hook-form';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -532,10 +532,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const hotelTz = data?.timezone ?? undefined;
     const hotelCur = data?.currency ?? undefined;
-    const formatCurrency = (value?: number | null) => {
+    const formatCurrency = useCallback((value?: number | null) => {
         if (typeof value !== 'number' || Number.isNaN(value)) return '—';
         return formatMoney(value, hotelCur);
-    };
+    }, [hotelCur]);
     const formatLedgerAmount = (entry: Pick<LedgerEntryDetail, 'amount' | 'originalAmount' | 'originalCurrency' | 'entryType'>) => {
         const sign = ledgerSignSymbol[entry.entryType];
         if (entry.originalCurrency && entry.originalCurrency !== hotelCur && typeof entry.originalAmount === 'number') {
@@ -893,6 +893,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             .reduce((total, entry) => total + entry.amount, 0),
         [selectedShiftTransactions]
     );
+    const selectedShiftCollectionOriginals = useMemo(() => {
+        const totals = new Map<string, number>();
+        for (const entry of selectedShiftTransactions) {
+            if (
+                !isCollectionLedgerEntry(entry) ||
+                !entry.originalCurrency ||
+                entry.originalCurrency === hotelCur ||
+                typeof entry.originalAmount !== 'number'
+            ) {
+                continue;
+            }
+            totals.set(entry.originalCurrency, (totals.get(entry.originalCurrency) ?? 0) + entry.originalAmount);
+        }
+        return Array.from(totals.entries()).map(([currency, amount]) => ({ currency, amount }));
+    }, [hotelCur, selectedShiftTransactions]);
+    const selectedShiftCollectionsLabel = useMemo(() => {
+        const parts = selectedShiftCollections > 0 ? [formatCurrency(selectedShiftCollections)] : [];
+        for (const item of selectedShiftCollectionOriginals) {
+            parts.push(formatMoney(item.amount, item.currency));
+        }
+        return parts.length ? parts.join(' + ') : formatCurrency(0);
+    }, [formatCurrency, selectedShiftCollectionOriginals, selectedShiftCollections]);
 
     const pendingOnlineHistory = useMemo(() => data?.pendingOnlineStays ?? [], [data]);
     const prepaidBookings = useMemo(() => {
@@ -1958,7 +1980,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             },
             {
                 label: 'Инкассация',
-                value: formatCurrency(selectedShiftCollections),
+                value: selectedShiftCollectionsLabel,
                 valueClass: 'text-cyan-300'
             },
             {
@@ -2303,7 +2325,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </button>
                                                         <p className="flex items-center justify-between">
                                                             <span>Инкассация</span>
-                                                            <span className="text-cyan-300">{formatCurrency(selectedShiftCollections)}</span>
+                                                            <span className="text-cyan-300">{selectedShiftCollectionsLabel}</span>
                                                         </p>
                                                         <p className="flex items-center justify-between">
                                                             <span>Выплаты</span>
