@@ -170,8 +170,8 @@ interface ExpenseForm {
 
 interface ShiftOpenForm {
     pinCode: string;
-    openingCash: number;
-    openingCashUsd: number;
+    openingCash?: number;
+    openingCashUsd?: number;
     note?: string;
 }
 
@@ -363,7 +363,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const localCashCurrency = (hotelCur === 'KZT' ? 'KZT' : 'KGS') as CashCurrencyCode;
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '', currency: localCashCurrency } });
-    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, openingCashUsd: 0, pinCode: '', note: '' } });
+    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: undefined, openingCashUsd: undefined, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
@@ -1120,7 +1120,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 pinCode: values.pinCode
             }
         });
-        openShiftForm.reset({ openingCash: 0, openingCashUsd: 0, note: '' });
+        openShiftForm.reset({ openingCash: undefined, openingCashUsd: undefined, pinCode: '', note: '' });
         void refreshManagerState();
     });
 
@@ -2103,32 +2103,44 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {openShiftForm.formState.errors.pinCode && (
                             <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
                         )}
-                        <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Наличные в кассе"
-                            inputMode="decimal"
-                            min={0}
-                            {...openShiftForm.register('openingCash', {
-                                valueAsNumber: true,
-                                required: 'Введите фактический остаток наличных',
-                                min: { value: 0, message: 'Сумма не может быть отрицательной' }
-                            })}
-                        />
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-white/60" htmlFor="opening-cash-local">
+                                Наличные в кассе ({hotelCur})
+                            </label>
+                            <Input
+                                id="opening-cash-local"
+                                type="number"
+                                step="0.01"
+                                placeholder={`Введите сумму в ${hotelCur}`}
+                                inputMode="decimal"
+                                min={0}
+                                {...openShiftForm.register('openingCash', {
+                                    valueAsNumber: true,
+                                    required: 'Введите фактический остаток наличных',
+                                    min: { value: 0, message: 'Сумма не может быть отрицательной' }
+                                })}
+                            />
+                        </div>
                         {openShiftForm.formState.errors.openingCash && (
                             <p className="text-xs text-rose-300">{openShiftForm.formState.errors.openingCash.message}</p>
                         )}
-                        <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Доллары в кассе"
-                            inputMode="decimal"
-                            min={0}
-                            {...openShiftForm.register('openingCashUsd', {
-                                valueAsNumber: true,
-                                min: { value: 0, message: 'Сумма не может быть отрицательной' }
-                            })}
-                        />
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-white/60" htmlFor="opening-cash-usd">
+                                Наличные в кассе (USD)
+                            </label>
+                            <Input
+                                id="opening-cash-usd"
+                                type="number"
+                                step="0.01"
+                                placeholder="Если долларов нет, оставьте пустым"
+                                inputMode="decimal"
+                                min={0}
+                                {...openShiftForm.register('openingCashUsd', {
+                                    valueAsNumber: true,
+                                    min: { value: 0, message: 'Сумма не может быть отрицательной' }
+                                })}
+                            />
+                        </div>
                         <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
                         <Button type="submit" className="w-full">
                             Начать смену
