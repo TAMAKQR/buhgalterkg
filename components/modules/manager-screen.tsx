@@ -2761,7 +2761,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 {shiftLedger.length ? (
                                                     shiftLedger.map((entry) => {
                                                         const timestamp = formatDateTime(entry.recordedAt, hotelTz);
-                                                        const signedAmount = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType)
+                                                        const isIncomingEntry = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType);
+                                                        const entrySign = isIncomingEntry ? 1 : -1;
+                                                        const signedAmount = isIncomingEntry
                                                             ? entry.amount
                                                             : -entry.amount;
                                                         const methodLabel = entry.method === 'CARD' ? 'б/н' : 'нал';
@@ -2775,14 +2777,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                     : entry.entryType === 'MANAGER_PAYOUT'
                                                                         ? 'Выплата'
                                                                         : 'Корр.';
-                                                        const amountClass = signedAmount >= 0
+                                                        const amountClass = entrySign > 0
                                                             ? 'text-emerald-300'
                                                             : isCollectionLedgerEntry(entry)
                                                                 ? 'text-cyan-300'
                                                                 : 'text-rose-300';
                                                         const detailLabel = [entry.category?.name?.trim(), entry.note?.trim()].filter(Boolean).join(' · ');
                                                         const originalLabel = entry.method === 'CASH' && entry.originalCurrency === 'USD' && entry.originalAmount
-                                                            ? `${formatCurrencyAmount(Math.sign(signedAmount || 1) * entry.originalAmount, entry.originalCurrency)} → `
+                                                            ? `${formatCurrencyAmount(entrySign * entry.originalAmount, entry.originalCurrency)} → `
                                                             : '';
 
                                                         return (
