@@ -12,8 +12,11 @@ const updateShiftSchema = z
     .object({
         managerId: z.string().cuid().optional(),
         openingCash: z.number().int().nonnegative().optional(),
+        openingCashUsd: z.number().int().nonnegative().optional(),
         closingCash: z.number().int().nonnegative().nullable().optional(),
+        closingCashUsd: z.number().int().nonnegative().nullable().optional(),
         handoverCash: z.number().int().nonnegative().nullable().optional(),
+        handoverCashUsd: z.number().int().nonnegative().nullable().optional(),
         openingNote: z.string().max(500).nullable().optional(),
         closingNote: z.string().max(500).nullable().optional(),
         handoverNote: z.string().max(500).nullable().optional(),
@@ -82,11 +85,20 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         if (Object.prototype.hasOwnProperty.call(payload, 'openingCash')) {
             data.openingCash = payload.openingCash as number;
         }
+        if (Object.prototype.hasOwnProperty.call(payload, 'openingCashUsd')) {
+            data.openingCashUsd = payload.openingCashUsd as number;
+        }
         if (Object.prototype.hasOwnProperty.call(payload, 'closingCash')) {
             data.closingCash = payload.closingCash ?? null;
         }
+        if (Object.prototype.hasOwnProperty.call(payload, 'closingCashUsd')) {
+            data.closingCashUsd = payload.closingCashUsd ?? null;
+        }
         if (Object.prototype.hasOwnProperty.call(payload, 'handoverCash')) {
             data.handoverCash = payload.handoverCash ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'handoverCashUsd')) {
+            data.handoverCashUsd = payload.handoverCashUsd ?? null;
         }
 
         const openingNote = normalizeNullableString(payload.openingNote);
@@ -128,8 +140,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
                 if (!Object.prototype.hasOwnProperty.call(payload, 'closingCash')) {
                     data.closingCash = null;
                 }
+                if (!Object.prototype.hasOwnProperty.call(payload, 'closingCashUsd')) {
+                    data.closingCashUsd = null;
+                }
                 if (!Object.prototype.hasOwnProperty.call(payload, 'handoverCash')) {
                     data.handoverCash = null;
+                }
+                if (!Object.prototype.hasOwnProperty.call(payload, 'handoverCashUsd')) {
+                    data.handoverCashUsd = null;
                 }
             }
             if (payload.status === ShiftStatus.CLOSED) {

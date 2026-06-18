@@ -10,6 +10,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 import { formatDateKey } from '@/lib/timezone';
 import { normalizeMealPlan } from '@/lib/meal-plan';
+import { convertCashToAccounting, makeDefaultMoneyBreakdown } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,9 @@ const staySchema = z.object({
     amountPaid: z.number().int().positive().optional(),
     paymentMethod: z.nativeEnum(PaymentMethod).optional(),
     cashAmount: z.number().int().nonnegative().optional(),
+    cashOriginalAmount: z.number().int().nonnegative().optional(),
+    cashCurrency: z.enum(['KGS', 'KZT', 'USD']).optional(),
+    cashExchangeRate: z.number().int().positive().optional(),
     cardAmount: z.number().int().nonnegative().optional(),
     onlineAmount: z.number().int().nonnegative().optional()
 });
@@ -87,6 +91,17 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
         }
 
+        const resolveCashPayment = (fallbackAmount: number) => (
+            payload.cashCurrency === 'USD'
+                ? convertCashToAccounting({
+                    amount: payload.cashOriginalAmount ?? fallbackAmount,
+                    currency: payload.cashCurrency,
+                    exchangeRate: payload.cashExchangeRate,
+                    accountingCurrency: room.hotel.currency
+                })
+                : makeDefaultMoneyBreakdown(fallbackAmount, room.hotel.currency)
+        );
+
         if (payload.intent === 'book') {
             if (!payload.scheduledCheckIn || !payload.scheduledCheckOut) {
                 return new NextResponse('Укажите даты брони', { status: 400 });
@@ -126,7 +141,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 return new NextResponse('На эти даты у номера уже есть бронь или проживание', { status: 409 });
             }
 
-            const cashAmount = payload.cashAmount ?? 0;
+            const cashMoney = resolveCashPayment(payload.cashAmount ?? 0);
+            const cashAmount = cashMoney.accountingAmount;
             const cardAmount = payload.cardAmount ?? 0;
             const onlineAmount = payload.onlineAmount ?? 0;
             const totalTariffAmount = payload.totalAmount ?? 0;
@@ -195,6 +211,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                             entryType: LedgerEntryType.CASH_IN,
                             method: ledgerEntry.method,
                             amount: ledgerEntry.amount,
+                            originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
+                            originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
+                            exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
                             note: `Предоплата №${room.label}`,
                             meta: {
                                 source: 'room_stay',
@@ -351,7 +370,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 return new NextResponse('Не указано проживание', { status: 400 });
             }
 
-            const cashAmount = payload.cashAmount ?? 0;
+            const cashMoney = resolveCashPayment(payload.cashAmount ?? 0);
+            const cashAmount = cashMoney.accountingAmount;
             const cardAmount = payload.cardAmount ?? 0;
             const onlineAmount = payload.onlineAmount ?? 0;
 
@@ -451,6 +471,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                             entryType: LedgerEntryType.CASH_IN,
                             method: ledgerEntry.method,
                             amount: ledgerEntry.amount,
+                            originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
+                            originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
+                            exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
                             note: `Корректировка оплаты №${room.label}`,
                             recordedAt,
                             meta: {
@@ -484,9 +507,11 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 return new NextResponse('Выбранный экстранет не настроен для этой точки', { status: 400 });
             }
 
-            const cashAmount =
+            const cashMoney = resolveCashPayment(
                 payload.cashAmount ??
-                (payload.paymentMethod === PaymentMethod.CASH ? payload.amountPaid ?? 0 : 0);
+                (payload.paymentMethod === PaymentMethod.CASH ? payload.amountPaid ?? 0 : 0)
+            );
+            const cashAmount = cashMoney.accountingAmount;
             const cardAmount =
                 payload.cardAmount ??
                 (payload.paymentMethod === PaymentMethod.CARD ? payload.amountPaid ?? 0 : 0);
@@ -636,6 +661,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerEntry.method,
                         amount: ledgerEntry.amount,
+                        originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
+                        originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
+                        exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
                         note: `Заселение №${room.label}`,
                         meta: {
                             source: 'room_stay',
@@ -720,7 +748,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 return new NextResponse('Новая дата выезда должна быть позже текущей', { status: 400 });
             }
 
-            const cashAmount = payload.cashAmount ?? 0;
+            const cashMoney = resolveCashPayment(payload.cashAmount ?? 0);
+            const cashAmount = cashMoney.accountingAmount;
             const cardAmount = payload.cardAmount ?? 0;
             const onlineAmount = payload.onlineAmount ?? 0;
             if (cashAmount < 0 || cardAmount < 0 || onlineAmount < 0) {
@@ -760,6 +789,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerEntry.method,
                         amount: ledgerEntry.amount,
+                        originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
+                        originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
+                        exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
                         note: `Продление №${room.label}`,
                         meta: {
                             source: 'room_stay',
@@ -934,6 +966,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
         return NextResponse.json(updatedStay);
     } catch (error) {
         if (error instanceof z.ZodError) {
+            return new NextResponse(error.message, { status: 400 });
+        }
+        if (error instanceof Error && error.message === 'Для оплаты в долларах укажите курс') {
             return new NextResponse(error.message, { status: 400 });
         }
         return handleApiError(error, 'Failed to update room stay');

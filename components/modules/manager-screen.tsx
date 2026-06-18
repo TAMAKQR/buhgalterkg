@@ -73,6 +73,10 @@ interface ManagerStateResponse {
         card: number;
         total: number;
     } | null;
+    shiftCashByCurrency?: Array<{
+        currency: string;
+        amount: number;
+    }> | null;
     shiftExpenses?: {
         total: number;
         cash: number;
@@ -89,6 +93,9 @@ interface ManagerStateResponse {
         entryType: 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
         method: 'CASH' | 'CARD';
         amount: number;
+        originalAmount?: number | null;
+        originalCurrency?: string | null;
+        exchangeRate?: number | null;
         note?: string | null;
         category?: {
             id: string;
@@ -149,9 +156,13 @@ interface ManagerProfileResponse {
     }>;
 }
 
+type CashCurrencyCode = 'KGS' | 'KZT' | 'USD';
+
 interface ExpenseForm {
     amount: number;
     method: 'CASH' | 'CARD';
+    currency: CashCurrencyCode;
+    exchangeRate?: number;
     note?: string;
     categoryId?: string;
     entryType: 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
@@ -160,6 +171,7 @@ interface ExpenseForm {
 interface ShiftOpenForm {
     pinCode: string;
     openingCash: number;
+    openingCashUsd: number;
     note?: string;
 }
 
@@ -187,6 +199,8 @@ interface CheckInModalState {
     currentCheckOut?: string;
     checkOut: string;
     cashAmount: string;
+    cashCurrency: CashCurrencyCode;
+    cashExchangeRate: string;
     cardAmount: string;
     onlineAmount: string;
     existingPaid: number;
@@ -216,6 +230,8 @@ interface PaymentAdjustState {
     guestName: string;
     totalAmount?: number | null;
     cashAmount: string;
+    cashCurrency: CashCurrencyCode;
+    cashExchangeRate: string;
     cardAmount: string;
     onlineAmount: string;
 }
@@ -337,13 +353,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const isUsingCachedState = !liveData && Boolean(cachedState);
 
     const hotelTz = data?.hotel?.timezone;
-    const hotelCur = data?.hotel?.currency;
+    const hotelCur = data?.hotel?.currency ?? 'KGS';
     const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
+    const formatCurrencyAmount = useCallback((amount?: number | null, currency?: string | null) => (
+        formatMoney(typeof amount === 'number' ? amount : 0, currency || hotelCur)
+    ), [hotelCur]);
     const formatDateInputValue = (date: Date) => formatInputValue(date, hotelTz);
 
-    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '' } });
-    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, pinCode: '', note: '' } });
+    const localCashCurrency = (hotelCur === 'KZT' ? 'KZT' : 'KGS') as CashCurrencyCode;
+    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '', currency: localCashCurrency } });
+    const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: 0, openingCashUsd: 0, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
@@ -530,8 +550,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const shiftTotalBalance = shiftBalances?.total ?? shiftCashValue + shiftCardValue;
     const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
     const shiftLedger = data?.shiftLedger ?? [];
+    const shiftCashByCurrency = useMemo(() => data?.shiftCashByCurrency ?? [], [data?.shiftCashByCurrency]);
     const expenseCategories = data?.expenseCategories ?? [];
     const selectedExpenseEntryType = expenseForm.watch('entryType');
+    const selectedExpenseMethod = expenseForm.watch('method');
+    const selectedExpenseCurrency = expenseForm.watch('currency');
     const compensation = data?.compensation ?? null;
     const canEditStayPayments = Boolean(compensation?.canEditStayPayments);
     const managerName = user.displayName?.trim() || user.username?.trim() || 'Менеджер';
@@ -664,6 +687,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     <ul>
         <li><span>Чистый доход</span><strong>${formatKgs(shiftNetIncome)}</strong></li>
         <li><span>Сейчас в кассе</span><strong>${formatKgs(shiftCashValue)}</strong></li>
+        ${shiftCashByCurrency.filter(item => item.currency === 'USD').map(item => `<li><span>Сейчас USD</span><strong>${formatCurrencyAmount(item.amount, item.currency)}</strong></li>`).join('')}
         <li><span>Сейчас безналом</span><strong>${formatKgs(shiftCardValue)}</strong></li>
         <li><span>Сейчас всего</span><strong>${formatKgs(shiftTotalBalance)}</strong></li>
     </ul>
@@ -982,10 +1006,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             `Поступило безналом: ${formatKgs(shiftRevenueCard)}`,
             `Поступило наличными: ${formatKgs(shiftRevenueCash)}`,
             `Сейчас в кассе: ${formatKgs(shiftCashValue)}`,
+            ...shiftCashByCurrency.filter((item) => item.currency === 'USD').map((item) => `Сейчас USD: ${formatCurrencyAmount(item.amount, item.currency)}`),
             '',
             `На смене: ${managerName}`,
         ].join('\n');
-    }, [canUseMealPlan, data, formatKgs, hotelTz, managerName, shiftCashValue, shiftOtherReceipts, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, shiftStayRevenue, sortedRooms]);
+    }, [canUseMealPlan, data, formatCurrencyAmount, formatKgs, hotelTz, managerName, shiftCashByCurrency, shiftCashValue, shiftOtherReceipts, shiftRevenueCard, shiftRevenueCash, shiftRevenueTotal, shiftStayRevenue, sortedRooms]);
 
     const handleCopyState = async () => {
         if (!shareMessage || typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -1048,6 +1073,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }, [data?.shift?.id]);
 
     useEffect(() => {
+        if (expenseForm.getValues('currency') !== 'USD') {
+            expenseForm.setValue('currency', localCashCurrency);
+        }
+    }, [expenseForm, localCashCurrency]);
+
+    useEffect(() => {
         if (!filteredProfileShifts.length) {
             if (selectedShiftId) {
                 setSelectedShiftId('');
@@ -1064,17 +1095,32 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return Math.round(safe * 100);
     };
 
+    const convertCashMajorToAccountingMajor = (amount: number, currency: CashCurrencyCode, exchangeRate?: number) => {
+        if (currency !== 'USD') {
+            return amount;
+        }
+        return amount * (Number.isFinite(exchangeRate) ? (exchangeRate as number) : 0);
+    };
+
+    const getCashCurrencyPayload = (amount: number, currency: CashCurrencyCode, exchangeRate?: number) => ({
+        cashOriginalAmount: toMinor(amount),
+        cashCurrency: currency,
+        cashExchangeRate: currency === 'USD' ? toMinor(exchangeRate) : undefined
+    });
+
     const handleOpenShift = openShiftForm.handleSubmit(async (values) => {
         if (!primaryHotel) return;
         await request('/api/shifts', {
             body: {
                 hotelId: primaryHotel.id,
                 openingCash: toMinor(values.openingCash),
+                openingCashUsd: toMinor(values.openingCashUsd),
                 note: values.note,
-                action: 'open'
+                action: 'open',
+                pinCode: values.pinCode
             }
         });
-        openShiftForm.reset({ openingCash: 0, note: '' });
+        openShiftForm.reset({ openingCash: 0, openingCashUsd: 0, note: '' });
         void refreshManagerState();
     });
 
@@ -1103,12 +1149,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         if (!data?.shift) {
             throw new Error('Сначала откройте смену');
         }
+        if (values.method === 'CASH' && values.currency === 'USD' && (!Number.isFinite(values.exchangeRate) || (values.exchangeRate ?? 0) <= 0)) {
+            throw new Error('Укажите курс для долларовой операции');
+        }
         await sendManagerRequest('/api/expenses', {
             body: {
                 hotelId: data.hotel.id,
                 shiftId: data.shift.id,
                 amount: Number.isFinite(values.amount) ? toMinor(values.amount) : undefined,
                 method: values.method,
+                currency: values.method === 'CASH' ? values.currency : hotelCur,
+                exchangeRate: values.method === 'CASH' && values.currency === 'USD' ? toMinor(values.exchangeRate) : undefined,
                 categoryId: values.entryType === 'CASH_OUT' && values.categoryId ? values.categoryId : undefined,
                 note: values.note,
                 entryType: values.entryType
@@ -1118,6 +1169,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         expenseForm.reset({
             amount: values.entryType === 'MANAGER_PAYOUT' ? pendingPayoutMajor : 0,
             method: values.method,
+            currency: values.currency,
+            exchangeRate: values.exchangeRate,
             entryType: values.entryType,
             categoryId: values.entryType === 'CASH_OUT' ? values.categoryId ?? '' : '',
             note: ''
@@ -1305,6 +1358,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: 0
@@ -1347,6 +1402,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: 0
@@ -1407,6 +1464,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(new Date(details.stay.scheduledCheckOut)),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: details.stay.amountPaid ?? 0
@@ -1444,6 +1503,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: stay.status === 'CHECKED_IN' ? formatDateInputValue(new Date(stay.scheduledCheckOut)) : undefined,
             checkOut: formatDateInputValue(new Date(stay.scheduledCheckOut)),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: stay.amountPaid ?? 0
@@ -1600,6 +1661,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: 0
@@ -1641,6 +1704,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             currentCheckOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             checkOut: formatDateInputValue(new Date(room.stay.scheduledCheckOut)),
             cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: '',
             onlineAmount: '',
             existingPaid: 0
@@ -1665,6 +1730,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             guestName: room.stay.guestName?.trim() || 'Гость',
             totalAmount: room.stay.totalAmount ?? null,
             cashAmount: String((room.stay.cashPaid ?? 0) / 100 || ''),
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: String((room.stay.cardPaid ?? 0) / 100 || ''),
             onlineAmount: String((room.stay.onlinePaid ?? 0) / 100 || '')
         });
@@ -1687,6 +1754,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             guestName: bookingDetails.stay.guestName?.trim() || 'Гость',
             totalAmount: bookingDetails.stay.totalAmount ?? null,
             cashAmount: String((bookingDetails.stay.cashPaid ?? 0) / 100 || ''),
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
             cardAmount: String((bookingDetails.stay.cardPaid ?? 0) / 100 || ''),
             onlineAmount: String((bookingDetails.stay.onlinePaid ?? 0) / 100 || '')
         });
@@ -1702,9 +1771,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const cashValue = Number(paymentAdjust.cashAmount || 0);
         const cardValue = Number(paymentAdjust.cardAmount || 0);
         const onlineValue = Number(paymentAdjust.onlineAmount || 0);
+        const cashExchangeRate = Number(paymentAdjust.cashExchangeRate || 0);
+        const cashAccountingValue = convertCashMajorToAccountingMajor(cashValue, paymentAdjust.cashCurrency, cashExchangeRate);
 
         if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0 || !Number.isFinite(onlineValue) || onlineValue < 0) {
             setPaymentAdjustError('Сумма не может быть отрицательной или пустой');
+            return;
+        }
+        if (paymentAdjust.cashCurrency === 'USD' && (!Number.isFinite(cashExchangeRate) || cashExchangeRate <= 0)) {
+            setPaymentAdjustError('Укажите курс для оплаты в долларах');
             return;
         }
 
@@ -1713,7 +1788,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
-        const nextPaymentTotal = toMinor(cashValue) + toMinor(cardValue) + toMinor(onlineValue);
+        const nextPaymentTotal = toMinor(cashAccountingValue) + toMinor(cardValue) + toMinor(onlineValue);
         if (typeof paymentAdjust.totalAmount === 'number' && nextPaymentTotal > paymentAdjust.totalAmount) {
             setPaymentAdjustError('Оплата не может быть больше тарифа');
             return;
@@ -1726,7 +1801,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     shiftId: data?.shift?.id,
                     stayId: paymentAdjust.stayId,
                     intent: 'adjust-payments',
-                    cashAmount: toMinor(cashValue),
+                    cashAmount: toMinor(cashAccountingValue),
+                    ...getCashCurrencyPayload(cashValue, paymentAdjust.cashCurrency, cashExchangeRate),
                     cardAmount: toMinor(cardValue),
                     onlineAmount: toMinor(onlineValue)
                 }
@@ -1811,8 +1887,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const cashValue = Number(checkInModal.cashAmount || 0);
         const cardValue = Number(checkInModal.cardAmount || 0);
         const onlineValue = Number(checkInModal.onlineAmount || 0);
+        const cashExchangeRate = Number(checkInModal.cashExchangeRate || 0);
+        const cashAccountingValue = convertCashMajorToAccountingMajor(cashValue, checkInModal.cashCurrency, cashExchangeRate);
         const rawTariffValue = Number(checkInModal.totalAmount || 0);
-        const directCheckInPaymentValue = checkInModal.existingPaid / 100 + cashValue + cardValue + onlineValue;
+        const directCheckInPaymentValue = checkInModal.existingPaid / 100 + cashAccountingValue + cardValue + onlineValue;
         const hasModalBookingSource = Boolean(
             data?.hotel.usesExtranets &&
             (checkInModal.mode === 'checkin' || checkInModal.mode === 'book' || checkInModal.mode === 'edit') &&
@@ -1825,6 +1903,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         if (!Number.isFinite(cashValue) || cashValue < 0 || !Number.isFinite(cardValue) || cardValue < 0 || !Number.isFinite(onlineValue) || onlineValue < 0) {
             setCheckInError('Сумма не может быть отрицательной или пустой');
+            return;
+        }
+        if (checkInModal.cashCurrency === 'USD' && (!Number.isFinite(cashExchangeRate) || cashExchangeRate <= 0)) {
+            setCheckInError('Укажите курс для оплаты в долларах');
             return;
         }
 
@@ -1848,7 +1930,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
-        const cashMinor = toMinor(cashValue);
+        const cashMinor = toMinor(cashAccountingValue);
         const cardMinor = toMinor(cardValue);
         const onlineMinor = toMinor(onlineValue);
         const tariffMinor = toMinor(tariffValue);
@@ -1921,6 +2003,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     scheduledCheckIn: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? scheduledCheckIn!.toISOString() : undefined,
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     cashAmount: cashMinor,
+                    ...getCashCurrencyPayload(cashValue, checkInModal.cashCurrency, cashExchangeRate),
                     cardAmount: cardMinor,
                     onlineAmount: onlineMinor
                 }
@@ -2035,6 +2118,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {openShiftForm.formState.errors.openingCash && (
                             <p className="text-xs text-rose-300">{openShiftForm.formState.errors.openingCash.message}</p>
                         )}
+                        <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Доллары в кассе"
+                            inputMode="decimal"
+                            min={0}
+                            {...openShiftForm.register('openingCashUsd', {
+                                valueAsNumber: true,
+                                min: { value: 0, message: 'Сумма не может быть отрицательной' }
+                            })}
+                        />
                         <TextArea rows={2} placeholder="Комментарий" {...openShiftForm.register('note')} />
                         <Button type="submit" className="w-full">
                             Начать смену
@@ -2092,6 +2186,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <OfflineStatusBanner />
                                     <div className="grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5 sm:gap-2 sm:text-xs">
                                         <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Касса <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftCashValue)}</span></span>
+                                        {shiftCashByCurrency
+                                            .filter((item) => item.currency === 'USD')
+                                            .map((item) => (
+                                                <span key={item.currency} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">USD <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatCurrencyAmount(item.amount, item.currency)}</span></span>
+                                            ))}
                                         <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftCardValue)}</span></span>
                                         <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Расход <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftExpensesTotal)}</span></span>
                                         <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Занято <span className="block font-semibold text-light-text dark:text-white sm:inline">{occupiedCount}/{sortedRooms.length}</span></span>
@@ -2548,6 +2647,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <span>Открытие: {formatKgs(data.shift.openingCash)}</span>
                                             <span>Безнал: {formatKgs(shiftCardValue)}</span>
                                         </div>
+                                        {shiftCashByCurrency.filter((item) => item.currency === 'USD').map((item) => (
+                                            <div key={item.currency} className="px-1 text-xs text-slate-600 dark:text-white/40">
+                                                USD в кассе: {formatCurrencyAmount(item.amount, item.currency)}
+                                            </div>
+                                        ))}
                                         <div className="flex justify-end">
                                             <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handlePrintShiftReceipt}>
                                                 Печать
@@ -2588,11 +2692,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         {activePanel === 'cash' && (
                             <Card>
                                 <CardHeader title="Касса" />
-                                <form className="grid gap-3 md:grid-cols-4" onSubmit={handleExpense}>
+                                <form className="grid gap-3 md:grid-cols-5" onSubmit={handleExpense}>
                                     <Input type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
                                     <Select className="min-w-0 max-w-full" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
                                         <option value="CARD">Безнал</option>
+                                    </Select>
+                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('currency')} disabled={selectedExpenseMethod !== 'CASH' || isAutoManagerPayout}>
+                                        <option value={localCashCurrency}>{hotelCur}</option>
+                                        <option value="USD">USD</option>
                                     </Select>
                                     <Select className="min-w-0 max-w-full" {...expenseForm.register('entryType')}>
                                         <option value="CASH_OUT">Расход</option>
@@ -2606,13 +2714,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <option key={category.id} value={category.id}>{category.name}</option>
                                         ))}
                                     </Select>
+                                    {selectedExpenseMethod === 'CASH' && selectedExpenseCurrency === 'USD' ? (
+                                        <Input type="number" step="0.01" placeholder={`Курс USD к ${hotelCur}`} {...expenseForm.register('exchangeRate', { valueAsNumber: true })} />
+                                    ) : null}
                                     {isAutoManagerPayout ? (
-                                        <p className="md:col-span-4 text-xs text-slate-500 dark:text-white/50">
+                                        <p className="md:col-span-5 text-xs text-slate-500 dark:text-white/50">
                                             Выплата рассчитывается по ставке и проценту менеджера. К выплате сейчас: <span className="font-semibold text-light-text dark:text-white">{formatKgs(payoutSummary?.pending ?? 0)}</span>
                                         </p>
                                     ) : null}
-                                    <TextArea rows={1} className="md:col-span-4" placeholder="Комментарий" {...expenseForm.register('note')} />
-                                    <Button type="submit" className="md:col-span-4" disabled={isAutoManagerPayout && (payoutSummary?.pending ?? 0) <= 0}>
+                                    <TextArea rows={1} className="md:col-span-5" placeholder="Комментарий" {...expenseForm.register('note')} />
+                                    <Button type="submit" className="md:col-span-5" disabled={isAutoManagerPayout && (payoutSummary?.pending ?? 0) <= 0}>
                                         Записать операцию
                                     </Button>
                                 </form>
@@ -2658,6 +2769,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 ? 'text-cyan-300'
                                                                 : 'text-rose-300';
                                                         const detailLabel = [entry.category?.name?.trim(), entry.note?.trim()].filter(Boolean).join(' · ');
+                                                        const originalLabel = entry.method === 'CASH' && entry.originalCurrency === 'USD' && entry.originalAmount
+                                                            ? `${formatCurrencyAmount(Math.sign(signedAmount || 1) * entry.originalAmount, entry.originalCurrency)} → `
+                                                            : '';
 
                                                         return (
                                                             <div key={entry.id} className="flex items-center justify-between py-2 text-xs">
@@ -2666,7 +2780,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                     <span className="ml-2 text-slate-500 dark:text-white/40">{entryLabel} · {methodLabel}</span>
                                                                     {detailLabel && <span className="ml-2 text-slate-600 dark:text-white/60">{detailLabel}</span>}
                                                                 </div>
-                                                                <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{formatKgs(signedAmount)}</span>
+                                                                <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{originalLabel}{formatKgs(signedAmount)}</span>
                                                             </div>
                                                         );
                                                     })
@@ -3492,7 +3606,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
                                             )}
                                             {showPaymentInputsInModal ? (
-                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 [&>*]:min-w-0">
+                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-5 [&>*]:min-w-0">
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'book' ? 'Предоплата нал' : checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
                                                         <Input
@@ -3510,6 +3624,40 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             className="text-white"
                                                         />
                                                     </div>
+                                                    <div>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-currency">Валюта</label>
+                                                        <Select
+                                                            id="modal-cash-currency"
+                                                            value={checkInModal.cashCurrency}
+                                                            onChange={(event) =>
+                                                                setCheckInModal((prev) =>
+                                                                    prev ? { ...prev, cashCurrency: event.target.value as CashCurrencyCode } : prev
+                                                                )
+                                                            }
+                                                        >
+                                                            <option value={localCashCurrency}>{hotelCur}</option>
+                                                            <option value="USD">USD</option>
+                                                        </Select>
+                                                    </div>
+                                                    {checkInModal.cashCurrency === 'USD' ? (
+                                                        <div>
+                                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-rate">Курс</label>
+                                                            <Input
+                                                                id="modal-cash-rate"
+                                                                type="number"
+                                                                step="0.01"
+                                                                inputMode="decimal"
+                                                                value={checkInModal.cashExchangeRate}
+                                                                onChange={(event) =>
+                                                                    setCheckInModal((prev) =>
+                                                                        prev ? { ...prev, cashExchangeRate: event.target.value } : prev
+                                                                    )
+                                                                }
+                                                                placeholder={`USD → ${hotelCur}`}
+                                                                className="text-white"
+                                                            />
+                                                        </div>
+                                                    ) : null}
                                                     <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-card">{checkInModal.mode === 'book' ? 'Предоплата б/н' : checkInModal.mode === 'extend' ? 'Доплата безнал' : 'Безнал'}</label>
                                                         <Input
@@ -3868,7 +4016,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </Button>
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
                                     <div>
                                         <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-cash">Наличные</label>
                                         <Input
@@ -3886,6 +4034,40 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             className="text-white"
                                         />
                                     </div>
+                                    <div>
+                                        <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-currency">Валюта</label>
+                                        <Select
+                                            id="payment-adjust-currency"
+                                            value={paymentAdjust.cashCurrency}
+                                            onChange={(event) =>
+                                                setPaymentAdjust((prev) =>
+                                                    prev ? { ...prev, cashCurrency: event.target.value as CashCurrencyCode } : prev
+                                                )
+                                            }
+                                        >
+                                            <option value={localCashCurrency}>{hotelCur}</option>
+                                            <option value="USD">USD</option>
+                                        </Select>
+                                    </div>
+                                    {paymentAdjust.cashCurrency === 'USD' ? (
+                                        <div>
+                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-rate">Курс</label>
+                                            <Input
+                                                id="payment-adjust-rate"
+                                                type="number"
+                                                step="0.01"
+                                                inputMode="decimal"
+                                                value={paymentAdjust.cashExchangeRate}
+                                                onChange={(event) =>
+                                                    setPaymentAdjust((prev) =>
+                                                        prev ? { ...prev, cashExchangeRate: event.target.value } : prev
+                                                    )
+                                                }
+                                                placeholder={`USD → ${hotelCur}`}
+                                                className="text-white"
+                                            />
+                                        </div>
+                                    ) : null}
                                     <div>
                                         <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-card">Безнал</label>
                                         <Input

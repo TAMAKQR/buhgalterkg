@@ -157,8 +157,11 @@ model Shift {
   openedAt     DateTime    @default(now())
   closedAt     DateTime?
   openingCash  Int
+  openingCashUsd Int       @default(0) @map("opening_cash_usd")
   closingCash  Int?
+  closingCashUsd Int?      @map("closing_cash_usd")
   handoverCash Int?
+  handoverCashUsd Int?     @map("handover_cash_usd")
   openingNote  String?
   closingNote  String?
   handoverNote String?
@@ -187,6 +190,9 @@ model CashEntry {
   entryType  LedgerEntryType
   method     PaymentMethod
   amount     Int
+  originalAmount Int?      @map("original_amount")
+  originalCurrency String  @default("KGS") @map("original_currency")
+  exchangeRate Int?        @map("exchange_rate")
   note       String?
   meta       Json?
   recordedAt DateTime        @default(now())

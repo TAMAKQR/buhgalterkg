@@ -7,6 +7,7 @@ import { LedgerEntryType, PaymentMethod } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { calculateBonusFromTiers } from '@/lib/bonus';
+import { convertCashToAccounting, makeDefaultMoneyBreakdown } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,8 @@ const expenseSchema = z.object({
     categoryId: z.string().cuid().optional(),
     amount: z.number().int().positive().optional(),
     method: z.nativeEnum(PaymentMethod),
+    currency: z.enum(['KGS', 'KZT', 'USD']).optional(),
+    exchangeRate: z.number().int().positive().optional(),
     entryType: z.nativeEnum(LedgerEntryType),
     note: z.string().optional()
 });
@@ -38,6 +41,13 @@ export async function POST(request: NextRequest) {
 
         let managerId = session.id;
         let shiftId = payload.shiftId;
+        const hotel = await prisma.hotel.findUnique({
+            where: { id: payload.hotelId },
+            select: { currency: true }
+        });
+        if (!hotel) {
+            return new NextResponse('Отель не найден', { status: 404 });
+        }
         if (payload.shiftId) {
             const shift = await prisma.shift.findUnique({ where: { id: payload.shiftId } });
             if (!shift || shift.hotelId !== payload.hotelId) {
@@ -64,6 +74,14 @@ export async function POST(request: NextRequest) {
 
         let amount = payload.amount ?? 0;
         let note = payload.note;
+        let money = payload.method === PaymentMethod.CASH
+            ? convertCashToAccounting({
+                amount,
+                currency: payload.currency ?? hotel.currency,
+                exchangeRate: payload.exchangeRate,
+                accountingCurrency: hotel.currency
+            })
+            : makeDefaultMoneyBreakdown(amount, hotel.currency);
 
         if (payload.entryType === LedgerEntryType.MANAGER_PAYOUT) {
             if (!shiftId) {
@@ -112,6 +130,7 @@ export async function POST(request: NextRequest) {
 
             amount = payout.pending;
             note = payload.note?.trim() || 'Выплата по ставке';
+            money = makeDefaultMoneyBreakdown(amount, hotel.currency);
         }
 
         const entry = await prisma.cashEntry.create({
@@ -121,7 +140,10 @@ export async function POST(request: NextRequest) {
                 managerId,
                 categoryId,
                 recordedAt: new Date(),
-                amount,
+                amount: money.accountingAmount,
+                originalAmount: money.originalAmount,
+                originalCurrency: money.originalCurrency,
+                exchangeRate: money.exchangeRate,
                 method: payload.method,
                 entryType: payload.entryType,
                 note,
@@ -132,6 +154,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(entry, { status: 201 });
     } catch (error) {
         if (error instanceof z.ZodError) {
+            return new NextResponse(error.message, { status: 400 });
+        }
+        if (error instanceof Error && error.message === 'Для оплаты в долларах укажите курс') {
             return new NextResponse(error.message, { status: 400 });
         }
         return handleApiError(error, 'Failed to record expense');

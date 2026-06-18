@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 const openShiftSchema = z.object({
     hotelId: z.string().cuid(),
     openingCash: z.number().int().nonnegative(),
+    openingCashUsd: z.number().int().nonnegative().optional(),
     note: z.string().optional(),
     action: z.literal('open'),
     pinCode: z.string().regex(/^\d{6}$/).optional()
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
                     hotelId: payload.hotelId,
                     managerId,
                     openingCash: payload.openingCash,
+                    openingCashUsd: payload.openingCashUsd ?? 0,
                     openingNote: payload.note,
                     number: nextNumber
                 }

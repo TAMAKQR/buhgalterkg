@@ -22,9 +22,9 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
         const shift = await ensureShiftOwnership(params.shiftId, session, { pinCode: payload.pinCode });
 
         const ledgerGroups = await prisma.cashEntry.groupBy({
-            by: ['entryType'],
-            where: { shiftId: shift.id },
-            _sum: { amount: true }
+            by: ['entryType', 'originalCurrency'],
+            where: { shiftId: shift.id, method: 'CASH' },
+            _sum: { amount: true, originalAmount: true }
         });
 
         const ledgerTotals: Record<LedgerEntryType, number> = {
@@ -33,9 +33,19 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
             [LedgerEntryType.MANAGER_PAYOUT]: 0,
             [LedgerEntryType.ADJUSTMENT]: 0
         };
+        const usdTotals: Record<LedgerEntryType, number> = {
+            [LedgerEntryType.CASH_IN]: 0,
+            [LedgerEntryType.CASH_OUT]: 0,
+            [LedgerEntryType.MANAGER_PAYOUT]: 0,
+            [LedgerEntryType.ADJUSTMENT]: 0
+        };
 
         for (const group of ledgerGroups) {
-            ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
+            if (group.originalCurrency === 'USD') {
+                usdTotals[group.entryType] += group._sum?.originalAmount ?? 0;
+            } else {
+                ledgerTotals[group.entryType] += group._sum?.amount ?? 0;
+            }
         }
 
         const computedCash =
@@ -44,12 +54,20 @@ export async function POST(request: NextRequest, { params }: { params: { shiftId
             ledgerTotals[LedgerEntryType.CASH_OUT] -
             ledgerTotals[LedgerEntryType.MANAGER_PAYOUT] +
             ledgerTotals[LedgerEntryType.ADJUSTMENT];
+        const computedCashUsd =
+            (shift.openingCashUsd ?? 0) +
+            usdTotals[LedgerEntryType.CASH_IN] -
+            usdTotals[LedgerEntryType.CASH_OUT] -
+            usdTotals[LedgerEntryType.MANAGER_PAYOUT] +
+            usdTotals[LedgerEntryType.ADJUSTMENT];
 
         const updated = await prisma.shift.update({
             where: { id: shift.id },
             data: {
                 closingCash: computedCash,
                 handoverCash: computedCash,
+                closingCashUsd: computedCashUsd,
+                handoverCashUsd: computedCashUsd,
                 closingNote: payload.note,
                 handoverRecipientId: null,
                 status: 'CLOSED',

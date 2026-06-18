@@ -7,6 +7,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { addToCurrencyMap } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,12 +74,16 @@ export async function GET(request: NextRequest) {
         let shiftPayments: { cash: number; card: number; total: number } | null = null;
         let shiftExpenses: { total: number; cash: number; card: number } | null = null;
         let shiftBalances: { cash: number; card: number; total: number } | null = null;
+        let shiftCashByCurrency: Array<{ currency: string; amount: number }> | null = null;
         let managerPayoutTotals: Record<LedgerEntryType, number> | null = null;
         let shiftLedger: Array<{
             id: string;
             entryType: LedgerEntryType;
             method: PaymentMethod;
             amount: number;
+            originalAmount: number | null;
+            originalCurrency: string;
+            exchangeRate: number | null;
             note: string | null;
             category: {
                 id: string;
@@ -109,6 +114,9 @@ export async function GET(request: NextRequest) {
                         entryType: true,
                         method: true,
                         amount: true,
+                        originalAmount: true,
+                        originalCurrency: true,
+                        exchangeRate: true,
                         note: true,
                         expenseCategory: {
                             select: {
@@ -152,6 +160,9 @@ export async function GET(request: NextRequest) {
                 entryType: entry.entryType,
                 method: entry.method,
                 amount: entry.amount,
+                originalAmount: entry.originalAmount,
+                originalCurrency: entry.originalCurrency,
+                exchangeRate: entry.exchangeRate,
                 note: entry.note,
                 category: entry.expenseCategory
                     ? {
@@ -213,6 +224,25 @@ export async function GET(request: NextRequest) {
                 card: balances.card,
                 total: balances.cash + balances.card
             };
+            const physicalCashBalances: Record<string, number> = {
+                [hotel.currency]: shift.openingCash,
+                USD: shift.openingCashUsd ?? 0
+            };
+            for (const entry of ledgerEntries) {
+                if (entry.method !== PaymentMethod.CASH) {
+                    continue;
+                }
+                const originalAmount = entry.originalAmount ?? entry.amount;
+                const signedOriginalAmount = (
+                    entry.entryType === LedgerEntryType.CASH_IN || entry.entryType === LedgerEntryType.ADJUSTMENT
+                )
+                    ? originalAmount
+                    : -originalAmount;
+                addToCurrencyMap(physicalCashBalances, entry.originalCurrency, signedOriginalAmount);
+            }
+            shiftCashByCurrency = Object.entries(physicalCashBalances)
+                .filter(([, amount]) => amount !== 0)
+                .map(([currency, amount]) => ({ currency, amount }));
         }
 
         const serializedLedger = shiftLedger.map((entry) => ({
@@ -263,6 +293,7 @@ export async function GET(request: NextRequest) {
             shift,
             shiftCash,
             shiftBalances,
+            shiftCashByCurrency,
             shiftExpenses,
             shiftPayments,
             shiftStayRevenue,
