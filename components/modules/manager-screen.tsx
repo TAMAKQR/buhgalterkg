@@ -298,7 +298,7 @@ const formatBoardDay = (value: Date) =>
 const formatBoardWeekday = (value: Date) =>
     new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
 
-const tariffPendingBoardClass = 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900 ring-1 ring-fuchsia-200/80 dark:border-fuchsia-300/45 dark:bg-fuchsia-400/16 dark:text-fuchsia-100 dark:ring-fuchsia-300/20';
+const tariffPendingBoardClass = 'border-violet-300/70 bg-violet-500/24 text-violet-50 ring-1 ring-violet-200/25 shadow-violet-950/20';
 
 const boardStatusClass = (status: string, isOverdue = false, tariffPending = false) => {
     if (tariffPending) {
@@ -3674,7 +3674,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <p className="text-[11px] text-emerald-200/80">Учтена предоплата: {formatKgs(checkInModal.existingPaid)}. Здесь можно указать только доплату.</p>
                                             )}
                                             {checkInModal.mode === 'extend' && (
-                                                <p className="text-[11px] text-white/45">Укажите новый выезд позже текущего. Доплату можно оставить нулевой, если продление без оплаты.</p>
+                                                <p className="text-[11px] text-white/55">Если гость пошел менять деньги или оплатит позже, оставьте доплату 0. Не ставьте 1 сом как заглушку.</p>
                                             )}
                                             {showPaymentInputsInModal ? (
                                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-5 [&>*]:min-w-0">
