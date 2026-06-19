@@ -529,6 +529,8 @@ const bookingBoardStatusClass: Record<StayStatusValue, string> = {
     CANCELLED: 'border-rose-300/70 bg-rose-50 text-rose-600 dark:border-rose-300/20 dark:bg-rose-500/10 dark:text-rose-200'
 };
 
+const tariffPendingBookingBoardClass = 'border-fuchsia-300/70 bg-fuchsia-500/15 text-fuchsia-900 ring-1 ring-fuchsia-200/80 dark:border-fuchsia-300/35 dark:bg-fuchsia-400/14 dark:text-fuchsia-100 dark:ring-fuchsia-300/20';
+
 interface AdminHotelDetailProps {
     hotelId: string;
 }
@@ -1009,7 +1011,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         guestLabel,
                         detailLabel: [
                             stay.bookingNumber?.trim() ? `№ ${stay.bookingNumber.trim()}` : null,
-                            stay.totalAmount != null ? `тариф ${formatMoney(stay.totalAmount, hotelCur)}` : null,
+                            stay.tariffPending ? 'тариф уточняется' : stay.totalAmount != null ? `тариф ${formatMoney(stay.totalAmount, hotelCur)}` : null,
                             stay.bookingSource?.trim(),
                             stay.companyName?.trim(),
                             stay.guestPhone?.trim()
@@ -2234,7 +2236,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         const guestLabel = stay.guestName?.trim() || 'Гость';
                                         const bookingContext = [
                                             stay.bookingNumber?.trim() ? `бронь № ${stay.bookingNumber.trim()}` : null,
-                                            stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : null
+                                            stay.tariffPending ? 'тариф уточняется' : stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : null
                                         ].filter(Boolean).join(' · ');
 
                                         return (
@@ -2700,7 +2702,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <button
                                                                                 key={`booking-board-stay-${item.stay.id}`}
                                                                                 type="button"
-                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] ${bookingBoardStatusClass[item.stay.status]}`}
+                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
                                                                                 onClick={() => handleSelectStayForEdit(room, item.stay)}
                                                                                 title={[
@@ -2711,7 +2713,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 ].filter(Boolean).join(' · ')}
                                                                             >
                                                                                 <span className="block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className="mt-0.5 block truncate opacity-80">{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
+                                                                                <span className={`mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
                                                                             </button>
                                                                         ))}
                                                                         {!items.length ? (
@@ -2825,7 +2827,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         : undefined;
 
                                                                                     return (
-                                                                                        <div key={stayEntry.id} className="rounded-xl border border-slate-200/80 bg-white px-2.5 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                                                        <div key={stayEntry.id} className={`rounded-xl border px-2.5 py-2 ${stayEntry.tariffPending ? 'border-fuchsia-200 bg-fuchsia-50/90 dark:border-fuchsia-300/20 dark:bg-fuchsia-400/10' : 'border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.03]'}`}>
                                                                                             <div className="flex items-center justify-between gap-2">
                                                                                                 <span className="text-xs font-medium text-slate-900 dark:text-white">{guestLabel}</span>
                                                                                                 <div className="flex items-center gap-1.5">
@@ -2841,7 +2843,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             </div>
                                                                                             <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                                                                                                 {checkInLabel} — {checkOutLabel}
-                                                                                                {tariffAmount != null ? (
+                                                                                                {stayEntry.tariffPending ? (
+                                                                                                    <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-200"> · тариф уточняется</span>
+                                                                                                ) : tariffAmount != null ? (
                                                                                                     <> · тариф {formatCurrency(tariffAmount)} · оплачено {formatCurrency(displayAmount ?? 0)}{remainingAmount ? ` · остаток ${formatCurrency(remainingAmount)}` : ''}</>
                                                                                                 ) : displayAmount != null && (
                                                                                                     <> · оплачено {formatCurrency(displayAmount)}</>

@@ -298,7 +298,12 @@ const formatBoardDay = (value: Date) =>
 const formatBoardWeekday = (value: Date) =>
     new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
 
-const boardStatusClass = (status: string, isOverdue = false) => {
+const tariffPendingBoardClass = 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900 ring-1 ring-fuchsia-200/80 dark:border-fuchsia-300/45 dark:bg-fuchsia-400/16 dark:text-fuchsia-100 dark:ring-fuchsia-300/20';
+
+const boardStatusClass = (status: string, isOverdue = false, tariffPending = false) => {
+    if (tariffPending) {
+        return tariffPendingBoardClass;
+    }
     if (isOverdue) {
         return 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-300/50 dark:bg-rose-500/20 dark:text-rose-100';
     }
@@ -774,7 +779,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
                     const detailLabel = [
                         stay.bookingNumber?.trim() ? `№ ${stay.bookingNumber.trim()}` : null,
-                        stay.totalAmount != null ? `тариф ${formatKgs(stay.totalAmount)}` : null,
+                        stay.tariffPending ? 'тариф уточняется' : stay.totalAmount != null ? `тариф ${formatKgs(stay.totalAmount)}` : null,
                         ...(canUseMealPlan ? mealPlanLabels(stay.mealPlan) : []),
                         stay.bookingSource?.trim(),
                         stay.companyName?.trim(),
@@ -2447,7 +2452,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                             <button
                                                                                 key={`manager-board-stay-${item.stay.id}`}
                                                                                 type="button"
-                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue)}`}
+                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
                                                                                 title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
                                                                                  onClick={() => {
@@ -2463,7 +2468,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                  }}
                                                                             >
                                                                                 <span className="block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className="mt-0.5 block truncate opacity-80">{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
+                                                                                <span className={`mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
                                                                             </button>
                                                                         ))}
                                                                     </div>
@@ -2499,11 +2504,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const totalTariff = room.stay?.totalAmount ?? null;
                                         const paidTotal = room.stay?.amountPaid ?? 0;
                                         const remainingTotal = totalTariff != null ? Math.max(totalTariff - paidTotal, 0) : null;
+                                        const tariffPending = Boolean(room.stay?.tariffPending);
                                         const contactLabel = [room.stay?.companyName?.trim(), room.stay?.guestPhone?.trim()].filter(Boolean).join(' · ');
                                         const roomMealLabels = canUseMealPlan ? mealPlanLabels(room.stay?.mealPlan) : [];
 
                                         return (
-                                            <article key={room.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] transition hover:border-slate-300 hover:shadow-md dark:border-white/[0.055] dark:bg-white/[0.035] dark:shadow-none">
+                                            <article key={room.id} className={`min-w-0 rounded-2xl border bg-white px-3 py-3 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] transition hover:shadow-md dark:shadow-none ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15' : 'border-slate-200 hover:border-slate-300 dark:border-white/[0.055] dark:bg-white/[0.035]'}`}>
                                                 <div className="flex flex-col gap-2.5">
                                                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                                         <span className="min-w-0 break-words text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
@@ -2634,7 +2640,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </div>
                                                         ) : null}
                                                         <p className="break-words">{formatDateTime(room.stay.scheduledCheckIn, hotelTz)} - {isOverdue ? 'просрочено с ' : ''}{formatDateTime(room.stay.scheduledCheckOut, hotelTz)}</p>
-                                                        {totalTariff != null ? (
+                                                        {tariffPending ? (
+                                                            <p className="break-words rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 font-semibold text-fuchsia-800 dark:border-fuchsia-300/20 dark:bg-fuchsia-400/10 dark:text-fuchsia-100">Тариф уточняется</p>
+                                                        ) : totalTariff != null ? (
                                                             <p className="break-words">Тариф {formatKgs(totalTariff)} · оплачено {formatKgs(paidTotal)}{remainingTotal ? ` · остаток ${formatKgs(remainingTotal)}` : ''}</p>
                                                         ) : room.stay.amountPaid != null ? (
                                                             <p className="break-words">Оплачено {formatKgs(room.stay.amountPaid)}</p>
@@ -3866,7 +3874,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             <span>Заезд: <span className="text-white/75">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>
                                                             <span>Выезд: <span className="text-white/75">{formatDateTime(item.stay.scheduledCheckOut, hotelTz)}</span></span>
                                                         </div>
-                                                        {item.stay.totalAmount != null ? (
+                                                        {item.stay.tariffPending ? (
+                                                            <p className="mt-1 rounded-lg border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 py-1 text-[11px] font-semibold text-fuchsia-100">Тариф уточняется</p>
+                                                        ) : item.stay.totalAmount != null ? (
                                                             <p className="mt-1 text-[11px] text-cyan-100/80">Тариф: {formatKgs(item.stay.totalAmount)} · оплачено {formatKgs(item.stay.amountPaid ?? 0)}</p>
                                                         ) : (item.stay.amountPaid ?? 0) > 0 ? (
                                                             <p className="mt-1 text-[11px] text-emerald-200/80">Оплата: {formatKgs(item.stay.amountPaid)}</p>
@@ -3964,7 +3974,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             {bookingDetails.stay.bookingNumber ? <p>Номер брони: <span className="text-white">{bookingDetails.stay.bookingNumber}</span></p> : null}
                                         </div>
                                     )}
-                                    {bookingDetails.stay.totalAmount != null ? (
+                                    {bookingDetails.stay.tariffPending ? (
+                                        <div className="rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-2.5">
+                                            <p className="text-[11px] uppercase tracking-[0.18em] text-fuchsia-100/55">Сумма</p>
+                                            <p className="mt-1 text-sm font-semibold text-fuchsia-100">Тариф уточняется</p>
+                                        </div>
+                                    ) : bookingDetails.stay.totalAmount != null ? (
                                         <div className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2.5">
                                             <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/55">Тариф</p>
                                             <p className="mt-1 text-sm font-semibold text-cyan-100">{formatKgs(bookingDetails.stay.totalAmount)}</p>
