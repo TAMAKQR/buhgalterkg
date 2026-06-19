@@ -85,15 +85,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
     const fingerprint = getClientFingerprint(request);
-    const rateStatus = checkRateLimit(fingerprint);
-    if (!rateStatus.allowed) {
-        const retrySeconds = Math.ceil(rateStatus.retryAfter / 1000);
-        return new NextResponse("Превышено число попыток. Попробуйте позже", {
-            status: 429,
-            headers: { "Retry-After": String(retrySeconds) },
-        });
-    }
-
     try {
         if (!manualSessionAvailable()) {
             return new NextResponse("Веб-доступ отключён", { status: 503 });
@@ -104,6 +95,15 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { login, pinCode } = pinSchema.parse(body);
         const normalizedLogin = login.trim().toLowerCase();
+        const attemptKey = `${fingerprint}:${normalizedLogin}`;
+        const rateStatus = checkRateLimit(attemptKey);
+        if (!rateStatus.allowed) {
+            const retrySeconds = Math.ceil(rateStatus.retryAfter / 1000);
+            return new NextResponse("Превышено число попыток. Попробуйте позже", {
+                status: 429,
+                headers: { "Retry-After": String(retrySeconds) },
+            });
+        }
 
         const managerRecord = await prisma.user.findUnique({
             where: { loginName: normalizedLogin },
@@ -120,14 +120,14 @@ export async function POST(request: NextRequest) {
         });
 
         if (!managerRecord || managerRecord.role !== UserRole.MANAGER) {
-            registerFailure(fingerprint);
+            registerFailure(attemptKey);
             return new NextResponse("Неверный логин или PIN", { status: 401 });
         }
 
         const selectedAssignment = managerRecord.assignments.find((assignment) => verifyPin(pinCode, assignment));
 
         if (!selectedAssignment) {
-            registerFailure(fingerprint);
+            registerFailure(attemptKey);
             return new NextResponse("Неверный логин или PIN", { status: 401 });
         }
 
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
         };
 
         const { token, user } = createManualSession(sessionUser);
-        clearAttempts(fingerprint);
+        clearAttempts(attemptKey);
 
         const response = NextResponse.json({ success: true, user });
         const cookieOptions = {
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
         return response;
     } catch (error) {
         if (error instanceof z.ZodError) {
-            registerFailure(fingerprint);
+            registerFailure(`${fingerprint}:invalid`);
             return new NextResponse(error.message, { status: 400 });
         }
         console.error(error);
