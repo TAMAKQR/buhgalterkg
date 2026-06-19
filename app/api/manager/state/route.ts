@@ -284,7 +284,8 @@ export async function GET(request: NextRequest) {
                 currency: hotel.currency,
                 usesExtranets: hotel.usesExtranets,
                 extranetNames: hotel.extranetNames,
-                hasMealPlan: hotel.hasMealPlan
+                hasMealPlan: hotel.hasMealPlan,
+                allowPostpaidStays: hotel.allowPostpaidStays
             },
             expenseCategories: hotel.expenseCategories.map((category) => ({
                 id: category.id,
@@ -319,6 +320,7 @@ export async function GET(request: NextRequest) {
                     cashPaid: stay.cashPaid,
                     cardPaid: stay.cardPaid,
                     onlinePaid: stay.onlinePaid,
+                    tariffPending: stay.tariffPending,
                     groupRef: stay.groupRef,
                     bookingSource: stay.bookingSource,
                     bookingNumber: stay.bookingNumber,

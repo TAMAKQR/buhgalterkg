@@ -30,6 +30,10 @@ type PendingOnlineStayDetail = RoomStayDetail & {
     roomFloor?: string | null;
 };
 
+type PendingPostpaidStayDetail = PendingOnlineStayDetail & {
+    pendingPostpaidAmount?: number | null;
+};
+
 interface RoomStayDetail {
     id: string;
     guestName?: string | null;
@@ -46,6 +50,7 @@ interface RoomStayDetail {
     cashPaid?: number | null;
     cardPaid?: number | null;
     onlinePaid?: number | null;
+    tariffPending?: boolean | null;
     bookingSource?: string | null;
     bookingNumber?: string | null;
     shiftId?: string | null;
@@ -115,6 +120,8 @@ interface ShiftHistoryEntry {
     pendingPayout?: number | null;
     bonus?: number | null;
     pendingOnline?: number | null;
+    pendingPostpaid?: number | null;
+    tariffPendingCount?: number | null;
 }
 
 type ShiftListItem = ShiftHistoryEntry & { isCurrent: boolean };
@@ -126,6 +133,7 @@ interface HotelDetailPayload {
     usesExtranets?: boolean | null;
     extranetNames?: string[];
     hasMealPlan?: boolean | null;
+    allowPostpaidStays?: boolean | null;
     managerSharePct?: number | null;
     notes?: string | null;
     roomCount: number;
@@ -155,6 +163,7 @@ interface HotelDetailPayload {
     activeShift?: ShiftHistoryEntry | null;
     shiftHistory: ShiftHistoryEntry[];
     pendingOnlineStays?: PendingOnlineStayDetail[];
+    pendingPostpaidStays?: PendingPostpaidStayDetail[];
     transactions: LedgerEntryDetail[];
     timezone?: string | null;
     currency?: string | null;
@@ -165,6 +174,8 @@ interface HotelDetailPayload {
         payouts: number;
         adjustments: number;
         pendingOnline?: number;
+        pendingPostpaid?: number;
+        tariffPendingCount?: number;
         netCash: number;
     };
     bonusTiers?: Array<{
@@ -630,6 +641,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isCreatingBooking, setIsCreatingBooking] = useState(false);
     const [confirmingOnlineStayId, setConfirmingOnlineStayId] = useState<string | null>(null);
     const [isPendingOnlineHistoryOpen, setIsPendingOnlineHistoryOpen] = useState(false);
+    const [isPendingPostpaidHistoryOpen, setIsPendingPostpaidHistoryOpen] = useState(false);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
@@ -917,6 +929,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     }, [formatCurrency, selectedShiftCollectionOriginals, selectedShiftCollections]);
 
     const pendingOnlineHistory = useMemo(() => data?.pendingOnlineStays ?? [], [data]);
+    const pendingPostpaidHistory = useMemo(() => data?.pendingPostpaidStays ?? [], [data]);
     const prepaidBookings = useMemo(() => {
         if (!data) {
             return [];
@@ -1934,6 +1947,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const managerCount = data.managers.length;
     const activeShiftLabel = data.activeShift ? `Смена №${data.activeShift.number}` : 'Нет активной смены';
     const pendingOnlineValue = data.financials.pendingOnline ?? 0;
+    const pendingPostpaidValue = data.financials.pendingPostpaid ?? 0;
+    const tariffPendingCount = data.financials.tariffPendingCount ?? 0;
     const summaryCards = [
         {
             label: 'Загрузка',
@@ -1987,6 +2002,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 label: 'Ожидает сайт',
                 value: formatCurrency(selectedShift.pendingOnline ?? 0),
                 valueClass: 'text-amber-300'
+            },
+            {
+                label: 'Постоплата',
+                value: `${formatCurrency(selectedShift.pendingPostpaid ?? 0)}${selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}`,
+                valueClass: 'text-cyan-300'
             }
         ]
         : [];
@@ -2058,7 +2078,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     disabled={pendingOnlineValue <= 0}
                                                     aria-expanded={isPendingOnlineHistoryOpen}
                                                 >
-                                                    {formatCurrency(pendingOnlineValue)} ожидает
+                                                    {formatCurrency(pendingOnlineValue)} сайт
+                                                </button>
+                                                {' · '}
+                                                <button
+                                                    type="button"
+                                                    className={`rounded-lg px-1.5 py-0.5 font-semibold transition ${pendingPostpaidValue > 0 || tariffPendingCount > 0 ? 'text-cyan-700 hover:bg-cyan-100 hover:text-cyan-800 dark:text-cyan-200 dark:hover:bg-cyan-300/10 dark:hover:text-cyan-100' : 'cursor-default text-slate-400 dark:text-white/40'}`}
+                                                    onClick={() => (pendingPostpaidValue > 0 || tariffPendingCount > 0) && setIsPendingPostpaidHistoryOpen((current) => !current)}
+                                                    disabled={pendingPostpaidValue <= 0 && tariffPendingCount <= 0}
+                                                    aria-expanded={isPendingPostpaidHistoryOpen}
+                                                >
+                                                    {formatCurrency(pendingPostpaidValue)} постоплата{tariffPendingCount > 0 ? ` · ${tariffPendingCount} без тарифа` : ''}
                                                 </button>
                                             </>
                                         ) : null}
@@ -2127,6 +2157,60 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 ) : (
                                     <p className="mt-4 rounded-2xl border border-amber-200/80 bg-white px-3 py-3 text-sm text-amber-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-amber-50/70">
                                         Ожидающих поступлений нет.
+                                    </p>
+                                )}
+                            </div>
+                        ) : null}
+                        {isPendingPostpaidHistoryOpen ? (
+                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3.5 text-cyan-900 sm:rounded-[24px] sm:p-4 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-900/55 dark:text-cyan-100/60">Постоплата и тарифы на уточнении</p>
+                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingPostpaidValue)}</p>
+                                        {tariffPendingCount > 0 ? <p className="mt-1 text-xs text-cyan-800/70 dark:text-cyan-100/70">{tariffPendingCount} заселений без тарифа</p> : null}
+                                    </div>
+                                    <Button type="button" variant="ghost" size="sm" className="text-cyan-700 hover:bg-cyan-100 hover:text-cyan-900 dark:text-cyan-50 dark:hover:bg-cyan-300/10 dark:hover:text-white" onClick={() => setIsPendingPostpaidHistoryOpen(false)}>
+                                        Скрыть
+                                    </Button>
+                                </div>
+                                {pendingPostpaidHistory.length ? (
+                                    <div className="mt-4 max-h-[440px] space-y-2 overflow-y-auto pr-1">
+                                        {pendingPostpaidHistory.map((stay) => {
+                                            const guestLabel = stay.guestName?.trim() || 'Гость';
+                                            const detailLine = [
+                                                stay.companyName?.trim() ? `компания ${stay.companyName.trim()}` : null,
+                                                stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : 'тариф уточняется',
+                                                stay.bookingNumber?.trim() ? `бронь № ${stay.bookingNumber.trim()}` : null,
+                                                stay.shiftNumber ? `смена №${stay.shiftNumber}` : null,
+                                                stay.shiftManagerName
+                                            ].filter(Boolean).join(' · ');
+
+                                            return (
+                                                <div key={`pending-postpaid-${stay.id}`} className="rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 dark:border-cyan-200/20 dark:bg-black/15">
+                                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="rounded-lg bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800 dark:bg-white/10 dark:text-cyan-50">№ {stay.roomLabel}</span>
+                                                                <span className="text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
+                                                                <Badge label={stay.tariffPending ? 'Тариф уточняется' : 'Постоплата'} tone={stay.tariffPending ? 'warning' : 'default'} />
+                                                            </div>
+                                                            <p className="mt-2 text-xs text-cyan-700 dark:text-cyan-50/70">
+                                                                {formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn)} — {formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut)}
+                                                            </p>
+                                                            {detailLine ? <p className="mt-1 text-xs text-cyan-700/75 dark:text-cyan-50/55">{detailLine}</p> : null}
+                                                            {stay.notes?.trim() ? <p className="mt-1 text-xs text-cyan-700/75 dark:text-cyan-50/55">{stay.notes.trim()}</p> : null}
+                                                        </div>
+                                                        <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
+                                                            <span className="text-sm font-semibold text-cyan-800 dark:text-cyan-100">{stay.tariffPending ? 'Сумма неизвестна' : formatCurrency(stay.pendingPostpaidAmount ?? 0)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="mt-4 rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 text-sm text-cyan-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-cyan-50/70">
+                                        Постоплаты и тарифов на уточнении нет.
                                     </p>
                                 )}
                             </div>
@@ -2311,6 +2395,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         <span className="font-semibold">{formatCurrency(selectedShift.pendingOnline)}</span>
                                                                     </div>
                                                                     <p className="mt-1 text-[11px] text-amber-600/80 dark:text-amber-200/70">Не входит в кассу и поступления смены до фактического получения.</p>
+                                                                </div>
+                                                            )}
+                                                            {((selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0) && (
+                                                                <div className="mt-2 rounded-2xl border border-cyan-200/80 bg-cyan-50 px-3 py-2.5 text-xs text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-500/10 dark:text-cyan-200">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <span>Постоплата / тариф уточняется</span>
+                                                                        <span className="font-semibold">{formatCurrency(selectedShift.pendingPostpaid ?? 0)}</span>
+                                                                    </div>
+                                                                    {(selectedShift.tariffPendingCount ?? 0) > 0 ? (
+                                                                        <p className="mt-1 text-[11px] text-cyan-600/80 dark:text-cyan-200/70">{selectedShift.tariffPendingCount} заселений ждут уточнения тарифа.</p>
+                                                                    ) : null}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -3270,6 +3365,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         />
                                     </div>
                                 </div>
+                                {selectedStayForEditor?.tariffPending ? (
+                                    <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                        Тариф по этому проживанию ещё уточняется. Укажите общую сумму тарифа и сохраните, чтобы убрать его из списка ожидания.
+                                    </div>
+                                ) : null}
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>Планируемый заезд</label>

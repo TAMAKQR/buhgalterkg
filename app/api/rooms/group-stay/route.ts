@@ -11,7 +11,7 @@ import { normalizeMealPlan } from '@/lib/meal-plan';
 
 export const dynamic = 'force-dynamic';
 
-const groupPaymentModeSchema = z.enum(['CASH', 'CARD', 'SITE', 'PENDING_TRANSFER']);
+const groupPaymentModeSchema = z.enum(['CASH', 'CARD', 'SITE', 'PENDING_TRANSFER', 'POSTPAY', 'POSTPAY_UNKNOWN']);
 
 const isCardLikePayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
     paymentMode === 'CARD' || paymentMode === 'SITE'
@@ -19,6 +19,10 @@ const isCardLikePayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) 
 
 const groupPaymentNote = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
     paymentMode === 'SITE' ? ' · сайт' : ''
+);
+
+const isPostpaidPayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
+    paymentMode === 'POSTPAY' || paymentMode === 'POSTPAY_UNKNOWN'
 );
 
 const groupCheckInSchema = z.object({
@@ -32,8 +36,8 @@ const groupCheckInSchema = z.object({
     bookingNumber: z.string().max(80).optional().nullable(),
     scheduledCheckIn: z.string().datetime(),
     scheduledCheckOut: z.string().datetime(),
-    tariffAmount: z.number().int().positive(),
-    totalAmount: z.number().int().positive(),
+    tariffAmount: z.number().int().min(0),
+    totalAmount: z.number().int().min(0),
     paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
     notes: z.string().max(500).optional().nullable(),
@@ -50,7 +54,7 @@ const groupBookingSchema = z.object({
     bookingNumber: z.string().max(80).optional().nullable(),
     scheduledCheckIn: z.string().datetime(),
     scheduledCheckOut: z.string().datetime(),
-    tariffAmount: z.number().int().positive(),
+    tariffAmount: z.number().int().min(0),
     totalAmount: z.number().int().min(0),
     paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
@@ -76,7 +80,7 @@ const editGroupSchema = z.object({
     bookingNumber: z.string().max(80).optional().nullable(),
     scheduledCheckIn: z.string().datetime(),
     scheduledCheckOut: z.string().datetime(),
-    tariffAmount: z.number().int().positive(),
+    tariffAmount: z.number().int().min(0),
     totalAmount: z.number().int().min(0),
     paymentMode: groupPaymentModeSchema,
     mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
@@ -243,11 +247,16 @@ export async function POST(request: NextRequest) {
                     usesExtranets: true,
                     extranetNames: true,
                     hasMealPlan: true,
+                    allowPostpaidStays: true,
                 },
             });
 
             if (!hotel) {
                 return new NextResponse('Точка не найдена', { status: 404 });
+            }
+
+            if (isPostpaidPayment(payload.paymentMode) && !hotel.allowPostpaidStays) {
+                return new NextResponse('Постоплата не включена для этой точки', { status: 400 });
             }
 
             const groupStays = await prisma.roomStay.findMany({
@@ -283,7 +292,19 @@ export async function POST(request: NextRequest) {
                 return new NextResponse('Укажите номер бронирования', { status: 400 });
             }
 
-            if (payload.totalAmount > payload.tariffAmount) {
+            if (payload.paymentMode === 'POSTPAY_UNKNOWN' && (payload.totalAmount > 0 || payload.tariffAmount > 0)) {
+                return new NextResponse('Для тарифа на уточнении сумма должна быть пустой', { status: 400 });
+            }
+
+            if (payload.paymentMode === 'POSTPAY' && payload.tariffAmount <= 0) {
+                return new NextResponse('Укажите общую сумму тарифа для постоплаты', { status: 400 });
+            }
+
+            if (payload.paymentMode !== 'POSTPAY_UNKNOWN' && payload.tariffAmount <= 0) {
+                return new NextResponse('Укажите общую сумму тарифа', { status: 400 });
+            }
+
+            if (!isPostpaidPayment(payload.paymentMode) && payload.totalAmount > payload.tariffAmount) {
                 return new NextResponse('Оплата не может быть больше общей суммы тарифа', { status: 400 });
             }
 
@@ -315,11 +336,12 @@ export async function POST(request: NextRequest) {
                 const result = [];
 
                 for (const [index, stay] of groupStays.entries()) {
-                    const portion = portions[index] ?? 0;
+                    const portion = isPostpaidPayment(payload.paymentMode) ? 0 : portions[index] ?? 0;
                     const tariffPortion = tariffPortions[index] ?? 0;
                     const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
                     const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
                     const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
+                    const tariffPending = payload.paymentMode === 'POSTPAY_UNKNOWN';
 
                     await tx.cashEntry.deleteMany({
                         where: {
@@ -339,11 +361,12 @@ export async function POST(request: NextRequest) {
                             mealPlan: hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                             notes: baseNote,
                             amountPaid: portion,
-                            totalAmount: tariffPortion,
+                            totalAmount: tariffPending ? null : tariffPortion,
                             paymentMethod: detectStayPaymentMethod({ cashPaid, cardPaid, onlinePaid }),
                             cashPaid,
                             cardPaid,
                             onlinePaid,
+                            tariffPending,
                         },
                     });
 
@@ -414,11 +437,16 @@ export async function POST(request: NextRequest) {
                 usesExtranets: true,
                 extranetNames: true,
                 hasMealPlan: true,
+                allowPostpaidStays: true,
             },
         });
 
         if (!hotel) {
             return new NextResponse('Точка не найдена', { status: 404 });
+        }
+
+        if (isPostpaidPayment(payload.paymentMode) && !hotel.allowPostpaidStays) {
+            return new NextResponse('Постоплата не включена для этой точки', { status: 400 });
         }
 
         const normalizedBookingSource = normalizeBookingSource(payload.bookingSource);
@@ -435,7 +463,23 @@ export async function POST(request: NextRequest) {
             return new NextResponse('Укажите номер бронирования', { status: 400 });
         }
 
-        if (payload.totalAmount > payload.tariffAmount) {
+        if (payload.paymentMode === 'POSTPAY_UNKNOWN' && (payload.totalAmount > 0 || payload.tariffAmount > 0)) {
+            return new NextResponse('Для тарифа на уточнении сумма должна быть пустой', { status: 400 });
+        }
+
+        if (payload.paymentMode === 'POSTPAY' && payload.tariffAmount <= 0) {
+            return new NextResponse('Укажите общую сумму тарифа для постоплаты', { status: 400 });
+        }
+
+        if (payload.paymentMode !== 'POSTPAY_UNKNOWN' && payload.tariffAmount <= 0) {
+            return new NextResponse('Укажите общую сумму тарифа', { status: 400 });
+        }
+
+        if (!isGroupBooking && !isPostpaidPayment(payload.paymentMode) && payload.totalAmount <= 0) {
+            return new NextResponse('Укажите общую сумму оплаты', { status: 400 });
+        }
+
+        if (!isPostpaidPayment(payload.paymentMode) && payload.totalAmount > payload.tariffAmount) {
             return new NextResponse('Оплата не может быть больше общей суммы тарифа', { status: 400 });
         }
 
@@ -453,11 +497,12 @@ export async function POST(request: NextRequest) {
             const created = [];
 
             for (const [index, room] of rooms.entries()) {
-                const portion = portions[index] ?? 0;
+                const portion = isPostpaidPayment(payload.paymentMode) ? 0 : portions[index] ?? 0;
                 const tariffPortion = tariffPortions[index] ?? 0;
                 const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
                 const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
                 const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
+                const tariffPending = payload.paymentMode === 'POSTPAY_UNKNOWN';
 
                 const stay = await tx.roomStay.create({
                     data: {
@@ -475,11 +520,12 @@ export async function POST(request: NextRequest) {
                         mealPlan: hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: baseNote,
                         amountPaid: portion,
-                        totalAmount: tariffPortion,
+                        totalAmount: tariffPending ? null : tariffPortion,
                         paymentMethod: detectStayPaymentMethod({ cashPaid, cardPaid, onlinePaid }),
                         cashPaid,
                         cardPaid,
                         onlinePaid,
+                        tariffPending,
                     },
                 });
 

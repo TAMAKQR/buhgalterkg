@@ -35,6 +35,7 @@ model Hotel {
   usesExtranets   Boolean           @default(false) @map("uses_extranets")
   extranetNames   String[]          @default([]) @map("extranet_names")
   hasMealPlan     Boolean           @default(false) @map("has_meal_plan")
+  allowPostpaidStays Boolean        @default(false) @map("allow_postpaid_stays")
   financialCycleStartDay Int        @default(1) @map("financial_cycle_start_day")
   managerSharePct Int?              @map("manager_share_pct")
   cleaningChatId  String?           @map("cleaning_chat_id")
@@ -119,6 +120,7 @@ model RoomStay {
   cashPaid          Int            @default(0)
   cardPaid          Int            @default(0)
   onlinePaid        Int            @default(0) @map("online_paid")
+  tariffPending     Boolean        @default(false) @map("tariff_pending")
   mealPlan          String[]       @default([]) @map("meal_plan")
   groupRef          String?        @map("group_ref")
   ledgerEntries     CashEntry[]

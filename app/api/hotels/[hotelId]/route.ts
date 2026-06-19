@@ -93,6 +93,7 @@ type HotelDetailRecord = {
     usesExtranets: boolean;
     extranetNames: string[];
     hasMealPlan: boolean;
+    allowPostpaidStays: boolean;
     expenseCategories: ExpenseCategory[];
     assignments: Array<HotelAssignment & { user: User }>;
     shifts: Array<Shift & { manager: User }>;
@@ -164,6 +165,7 @@ const updateHotelSchema = z
         usesExtranets: z.boolean().optional(),
         extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
         hasMealPlan: z.boolean().optional(),
+        allowPostpaidStays: z.boolean().optional(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -184,7 +186,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
         assertAdmin(session);
         const country = getCountryFromRequest(_request);
 
-        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineStays] = await prisma.$transaction([
+        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineStays, postpaidCandidateStays] = await prisma.$transaction([
             prisma.hotel.findFirst({
                 where: { id: params.hotelId, country },
                 include: hotelDetailInclude
@@ -249,6 +251,33 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 where: {
                     hotelId: params.hotelId,
                     onlinePaid: { gt: 0 }
+                },
+                orderBy: [
+                    { scheduledCheckIn: 'desc' },
+                    { createdAt: 'desc' }
+                ],
+                include: {
+                    room: { select: { id: true, label: true, floor: true } },
+                    shift: {
+                        select: {
+                            id: true,
+                            number: true,
+                            status: true,
+                            openedAt: true,
+                            closedAt: true,
+                            manager: { select: { displayName: true } }
+                        }
+                    }
+                }
+            }),
+            prisma.roomStay.findMany({
+                where: {
+                    hotelId: params.hotelId,
+                    status: StayStatus.CHECKED_IN,
+                    OR: [
+                        { tariffPending: true },
+                        { totalAmount: { gt: 0 } }
+                    ]
                 },
                 orderBy: [
                     { scheduledCheckIn: 'desc' },
@@ -357,6 +386,28 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return calculateBonusFromTiers(revenue, bonusTiers);
         };
 
+        const pendingOnlineTotal = pendingOnlineStays.reduce((total, stay) => total + stay.onlinePaid, 0);
+        const pendingPostpaidStays = postpaidCandidateStays
+            .map((stay) => ({
+                ...stay,
+                pendingPostpaidAmount: Math.max((stay.totalAmount ?? 0) - (stay.amountPaid ?? 0), 0)
+            }))
+            .filter((stay) => stay.tariffPending || stay.pendingPostpaidAmount > 0);
+        const pendingPostpaidTotal = pendingPostpaidStays.reduce((total, stay) => total + stay.pendingPostpaidAmount, 0);
+        const tariffPendingCount = pendingPostpaidStays.filter((stay) => stay.tariffPending).length;
+        const shiftPendingPostpaid = new Map<string, number>();
+        const shiftTariffPending = new Map<string, number>();
+
+        for (const stay of pendingPostpaidStays) {
+            if (!stay.shiftId) {
+                continue;
+            }
+            shiftPendingPostpaid.set(stay.shiftId, (shiftPendingPostpaid.get(stay.shiftId) ?? 0) + stay.pendingPostpaidAmount);
+            if (stay.tariffPending) {
+                shiftTariffPending.set(stay.shiftId, (shiftTariffPending.get(stay.shiftId) ?? 0) + 1);
+            }
+        }
+
         const activeShiftRecord = hotelRecord.shifts.find((shift) => shift.status === ShiftStatus.OPEN);
         const activeShiftBonus = activeShiftRecord ? computeShiftBonus(activeShiftRecord.id) : null;
         const activeShiftPayout = activeShiftRecord ? computePayout(activeShiftRecord.id, activeShiftRecord.managerId, activeShiftBonus?.computed ?? 0) : null;
@@ -384,11 +435,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     paidPayout: payout?.paid ?? null,
                     pendingPayout: payout?.pending ?? null,
                     bonus: shiftBonus?.computed ?? null,
-                    pendingOnline: shiftPendingOnline.get(shift.id) ?? 0
+                    pendingOnline: shiftPendingOnline.get(shift.id) ?? 0,
+                    pendingPostpaid: shiftPendingPostpaid.get(shift.id) ?? 0,
+                    tariffPendingCount: shiftTariffPending.get(shift.id) ?? 0
                 };
             });
-
-        const pendingOnlineTotal = pendingOnlineStays.reduce((total, stay) => total + stay.onlinePaid, 0);
 
         const payload = {
             id: hotelRecord.id,
@@ -399,6 +450,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             usesExtranets: hotelRecord.usesExtranets,
             extranetNames: hotelRecord.extranetNames,
             hasMealPlan: hotelRecord.hasMealPlan,
+            allowPostpaidStays: hotelRecord.allowPostpaidStays,
             financialCycleStartDay: hotelRecord.financialCycleStartDay,
             managerSharePct: hotelRecord.managerSharePct,
             cleaningChatId: hotelRecord.cleaningChatId,
@@ -424,6 +476,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                         cashPaid: stay.cashPaid,
                         cardPaid: stay.cardPaid,
                         onlinePaid: stayRecord.onlinePaid,
+                        tariffPending: stayRecord.tariffPending,
                         bookingSource: stayRecord.bookingSource,
                         bookingNumber: stayRecord.bookingNumber,
                         mealPlan: stayRecord.mealPlan,
@@ -504,7 +557,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     paidPayout: activeShiftPayout?.paid ?? null,
                     pendingPayout: activeShiftPayout?.pending ?? null,
                     bonus: activeShiftBonus?.computed ?? null,
-                    pendingOnline: shiftPendingOnline.get(activeShiftRecord.id) ?? 0
+                    pendingOnline: shiftPendingOnline.get(activeShiftRecord.id) ?? 0,
+                    pendingPostpaid: shiftPendingPostpaid.get(activeShiftRecord.id) ?? 0,
+                    tariffPendingCount: shiftTariffPending.get(activeShiftRecord.id) ?? 0
                 }
                 : null,
             shiftHistory,
@@ -527,6 +582,39 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 cashPaid: stay.cashPaid,
                 cardPaid: stay.cardPaid,
                 onlinePaid: stay.onlinePaid,
+                tariffPending: stay.tariffPending,
+                bookingSource: stay.bookingSource,
+                bookingNumber: stay.bookingNumber,
+                mealPlan: stay.mealPlan,
+                shiftId: stay.shift?.id ?? null,
+                shiftNumber: stay.shift?.number ?? null,
+                shiftStatus: stay.shift?.status ?? null,
+                shiftOpenedAt: stay.shift?.openedAt ?? null,
+                shiftClosedAt: stay.shift?.closedAt ?? null,
+                shiftManagerName: stay.shift?.manager.displayName ?? null,
+                notes: stay.notes
+            })),
+            pendingPostpaidStays: pendingPostpaidStays.map((stay) => ({
+                id: stay.id,
+                roomId: stay.roomId,
+                roomLabel: stay.room.label,
+                roomFloor: stay.room.floor,
+                guestName: stay.guestName,
+                guestPhone: stay.guestPhone,
+                companyName: stay.companyName,
+                status: stay.status,
+                scheduledCheckIn: stay.scheduledCheckIn,
+                scheduledCheckOut: stay.scheduledCheckOut,
+                actualCheckIn: stay.actualCheckIn,
+                actualCheckOut: stay.actualCheckOut,
+                amountPaid: stay.amountPaid,
+                totalAmount: stay.totalAmount,
+                pendingPostpaidAmount: stay.pendingPostpaidAmount,
+                paymentMethod: stay.paymentMethod,
+                cashPaid: stay.cashPaid,
+                cardPaid: stay.cardPaid,
+                onlinePaid: stay.onlinePaid,
+                tariffPending: stay.tariffPending,
                 bookingSource: stay.bookingSource,
                 bookingNumber: stay.bookingNumber,
                 mealPlan: stay.mealPlan,
@@ -575,6 +663,8 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 payouts: ledgerTotals[LedgerEntryType.MANAGER_PAYOUT],
                 adjustments: ledgerTotals[LedgerEntryType.ADJUSTMENT],
                 pendingOnline: pendingOnlineTotal,
+                pendingPostpaid: pendingPostpaidTotal,
+                tariffPendingCount,
                 netCash:
                     ledgerTotals[LedgerEntryType.CASH_IN] -
                     ledgerTotals[LedgerEntryType.CASH_OUT] -

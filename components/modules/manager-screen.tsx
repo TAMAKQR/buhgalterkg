@@ -41,6 +41,7 @@ type ManagerRoomStay = {
     cashPaid?: number | null;
     cardPaid?: number | null;
     onlinePaid?: number | null;
+    tariffPending?: boolean | null;
     groupRef?: string | null;
     bookingSource?: string | null;
     bookingNumber?: string | null;
@@ -58,6 +59,7 @@ interface ManagerStateResponse {
         usesExtranets?: boolean;
         extranetNames?: string[];
         hasMealPlan?: boolean;
+        allowPostpaidStays?: boolean;
     };
     shift?: {
         id: string;
@@ -217,7 +219,7 @@ interface GroupCheckInState {
     checkOut: string;
     tariffAmount: string;
     totalAmount: string;
-    paymentMode: 'CARD' | 'CASH' | 'SITE' | 'PENDING_TRANSFER';
+    paymentMode: 'CARD' | 'CASH' | 'SITE' | 'PENDING_TRANSFER' | 'POSTPAY' | 'POSTPAY_UNKNOWN';
     mealPlan: string[];
     notes: string;
     roomIds: string[];
@@ -355,6 +357,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const hotelTz = data?.hotel?.timezone;
     const hotelCur = data?.hotel?.currency ?? 'KGS';
     const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
+    const canUsePostpaidStays = Boolean(data?.hotel?.allowPostpaidStays);
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatCurrencyAmount = useCallback((amount?: number | null, currency?: string | null) => (
         formatMoney(typeof amount === 'number' ? amount : 0, currency || hotelCur)
@@ -926,10 +929,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return Number.isFinite(total) && total > 0 ? Math.round(total * 100) : 0;
     }, [groupCheckIn?.totalAmount]);
 
-    const groupPerRoomMinor = selectedGroupRooms.length ? Math.floor(groupTotalMinor / selectedGroupRooms.length) : 0;
+    const isGroupPostpaidMode = Boolean(groupCheckIn && (groupCheckIn.paymentMode === 'POSTPAY' || groupCheckIn.paymentMode === 'POSTPAY_UNKNOWN'));
+    const isGroupTariffPendingMode = groupCheckIn?.paymentMode === 'POSTPAY_UNKNOWN';
+    const groupTariffMinor = useMemo(() => {
+        const total = Number(groupCheckIn?.tariffAmount || 0);
+        return Number.isFinite(total) && total > 0 ? Math.round(total * 100) : 0;
+    }, [groupCheckIn?.tariffAmount]);
+    const groupDisplayTotalMinor = isGroupPostpaidMode ? groupTariffMinor : groupTotalMinor;
+    const groupPerRoomMinor = selectedGroupRooms.length ? Math.floor(groupDisplayTotalMinor / selectedGroupRooms.length) : 0;
     const showGroupExtranetFields = Boolean(groupCheckIn && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
     const showGroupBookingNumberField = Boolean(showGroupExtranetFields && groupCheckIn?.bookingSource.trim());
-    const showGroupTariffField = Boolean(groupCheckIn && groupCheckIn.mode !== 'checkin');
+    const showGroupTariffField = Boolean(groupCheckIn && (groupCheckIn.mode !== 'checkin' || groupCheckIn.paymentMode === 'POSTPAY'));
+    const showGroupPaymentAmountField = Boolean(groupCheckIn && groupCheckIn.paymentMode !== 'POSTPAY_UNKNOWN' && groupCheckIn.paymentMode !== 'POSTPAY');
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
     const availableCount = useMemo(() => sortedRooms.filter((r) => r.status === 'AVAILABLE').length, [sortedRooms]);
@@ -1257,12 +1268,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const scheduledCheckIn = parseInputValue(groupCheckIn.checkIn, hotelTz);
         const scheduledCheckOut = parseInputValue(groupCheckIn.checkOut, hotelTz);
         const totalValue = Number(groupCheckIn.totalAmount || 0);
+        const isPostpaidMode = groupCheckIn.paymentMode === 'POSTPAY' || groupCheckIn.paymentMode === 'POSTPAY_UNKNOWN';
+        const isTariffPendingMode = groupCheckIn.paymentMode === 'POSTPAY_UNKNOWN';
         const guestCount = groupCheckIn.guestCount ? Number(groupCheckIn.guestCount) : undefined;
         const hasBookingSource = Boolean(data.hotel.usesExtranets && groupCheckIn.bookingSource.trim());
         const bookingNumber = hasBookingSource ? groupCheckIn.bookingNumber.trim() : '';
-        const tariffValue = groupCheckIn.mode === 'checkin'
+        const tariffValue = isTariffPendingMode
+            ? 0
+            : groupCheckIn.mode === 'checkin' && !isPostpaidMode
             ? totalValue
             : Number(groupCheckIn.tariffAmount || 0);
+        const paymentValue = isPostpaidMode ? 0 : totalValue;
 
         if (!groupCheckIn.roomIds.length) {
             setGroupCheckInError('Выберите номера для группы');
@@ -1276,15 +1292,19 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             setGroupCheckInError('Укажите номер бронирования');
             return;
         }
-        if (!Number.isFinite(totalValue) || totalValue < 0 || (groupCheckIn.mode === 'checkin' && totalValue <= 0)) {
+        if (isPostpaidMode && !canUsePostpaidStays) {
+            setGroupCheckInError('Постоплата не включена для этой точки');
+            return;
+        }
+        if (!isPostpaidMode && (!Number.isFinite(totalValue) || totalValue < 0 || (groupCheckIn.mode === 'checkin' && totalValue <= 0))) {
             setGroupCheckInError(groupCheckIn.mode === 'booking' ? 'Проверьте сумму предоплаты' : 'Укажите общую сумму оплаты');
             return;
         }
-        if (!Number.isFinite(tariffValue) || tariffValue <= 0) {
-            setGroupCheckInError(groupCheckIn.mode === 'checkin' ? 'Укажите общую сумму оплаты' : 'Укажите общую сумму тарифа');
+        if (!isTariffPendingMode && (!Number.isFinite(tariffValue) || tariffValue <= 0)) {
+            setGroupCheckInError(groupCheckIn.mode === 'checkin' && !isPostpaidMode ? 'Укажите общую сумму оплаты' : 'Укажите общую сумму тарифа');
             return;
         }
-        if (totalValue > tariffValue) {
+        if (!isPostpaidMode && totalValue > tariffValue) {
             setGroupCheckInError(groupCheckIn.mode === 'booking' ? 'Предоплата не может быть больше тарифа' : 'Оплата не может быть больше тарифа');
             return;
         }
@@ -1309,7 +1329,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     scheduledCheckIn: scheduledCheckIn.toISOString(),
                     scheduledCheckOut: scheduledCheckOut.toISOString(),
                     tariffAmount: toMinor(tariffValue),
-                    totalAmount: toMinor(totalValue),
+                    totalAmount: toMinor(paymentValue),
                     paymentMode: groupCheckIn.paymentMode,
                     mealPlan: canUseMealPlan ? groupCheckIn.mealPlan : [],
                     notes: groupCheckIn.notes.trim() || undefined,
@@ -1557,6 +1577,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const totalCash = groupRooms.reduce((sum, item) => sum + (item.stay.cashPaid ?? 0), 0);
         const totalCard = groupRooms.reduce((sum, item) => sum + (item.stay.cardPaid ?? 0), 0);
         const totalOnline = groupRooms.reduce((sum, item) => sum + (item.stay.onlinePaid ?? 0), 0);
+        const hasTariffPending = groupRooms.some((item) => item.stay.tariffPending);
         const first = groupRooms[0].stay;
         const cleanedNotes = first.notes?.replace(/\s*·?\s*Группа\s+[a-f0-9-]+/i, '').trim() ?? '';
 
@@ -1571,7 +1592,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             checkOut: formatDateInputValue(new Date(first.scheduledCheckOut)),
             tariffAmount: String(totalTariff / 100 || ''),
             totalAmount: String(totalPaid / 100 || ''),
-            paymentMode: totalOnline > 0 ? 'PENDING_TRANSFER' : totalCash > 0 && totalCard <= 0 ? 'CASH' : 'CARD',
+            paymentMode: canUsePostpaidStays && hasTariffPending
+                ? 'POSTPAY_UNKNOWN'
+                : canUsePostpaidStays && totalPaid <= 0 && totalTariff > 0
+                    ? 'POSTPAY'
+                    : totalOnline > 0 ? 'PENDING_TRANSFER' : totalCash > 0 && totalCard <= 0 ? 'CASH' : 'CARD',
             mealPlan: first.mealPlan ?? [],
             notes: cleanedNotes,
             roomIds: groupRooms.map((item) => item.room.id),
@@ -3130,7 +3155,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <button
                                             type="button"
                                             className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium transition ${groupCheckIn.mode === 'booking' ? 'bg-white text-slate-950 shadow-sm' : 'text-white/65 hover:bg-white/[0.06] hover:text-white'}`}
-                                            onClick={() => setGroupCheckIn((prev) => prev ? { ...prev, mode: 'booking' } : prev)}
+                                            onClick={() => setGroupCheckIn((prev) => prev ? {
+                                                ...prev,
+                                                mode: 'booking',
+                                                paymentMode: prev.paymentMode === 'POSTPAY' || prev.paymentMode === 'POSTPAY_UNKNOWN' ? 'CASH' : prev.paymentMode
+                                            } : prev)}
                                         >
                                             <CalendarPlus className="h-4 w-4" aria-hidden="true" />
                                             Бронь
@@ -3218,7 +3247,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
 
-                                    <div className={`grid grid-cols-1 gap-2 [&>*]:min-w-0 ${showGroupTariffField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                                    <div className={`grid grid-cols-1 gap-2 [&>*]:min-w-0 ${showGroupTariffField && showGroupPaymentAmountField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                                         {showGroupTariffField ? (
                                             <div>
                                                 <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-tariff">Общая сумма тарифа</label>
@@ -3235,20 +3264,22 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 />
                                             </div>
                                         ) : null}
-                                        <div>
-                                            <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-total">{groupCheckIn.mode === 'checkin' ? 'Сумма проживания' : 'Общая предоплата'}</label>
-                                            <Input
-                                                id="group-total"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={groupCheckIn.totalAmount}
-                                                onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, totalAmount: event.target.value } : prev)}
-                                                placeholder="120000"
-                                                className="text-white"
-                                            />
-                                        </div>
+                                        {showGroupPaymentAmountField ? (
+                                            <div>
+                                                <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-total">{groupCheckIn.mode === 'checkin' ? 'Полученная сумма' : 'Общая предоплата'}</label>
+                                                <Input
+                                                    id="group-total"
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    inputMode="decimal"
+                                                    value={groupCheckIn.totalAmount}
+                                                    onChange={(event) => setGroupCheckIn((prev) => prev ? { ...prev, totalAmount: event.target.value } : prev)}
+                                                    placeholder="120000"
+                                                    className="text-white"
+                                                />
+                                            </div>
+                                        ) : null}
                                         <div>
                                              <label className="mb-1 block text-[11px] text-white/40" htmlFor="group-payment-mode">{groupCheckIn.mode === 'checkin' ? 'Оплата' : 'Способ предоплаты'}</label>
                                             <Select
@@ -3261,6 +3292,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <option value="CARD">Картой / терминал</option>
                                                 <option value="SITE">Оплачено на сайте</option>
                                                 <option value="PENDING_TRANSFER">Банковский перевод</option>
+                                                {canUsePostpaidStays && groupCheckIn.mode === 'checkin' ? (
+                                                    <>
+                                                        <option value="POSTPAY">Оплата после проживания</option>
+                                                        <option value="POSTPAY_UNKNOWN">Тариф уточняется</option>
+                                                    </>
+                                                ) : null}
                                             </Select>
                                         </div>
                                     </div>
@@ -3268,7 +3305,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <div>
                                         <div className="mb-2 flex items-center justify-between gap-3">
                                             <label className="text-[11px] text-white/40">Номера</label>
-                                            <span className="text-[11px] text-white/35">{selectedGroupRooms.length} выбрано · {groupPerRoomMinor ? `${formatKgs(groupPerRoomMinor)} / номер` : groupCheckIn.mode === 'booking' ? 'без предоплаты' : 'сумма не указана'}</span>
+                                            <span className="text-[11px] text-white/35">{selectedGroupRooms.length} выбрано · {isGroupTariffPendingMode ? 'тариф уточняется' : groupPerRoomMinor ? `${formatKgs(groupPerRoomMinor)} / номер` : groupCheckIn.mode === 'booking' ? 'без предоплаты' : 'сумма не указана'}</span>
                                         </div>
                                         <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-1 xs:grid-cols-2 sm:grid-cols-4 [&>*]:min-w-0">
                                             {groupSelectableRooms.map((room) => {
@@ -3341,6 +3378,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     {groupCheckIn.paymentMode === 'PENDING_TRANSFER' && groupCheckIn.mode === 'checkin' ? (
                                         <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
                                             Сумма будет распределена по выбранным номерам как ожидаемая оплата. Когда деньги поступят, внесите оплату в карточке нужного номера.
+                                        </p>
+                                    ) : null}
+
+                                    {groupCheckIn.paymentMode === 'POSTPAY' && groupCheckIn.mode === 'checkin' ? (
+                                        <p className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100">
+                                            Гости будут заселены без прихода в кассу. Укажите тариф, а оплату внесите позже, когда компания или гость оплатит.
+                                        </p>
+                                    ) : null}
+
+                                    {groupCheckIn.paymentMode === 'POSTPAY_UNKNOWN' && groupCheckIn.mode === 'checkin' ? (
+                                        <p className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/10 px-3 py-2 text-xs text-fuchsia-100">
+                                            Гости будут заселены без суммы и без кассы. В админке это появится как «тариф уточняется».
                                         </p>
                                     ) : null}
 

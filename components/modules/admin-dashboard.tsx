@@ -58,6 +58,7 @@ type AdminHotelSummary = {
     usesExtranets?: boolean | null;
     extranetNames?: string[];
     hasMealPlan?: boolean | null;
+    allowPostpaidStays?: boolean | null;
     financialCycleStartDay?: number | null;
     managerSharePct?: number | null;
     notes?: string | null;
@@ -181,6 +182,7 @@ interface CreateHotelPayload {
     usesExtranets?: boolean;
     extranetNames?: string[];
     hasMealPlan?: boolean;
+    allowPostpaidStays?: boolean;
     financialCycleStartDay?: number;
     monthlyPayrollCost?: number;
     monthlyRentCost?: number;
@@ -199,6 +201,7 @@ type HotelFormState = {
     usesExtranets: boolean;
     extranetNames: string;
     hasMealPlan: boolean;
+    allowPostpaidStays: boolean;
     financialCycleStartDay: string;
     monthlyPayrollCost: string;
     monthlyRentCost: string;
@@ -231,6 +234,7 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     usesExtranets: false,
     extranetNames: "",
     hasMealPlan: false,
+    allowPostpaidStays: false,
     financialCycleStartDay: "1",
     monthlyPayrollCost: "0",
     monthlyRentCost: "0",
@@ -1215,6 +1219,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 usesExtranets: Boolean(target.usesExtranets),
                 extranetNames: (target.extranetNames ?? []).join('\n'),
                 hasMealPlan: Boolean(target.hasMealPlan),
+                allowPostpaidStays: Boolean(target.allowPostpaidStays),
                 financialCycleStartDay: String(target.financialCycleStartDay ?? 1),
                 monthlyPayrollCost: fromMinorUnits(target.monthlyPayrollCost),
                 monthlyRentCost: fromMinorUnits(target.monthlyRentCost),
@@ -1254,6 +1259,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             payload.usesExtranets = formData.get('usesExtranets') === 'on';
             payload.extranetNames = parseExtranetNamesText(formData.get('extranetNames') as string | null);
             payload.hasMealPlan = formData.get('hasMealPlan') === 'on';
+            payload.allowPostpaidStays = formData.get('allowPostpaidStays') === 'on';
             payload.financialCycleStartDay = toCycleDay(formData.get("financialCycleStartDay") as string | null) ?? 1;
             payload.monthlyPayrollCost = toMinorUnits(formData.get("monthlyPayrollCost") as string | null);
             payload.monthlyRentCost = toMinorUnits(formData.get("monthlyRentCost") as string | null);
@@ -1326,6 +1332,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     usesExtranets: editForm.usesExtranets,
                     extranetNames: parseExtranetNamesText(editForm.extranetNames),
                     hasMealPlan: editForm.hasMealPlan,
+                    allowPostpaidStays: editForm.allowPostpaidStays,
                     financialCycleStartDay: toCycleDay(editForm.financialCycleStartDay) ?? 1,
                     monthlyPayrollCost: toMinorUnits(editForm.monthlyPayrollCost) ?? 0,
                     monthlyRentCost: toMinorUnits(editForm.monthlyRentCost) ?? 0,
@@ -1977,6 +1984,15 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input type="checkbox" name="allowPostpaidStays" className="accent-emerald-500" />
+                                            Разрешить постоплату и уточнение тарифа
+                                        </label>
+                                        <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+                                            Для групп, где компания платит после проживания или тариф подтверждает админ.
+                                        </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
                                             <input type="checkbox" name="usesExtranets" className="accent-emerald-500" />
                                             Использовать экстранеты для этой точки
                                         </label>
@@ -2113,6 +2129,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     />
                                                     Показывать питание в заселениях
                                                 </label>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                                    <input
+                                                        type="checkbox"
+                                                        name="allowPostpaidStays"
+                                                        checked={editForm.allowPostpaidStays}
+                                                        onChange={handleEditFieldChange}
+                                                        disabled={!selectedHotelId || isUpdatingHotel}
+                                                        className="accent-emerald-500"
+                                                    />
+                                                    Разрешить постоплату и уточнение тарифа
+                                                </label>
+                                                <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+                                                    Менеджер сможет заселять группу без прихода в кассу, если оплата будет позже.
+                                                </p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">

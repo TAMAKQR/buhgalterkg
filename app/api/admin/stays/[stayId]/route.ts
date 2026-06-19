@@ -26,6 +26,7 @@ const updateStaySchema = z
         bookingSource: z.string().max(80).optional().nullable(),
         bookingNumber: z.string().max(80).optional().nullable(),
         totalAmount: z.number().int().positive().optional(),
+        tariffPending: z.boolean().optional(),
         amountPaid: z.number().int().min(0).optional(),
         cashPaid: z.number().int().min(0).optional(),
         cardPaid: z.number().int().min(0).optional(),
@@ -191,6 +192,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
 
         if (payload.totalAmount !== undefined) {
             updateData.totalAmount = payload.totalAmount;
+            updateData.tariffPending = false;
+        }
+
+        if (payload.tariffPending !== undefined) {
+            updateData.tariffPending = payload.tariffPending;
         }
 
         if (payload.mealPlan !== undefined) {
