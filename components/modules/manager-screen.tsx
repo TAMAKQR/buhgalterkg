@@ -1009,11 +1009,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const blocks = floorOrder.map((floorName) => {
             const lines = sectionMap.get(floorName) ?? [];
             if (!lines.length) return null;
-            return [floorName, ...lines].join('\n');
+            const sectionTitle = `*=== ${floorName.toLocaleUpperCase('ru-RU')} ===*`;
+            return [sectionTitle, ...lines].join('\n');
         }).filter(Boolean) as string[];
+        const roomSections = blocks.join('\n\n');
 
         return [
-            ...blocks,
+            roomSections,
             '',
             `На начало смены: ${formatKgs(data.shift?.openingCash ?? 0)}`,
             `Поступления за смену: ${formatKgs(shiftRevenueTotal)}`,
