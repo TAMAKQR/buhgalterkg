@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
 
         assertHotelAccess(session, hotelId);
 
+        const activeBookingCutoff = new Date();
+
         const hotel = await prisma.hotel.findUnique({
             where: { id: hotelId },
             include: {
@@ -36,7 +38,15 @@ export async function GET(request: NextRequest) {
                 rooms: {
                     include: {
                         stays: {
-                            where: { status: { in: ['SCHEDULED', 'CHECKED_IN'] } },
+                            where: {
+                                OR: [
+                                    { status: StayStatus.CHECKED_IN },
+                                    {
+                                        status: StayStatus.SCHEDULED,
+                                        scheduledCheckOut: { gte: activeBookingCutoff }
+                                    }
+                                ]
+                            },
                             orderBy: { scheduledCheckIn: 'asc' },
                             take: 40
                         }
