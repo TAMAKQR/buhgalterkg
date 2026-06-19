@@ -467,8 +467,8 @@ function BusinessTargetCard({
                         </div>
                         <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/[0.08]">
                             <div
-                                className={`h-full rounded-full ${target.onTrack ? "bg-emerald-500" : "bg-amber-500"}`}
-                                style={{ width: `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` }}
+                                className="h-full rounded-full bg-emerald-500 shadow-[0_0_14px_rgba(16,185,129,0.45)]"
+                                style={{ width: target.coveredPct > 0 ? `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` : "0%" }}
                             />
                         </div>
                         {target.elapsedDays != null && target.totalDays != null && target.remainingDays != null ? (
