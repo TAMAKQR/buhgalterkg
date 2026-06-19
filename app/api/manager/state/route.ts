@@ -6,15 +6,10 @@ import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } f
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
-import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
 import { addToCurrencyMap } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
-
-const isStayIncomeNote = (note: string | null) => {
-    const normalized = note?.trim().toLocaleLowerCase('ru-RU') ?? '';
-    return normalized.startsWith('заселение') || normalized.startsWith('продление');
-};
 
 export async function GET(request: NextRequest) {
     try {

@@ -8,6 +8,15 @@ type LedgerCollectionCandidate = {
 
 const normalizeLedgerText = (value?: string | null) => value?.trim().toLocaleLowerCase('ru-RU') ?? '';
 
+const stayIncomePrefixes = [
+    'заселение',
+    'продление',
+    'групповой заезд',
+    'предоплата группы',
+    'предоплата бронь',
+    'пред оплата бронь',
+];
+
 const isCollectionText = (value?: string | null) => {
     const normalized = normalizeLedgerText(value);
     return (
@@ -27,3 +36,8 @@ export const isCollectionLedgerEntry = (entry: LedgerCollectionCandidate) =>
         isCollectionText(entry.expenseCategory?.name) ||
         isCollectionText(entry.note)
     );
+
+export const isStayIncomeNote = (note?: string | null) => {
+    const normalized = normalizeLedgerText(note);
+    return stayIncomePrefixes.some((prefix) => normalized.startsWith(prefix));
+};

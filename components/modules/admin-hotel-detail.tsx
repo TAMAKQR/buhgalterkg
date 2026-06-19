@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useApi } from '@/hooks/useApi';
 import { formatDateTime, formatMoney } from '@/lib/timezone';
-import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -877,8 +877,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             if (entry.entryType !== 'CASH_IN') {
                 continue;
             }
-            const note = entry.note?.toLowerCase() ?? '';
-            const target = note.startsWith('заселение') || note.startsWith('продление') ? stays : cashbox;
+            const target = isStayIncomeNote(entry.note) ? stays : cashbox;
             if (entry.method === 'CARD') {
                 target.card += entry.amount;
             } else {
