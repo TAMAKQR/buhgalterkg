@@ -273,7 +273,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             prisma.roomStay.findMany({
                 where: {
                     hotelId: params.hotelId,
-                    status: StayStatus.CHECKED_IN,
+                    status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] },
                     OR: [
                         { tariffPending: true },
                         { totalAmount: { gt: 0 } }

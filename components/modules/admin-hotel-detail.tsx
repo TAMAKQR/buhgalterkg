@@ -2178,6 +2178,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <div className="mt-4 max-h-[440px] space-y-2 overflow-y-auto pr-1">
                                         {pendingPostpaidHistory.map((stay) => {
                                             const guestLabel = stay.guestName?.trim() || 'Гость';
+                                            const roomForEdit = data.rooms.find((room) => room.id === stay.roomId);
                                             const detailLine = [
                                                 stay.companyName?.trim() ? `компания ${stay.companyName.trim()}` : null,
                                                 stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : 'тариф уточняется',
@@ -2194,6 +2195,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 <span className="rounded-lg bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800 dark:bg-white/10 dark:text-cyan-50">№ {stay.roomLabel}</span>
                                                                 <span className="text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
                                                                 <Badge label={stay.tariffPending ? 'Тариф уточняется' : 'Постоплата'} tone={stay.tariffPending ? 'warning' : 'default'} />
+                                                                {stay.status === 'CHECKED_OUT' ? <Badge label="Выселен" tone="danger" /> : null}
                                                             </div>
                                                             <p className="mt-2 text-xs text-cyan-700 dark:text-cyan-50/70">
                                                                 {formatStayDate(stay.actualCheckIn ?? stay.scheduledCheckIn)} — {formatStayDate(stay.actualCheckOut ?? stay.scheduledCheckOut)}
@@ -2203,6 +2205,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                                                             <span className="text-sm font-semibold text-cyan-800 dark:text-cyan-100">{stay.tariffPending ? 'Сумма неизвестна' : formatCurrency(stay.pendingPostpaidAmount ?? 0)}</span>
+                                                            {roomForEdit ? (
+                                                                <Button type="button" size="sm" variant="secondary" onClick={() => handleSelectStayForEdit(roomForEdit, stay)}>
+                                                                    Открыть
+                                                                </Button>
+                                                            ) : null}
                                                         </div>
                                                     </div>
                                                 </div>
