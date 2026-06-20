@@ -826,11 +826,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             });
         }
 
-        return Array.from(sections.values()).sort((first, second) => {
-            if (first.key === '__without_floor') return 1;
-            if (second.key === '__without_floor') return -1;
-            return first.label.localeCompare(second.label, 'ru', { numeric: true, sensitivity: 'base' });
-        });
+        return Array.from(sections.values());
     }, [roomBoardRows]);
 
     const boardGridTemplate = `82px repeat(${managerBoardDayCount}, minmax(118px, 1fr))`;
