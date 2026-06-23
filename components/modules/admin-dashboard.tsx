@@ -91,6 +91,10 @@ type ManagersByHotelRankingGroup = {
     managers: ManagerRankingItem[];
 };
 
+type RankingDetailSelection =
+    | { kind: "hotel"; item: HotelRankingItem }
+    | { kind: "manager"; item: ManagerRankingItem; hotelName?: string };
+
 type AdminHotelSummary = {
     id: string;
     name: string;
@@ -774,13 +778,14 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
     );
 }
 
-function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, className }: {
+function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, className, onSelect }: {
     title: string;
     subtitle: string;
     kind: "hotels" | "managers";
     items: Array<HotelRankingItem | ManagerRankingItem>;
     defaultCurrency?: string;
     className?: string;
+    onSelect?: (item: HotelRankingItem | ManagerRankingItem) => void;
 }) {
     return (
         <Card className={`p-4 ${className ?? ""}`}>
@@ -819,7 +824,12 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                         : `${(item as HotelRankingItem).rooms} номеров · ${(item as HotelRankingItem).roomNights} номеро-дней`;
 
                     return (
-                        <div key={item.id} className="border-b border-slate-200/70 px-3 py-3 last:border-b-0 dark:border-white/[0.05]">
+                        <button
+                            key={item.id}
+                            type="button"
+                            className="block w-full border-b border-slate-200/70 px-3 py-3 text-left transition hover:bg-slate-50 last:border-b-0 dark:border-white/[0.05] dark:hover:bg-white/[0.035]"
+                            onClick={() => onSelect?.(item)}
+                        >
                             <div className="grid gap-3 lg:grid-cols-[2.2rem_minmax(170px,1fr)_4.5rem_7rem_7rem_7rem] lg:items-center">
                                 <span className="hidden text-sm font-semibold text-slate-500 dark:text-white/45 lg:block">{index + 1}</span>
                                 <div className="min-w-0">
@@ -865,7 +875,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                 <span>{activityMetric}</span>
                                 <span>средний чек {formatCurrency(item.averageStayRevenue, currency ?? undefined)} · расходы {formatCurrency(item.expenses, currency ?? undefined)}</span>
                             </div>
-                        </div>
+                        </button>
                     );
                 }) : (
                     <p className="px-3 py-4 text-sm text-slate-500 dark:text-white/40">
@@ -878,10 +888,11 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
     );
 }
 
-function ManagersByHotelRankingCard({ groups, defaultCurrency, className }: {
+function ManagersByHotelRankingCard({ groups, defaultCurrency, className, onSelectManager }: {
     groups: ManagersByHotelRankingGroup[];
     defaultCurrency?: string;
     className?: string;
+    onSelectManager?: (manager: ManagerRankingItem, hotelName: string) => void;
 }) {
     return (
         <Card className={`p-4 ${className ?? ""}`}>
@@ -910,7 +921,12 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className }: {
                                         : "bg-white text-slate-600 dark:bg-white/[0.06] dark:text-white/55";
 
                                 return (
-                                    <div key={`${group.hotelId}-${manager.id}`} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white px-2.5 py-2 dark:bg-white/[0.04]">
+                                    <button
+                                        key={`${group.hotelId}-${manager.id}`}
+                                        type="button"
+                                        className="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white px-2.5 py-2 text-left transition hover:bg-slate-100 dark:bg-white/[0.04] dark:hover:bg-white/[0.075]"
+                                        onClick={() => onSelectManager?.(manager, group.hotelName)}
+                                    >
                                         <span className="text-xs font-semibold text-slate-400 dark:text-white/35">{index + 1}</span>
                                         <div className="min-w-0">
                                             <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
@@ -919,7 +935,7 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className }: {
                                             </p>
                                         </div>
                                         <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${scoreTone}`}>{manager.score}</span>
-                                    </div>
+                                    </button>
                                 );
                             })}
                         </div>
@@ -931,6 +947,64 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className }: {
                 )}
             </div>
         </Card>
+    );
+}
+
+function RankingDetailModal({ selection, currency, onClose }: {
+    selection: RankingDetailSelection;
+    currency?: string;
+    onClose: () => void;
+}) {
+    const item = selection.item;
+    const isHotel = selection.kind === "hotel";
+    const title = isHotel ? item.name : selection.hotelName ? `${item.name} · ${selection.hotelName}` : item.name;
+    const subtitle = isHotel ? "Детали эффективности отеля" : "Детали эффективности менеджера";
+    const context = isHotel
+        ? `${(item as HotelRankingItem).rooms} номеров · ${(item as HotelRankingItem).roomNights} номеро-дней · ${(item as HotelRankingItem).stays} заездов`
+        : `${(item as ManagerRankingItem).shifts} смен · ${(item as ManagerRankingItem).stays} заездов · ${(item as ManagerRankingItem).hotels.join(", ") || "объект не указан"}`;
+    const efficiencyLabel = isHotel ? "Выручка на номер" : "Выручка на смену";
+    const efficiencyValue = isHotel
+        ? (item as HotelRankingItem).revenuePerRoom
+        : (item as ManagerRankingItem).revenuePerShift;
+    const activityLabel = isHotel ? "Загрузка" : "Средний чек";
+    const activityValue = isHotel
+        ? formatPercent((item as HotelRankingItem).occupancyRate)
+        : formatCurrency((item as ManagerRankingItem).averageStayRevenue, currency);
+    const expenseRatioLabel = item.revenue > 0 ? formatPercent(item.expenseRatio) : "0%";
+
+    const rows = [
+        { label: "Score", value: String(item.score) },
+        { label: "Выручка", value: formatCurrency(item.revenue, currency) },
+        { label: "Чистыми", value: formatCurrency(item.net, currency), tone: item.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300" },
+        { label: "Расходы", value: formatCurrency(item.expenses, currency) },
+        { label: efficiencyLabel, value: formatCurrency(efficiencyValue, currency) },
+        { label: activityLabel, value: activityValue },
+        { label: "Доля расходов", value: expenseRatioLabel },
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
+            <Card className="max-h-[88dvh] w-full max-w-xl overflow-y-auto p-0 text-slate-900 shadow-2xl dark:text-white">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/[0.06]">
+                    <div className="min-w-0">
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">{subtitle}</p>
+                        <h3 className="mt-1 break-words text-lg font-semibold">{title}</h3>
+                        <p className="mt-1 break-words text-xs text-slate-500 dark:text-white/40">{context}</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+                        ×
+                    </Button>
+                </div>
+                <div className="grid gap-2 p-4 sm:grid-cols-2">
+                    {rows.map((row) => (
+                        <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-white/35">{row.label}</p>
+                            <p className={`mt-1 text-sm font-semibold ${row.tone ?? "text-slate-900 dark:text-white"}`}>{row.value}</p>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
     );
 }
 
@@ -1333,6 +1407,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const [isUpdatingHotel, setIsUpdatingHotel] = useState(false);
     const [isDeletingHotel, setIsDeletingHotel] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [rankingDetail, setRankingDetail] = useState<RankingDetailSelection | null>(null);
     const [activeTab, setActiveTab] = useState<AdminTab>("overview");
     const { toast: notify } = useToast();
 
@@ -2060,6 +2135,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             items={overview.rankings?.hotels ?? []}
                                             defaultCurrency={overviewCurrency}
                                             className="col-span-1 lg:col-span-2"
+                                            onSelect={(item) => setRankingDetail({ kind: "hotel", item: item as HotelRankingItem })}
                                         />
                                         <EfficiencyRankingCard
                                             title="Лучшие менеджеры"
@@ -2068,11 +2144,13 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             items={overview.rankings?.managers ?? []}
                                             defaultCurrency={overviewCurrency}
                                             className="col-span-1 lg:col-span-2"
+                                            onSelect={(item) => setRankingDetail({ kind: "manager", item: item as ManagerRankingItem })}
                                         />
                                         <ManagersByHotelRankingCard
                                             groups={overview.rankings?.managersByHotel ?? []}
                                             defaultCurrency={overviewCurrency}
                                             className="col-span-1 lg:col-span-4"
+                                            onSelectManager={(manager, hotelName) => setRankingDetail({ kind: "manager", item: manager, hotelName })}
                                         />
                                         <ExpenseFeed
                                             title="Последние списания по фильтру"
@@ -2601,6 +2679,13 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 </div>
                             </Card>
                         </div>
+                    )}
+                    {rankingDetail && (
+                        <RankingDetailModal
+                            selection={rankingDetail}
+                            currency={overviewCurrency}
+                            onClose={() => setRankingDetail(null)}
+                        />
                     )}
 
                     </main>
