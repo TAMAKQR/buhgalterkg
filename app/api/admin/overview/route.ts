@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from "@prisma/client";
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { getCountryConfig } from "@/lib/country";
@@ -115,6 +115,19 @@ const getFinancialCycleWindow = (timeZone: string, cycleStartDay: number) => {
     };
 };
 
+const clampPositive = (value: number) => Math.max(value, 0);
+
+const scorePart = (value: number, max: number) => (max > 0 ? clampPositive(value) / max : 0);
+
+const overlapNights = (start: Date, end: Date, rangeStart: Date, rangeEnd: Date) => {
+    const from = Math.max(start.getTime(), rangeStart.getTime());
+    const to = Math.min(end.getTime(), rangeEnd.getTime());
+    if (to <= from) {
+        return 0;
+    }
+    return Math.max(1, Math.ceil((to - from) / 86_400_000));
+};
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
@@ -206,6 +219,8 @@ export async function GET(request: NextRequest) {
                 where: hotelFilter,
                 select: {
                     id: true,
+                    name: true,
+                    currency: true,
                     timezone: true,
                     financialCycleStartDay: true,
                     monthlyPayrollCost: true,
@@ -213,6 +228,9 @@ export async function GET(request: NextRequest) {
                     monthlyUtilitiesCost: true,
                     monthlySuppliesCost: true,
                     monthlyOtherCost: true,
+                    _count: {
+                        select: { rooms: true },
+                    },
                 },
             }),
         ]);
@@ -253,40 +271,378 @@ export async function GET(request: NextRequest) {
             )
             : [];
 
-        const recentExpenses = await prisma.cashEntry.findMany({
-            where: {
-                ...ledgerWhere,
-                entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT, LedgerEntryType.ADJUSTMENT] },
+        const rankingRangeEnd = endDate ?? new Date();
+        const rankingRangeStart = startDate ?? new Date(rankingRangeEnd.getTime() - 29 * 86_400_000);
+        const rankingDayCount = Math.max(1, Math.ceil((rankingRangeEnd.getTime() - rankingRangeStart.getTime()) / 86_400_000));
+
+        const stayRankingWhere: Prisma.RoomStayWhereInput = {
+            hotel: { country },
+            status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] },
+            scheduledCheckOut: { gt: rankingRangeStart },
+            scheduledCheckIn: { lt: rankingRangeEnd },
+        };
+        if (hotelIds.length) {
+            stayRankingWhere.hotelId = { in: hotelIds };
+        }
+        if (managerIds.length) {
+            stayRankingWhere.shift = { managerId: { in: managerIds } };
+        }
+
+        const shiftRankingWhere: Prisma.ShiftWhereInput = {
+            ...shiftScopeWhere,
+            openedAt: {
+                gte: rankingRangeStart,
+                lte: rankingRangeEnd,
             },
-            orderBy: { recordedAt: "desc" },
-            take: 200,
-            select: {
-                id: true,
-                hotelId: true,
-                amount: true,
-                method: true,
-                note: true,
-                recordedAt: true,
-                entryType: true,
-                expenseCategory: {
-                    select: {
-                        name: true,
+        };
+
+        const [recentExpenses, rankingLedgerEntries, rankingStays, rankingShifts] = await prisma.$transaction([
+            prisma.cashEntry.findMany({
+                where: {
+                    ...ledgerWhere,
+                    entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT, LedgerEntryType.ADJUSTMENT] },
+                },
+                orderBy: { recordedAt: "desc" },
+                take: 200,
+                select: {
+                    id: true,
+                    hotelId: true,
+                    amount: true,
+                    method: true,
+                    note: true,
+                    recordedAt: true,
+                    entryType: true,
+                    expenseCategory: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                    hotel: {
+                        select: {
+                            name: true,
+                            currency: true,
+                            timezone: true,
+                        },
+                    },
+                    manager: {
+                        select: {
+                            displayName: true,
+                        },
                     },
                 },
-                hotel: {
-                    select: {
-                        name: true,
-                        currency: true,
-                        timezone: true,
+            }),
+            prisma.cashEntry.findMany({
+                where: ledgerWhere,
+                select: {
+                    id: true,
+                    hotelId: true,
+                    managerId: true,
+                    entryType: true,
+                    amount: true,
+                    method: true,
+                    note: true,
+                    meta: true,
+                    expenseCategory: {
+                        select: { name: true },
+                    },
+                    hotel: {
+                        select: {
+                            id: true,
+                            name: true,
+                            currency: true,
+                        },
+                    },
+                    manager: {
+                        select: {
+                            id: true,
+                            displayName: true,
+                        },
                     },
                 },
-                manager: {
-                    select: {
-                        displayName: true,
+            }),
+            prisma.roomStay.findMany({
+                where: stayRankingWhere,
+                select: {
+                    id: true,
+                    hotelId: true,
+                    scheduledCheckIn: true,
+                    scheduledCheckOut: true,
+                    hotel: {
+                        select: {
+                            id: true,
+                            name: true,
+                            currency: true,
+                        },
+                    },
+                    shift: {
+                        select: {
+                            managerId: true,
+                            manager: {
+                                select: {
+                                    id: true,
+                                    displayName: true,
+                                },
+                            },
+                        },
                     },
                 },
-            },
+            }),
+            prisma.shift.findMany({
+                where: shiftRankingWhere,
+                select: {
+                    id: true,
+                    hotelId: true,
+                    managerId: true,
+                    hotel: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                    manager: {
+                        select: {
+                            id: true,
+                            displayName: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        /*
+         * Ranking score:
+         * hotels: revenue 35%, net 25%, revenue/room 20%, occupied room-nights 15%, expense control 5%.
+         * managers: revenue 35%, net 25%, revenue/shift 20%, average stay activity 10%, expense control 10%.
+         */
+        const hotelRankBuckets = new Map<string, {
+            id: string;
+            name: string;
+            currency: string;
+            rooms: number;
+            revenue: number;
+            expenses: number;
+            payouts: number;
+            collections: number;
+            adjustments: number;
+            stays: number;
+            roomNights: number;
+            shifts: number;
+        }>();
+        const managerRankBuckets = new Map<string, {
+            id: string;
+            name: string;
+            revenue: number;
+            expenses: number;
+            payouts: number;
+            collections: number;
+            adjustments: number;
+            stays: number;
+            roomNights: number;
+            shifts: number;
+            hotels: Set<string>;
+        }>();
+
+        const ensureHotelBucket = (hotel: { id: string; name: string; currency?: string | null }) => {
+            const existing = hotelRankBuckets.get(hotel.id);
+            if (existing) {
+                return existing;
+            }
+            const targetHotel = targetHotels.find((item) => item.id === hotel.id);
+            const created = {
+                id: hotel.id,
+                name: hotel.name,
+                currency: hotel.currency ?? countryConfig.currency,
+                rooms: targetHotel?._count.rooms ?? 0,
+                revenue: 0,
+                expenses: 0,
+                payouts: 0,
+                collections: 0,
+                adjustments: 0,
+                stays: 0,
+                roomNights: 0,
+                shifts: 0,
+            };
+            hotelRankBuckets.set(hotel.id, created);
+            return created;
+        };
+
+        const ensureManagerBucket = (manager: { id: string; displayName: string }) => {
+            const existing = managerRankBuckets.get(manager.id);
+            if (existing) {
+                return existing;
+            }
+            const created = {
+                id: manager.id,
+                name: manager.displayName,
+                revenue: 0,
+                expenses: 0,
+                payouts: 0,
+                collections: 0,
+                adjustments: 0,
+                stays: 0,
+                roomNights: 0,
+                shifts: 0,
+                hotels: new Set<string>(),
+            };
+            managerRankBuckets.set(manager.id, created);
+            return created;
+        };
+
+        for (const hotel of targetHotels) {
+            ensureHotelBucket({ id: hotel.id, name: hotel.name, currency: hotel.currency });
+        }
+
+        for (const entry of rankingLedgerEntries) {
+            const hotelBucket = ensureHotelBucket(entry.hotel);
+            const managerBucket = entry.managerId && entry.manager ? ensureManagerBucket(entry.manager) : null;
+            if (managerBucket) {
+                managerBucket.hotels.add(entry.hotel.name);
+            }
+
+            const applyAmount = (bucket: typeof hotelBucket | NonNullable<typeof managerBucket>) => {
+                if (entry.entryType === LedgerEntryType.CASH_IN) {
+                    bucket.revenue += entry.amount;
+                } else if (isCollectionLedgerEntry(entry)) {
+                    bucket.collections += entry.amount;
+                } else if (entry.entryType === LedgerEntryType.CASH_OUT) {
+                    bucket.expenses += entry.amount;
+                } else if (entry.entryType === LedgerEntryType.MANAGER_PAYOUT) {
+                    bucket.payouts += entry.amount;
+                } else if (entry.entryType === LedgerEntryType.ADJUSTMENT) {
+                    bucket.adjustments += entry.amount;
+                }
+            };
+
+            applyAmount(hotelBucket);
+            if (managerBucket) {
+                applyAmount(managerBucket);
+            }
+        }
+
+        for (const stay of rankingStays) {
+            const nights = overlapNights(stay.scheduledCheckIn, stay.scheduledCheckOut, rankingRangeStart, rankingRangeEnd);
+            const hotelBucket = ensureHotelBucket(stay.hotel);
+            hotelBucket.stays += 1;
+            hotelBucket.roomNights += nights;
+
+            if (stay.shift?.managerId && stay.shift.manager) {
+                const managerBucket = ensureManagerBucket(stay.shift.manager);
+                managerBucket.hotels.add(stay.hotel.name);
+                managerBucket.stays += 1;
+                managerBucket.roomNights += nights;
+            }
+        }
+
+        for (const shift of rankingShifts) {
+            const hotelBucket = hotelRankBuckets.get(shift.hotelId);
+            if (hotelBucket) {
+                hotelBucket.shifts += 1;
+            }
+            const managerBucket = ensureManagerBucket(shift.manager);
+            managerBucket.hotels.add(shift.hotel.name);
+            managerBucket.shifts += 1;
+        }
+
+        const hotelBuckets = Array.from(hotelRankBuckets.values()).map((item) => {
+            const net = item.revenue - item.expenses - item.payouts + item.adjustments;
+            const expenseTotal = item.expenses + item.payouts;
+            const possibleRoomNights = item.rooms * rankingDayCount;
+            return {
+                ...item,
+                net,
+                expenseTotal,
+                revenuePerRoom: item.rooms > 0 ? Math.round(item.revenue / item.rooms) : item.revenue,
+                averageStayRevenue: item.stays > 0 ? Math.round(item.revenue / item.stays) : 0,
+                occupancyRate: possibleRoomNights > 0 ? Math.min(item.roomNights / possibleRoomNights, 1) : 0,
+                expenseRatio: item.revenue > 0 ? expenseTotal / item.revenue : 0,
+            };
         });
+        const managerBuckets = Array.from(managerRankBuckets.values()).map((item) => {
+            const net = item.revenue - item.expenses - item.payouts + item.adjustments;
+            const expenseTotal = item.expenses + item.payouts;
+            return {
+                ...item,
+                net,
+                expenseTotal,
+                revenuePerShift: item.shifts > 0 ? Math.round(item.revenue / item.shifts) : item.revenue,
+                averageStayRevenue: item.stays > 0 ? Math.round(item.revenue / item.stays) : 0,
+                expenseRatio: item.revenue > 0 ? expenseTotal / item.revenue : 0,
+            };
+        });
+
+        const hotelMax = {
+            revenue: Math.max(...hotelBuckets.map((item) => item.revenue), 0),
+            net: Math.max(...hotelBuckets.map((item) => clampPositive(item.net)), 0),
+            revenuePerRoom: Math.max(...hotelBuckets.map((item) => item.revenuePerRoom), 0),
+        };
+        const managerMax = {
+            revenue: Math.max(...managerBuckets.map((item) => item.revenue), 0),
+            net: Math.max(...managerBuckets.map((item) => clampPositive(item.net)), 0),
+            revenuePerShift: Math.max(...managerBuckets.map((item) => item.revenuePerShift), 0),
+            averageStayRevenue: Math.max(...managerBuckets.map((item) => item.averageStayRevenue), 0),
+        };
+
+        const hotelLeaders = hotelBuckets
+            .map((item) => {
+                const expenseControl = item.revenue > 0 ? Math.max(0, 1 - item.expenseRatio) : 0;
+                const score = Math.round(
+                    scorePart(item.revenue, hotelMax.revenue) * 35 +
+                    scorePart(item.net, hotelMax.net) * 25 +
+                    scorePart(item.revenuePerRoom, hotelMax.revenuePerRoom) * 20 +
+                    item.occupancyRate * 15 +
+                    expenseControl * 5
+                );
+
+                return {
+                    id: item.id,
+                    name: item.name,
+                    currency: item.currency,
+                    score,
+                    revenue: item.revenue,
+                    net: item.net,
+                    expenses: item.expenseTotal,
+                    rooms: item.rooms,
+                    shifts: item.shifts,
+                    stays: item.stays,
+                    roomNights: item.roomNights,
+                    revenuePerRoom: item.revenuePerRoom,
+                    averageStayRevenue: item.averageStayRevenue,
+                    occupancyRate: item.occupancyRate,
+                    expenseRatio: item.expenseRatio,
+                };
+            })
+            .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
+            .slice(0, 8);
+
+        const managerLeaders = managerBuckets
+            .map((item) => {
+                const expenseControl = item.revenue > 0 ? Math.max(0, 1 - item.expenseRatio) : 0;
+                const score = Math.round(
+                    scorePart(item.revenue, managerMax.revenue) * 35 +
+                    scorePart(item.net, managerMax.net) * 25 +
+                    scorePart(item.revenuePerShift, managerMax.revenuePerShift) * 20 +
+                    scorePart(item.averageStayRevenue, managerMax.averageStayRevenue) * 10 +
+                    expenseControl * 10
+                );
+
+                return {
+                    id: item.id,
+                    name: item.name,
+                    score,
+                    revenue: item.revenue,
+                    net: item.net,
+                    expenses: item.expenseTotal,
+                    shifts: item.shifts,
+                    stays: item.stays,
+                    roomNights: item.roomNights,
+                    revenuePerShift: item.revenuePerShift,
+                    averageStayRevenue: item.averageStayRevenue,
+                    expenseRatio: item.expenseRatio,
+                    hotels: Array.from(item.hotels).slice(0, 4),
+                };
+            })
+            .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
+            .slice(0, 8);
 
         const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
         const ledgerTotals: Record<LedgerEntryType, { total: number; cash: number; card: number }> = {
@@ -487,6 +843,15 @@ export async function GET(request: NextRequest) {
                 onTrack: monthlyRequiredRevenue > 0 ? projectedRevenue >= monthlyRequiredRevenue : false,
             },
             dailySeries,
+            rankings: {
+                period: {
+                    startAt: rankingRangeStart,
+                    endAt: rankingRangeEnd,
+                    days: rankingDayCount,
+                },
+                hotels: hotelLeaders,
+                managers: managerLeaders,
+            },
             recentExpenses: recentExpenses
                 .map((entry) => ({
                     id: entry.id,

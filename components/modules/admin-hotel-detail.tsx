@@ -23,6 +23,7 @@ type PaymentMethodValue = 'AUTO' | 'CASH' | 'CARD' | 'ONLINE';
 type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
 type LedgerPaymentMethodValue = 'CASH' | 'CARD';
 type RoomOverviewMode = 'board' | 'history';
+type BoardListPopupKind = 'scheduled' | 'checkedIn' | 'overdue' | 'freeDates';
 
 type PendingOnlineStayDetail = RoomStayDetail & {
     roomId: string;
@@ -957,6 +958,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
     const [roomOverviewMode, setRoomOverviewMode] = useState<RoomOverviewMode>('board');
     const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
+    const [boardListPopup, setBoardListPopup] = useState<BoardListPopupKind | null>(null);
     const [stayHistoryQuery, setStayHistoryQuery] = useState('');
     const [stayHistoryStatus, setStayHistoryStatus] = useState<StayHistoryStatusFilter>('ALL');
     const [expandedStayHistoryRooms, setExpandedStayHistoryRooms] = useState<Set<string>>(() => new Set());
@@ -986,6 +988,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const rangeStart = bookingBoardRange.start.getTime();
         const rangeEnd = bookingBoardRange.end.getTime();
 
+        const now = new Date();
+
         return sortedRooms.map((room) => {
             const items = (room.stays ?? [])
                 .filter((stay) => stay.status === 'SCHEDULED' || stay.status === 'CHECKED_IN')
@@ -1002,11 +1006,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     const endIndex = Math.min(bookingBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
                     const span = Math.max(1, endIndex - startIndex);
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
+                    const checkoutTime = Date.parse(stay.scheduledCheckOut);
+                    const isOverdue = stay.status === 'CHECKED_IN' && Number.isFinite(checkoutTime) && checkoutTime < now.getTime();
 
                     return {
                         stay,
                         startIndex,
                         span,
+                        isOverdue,
                         guestLabel,
                         detailLabel: [
                             stay.bookingNumber?.trim() ? `№ ${stay.bookingNumber.trim()}` : null,
@@ -1032,6 +1039,72 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             return { room, items: itemsWithLanes, laneCount };
         });
     }, [bookingBoardRange, hotelCur, sortedRooms]);
+
+    const boardStayListItems = useMemo(() => {
+        return bookingBoardRows.flatMap((row) =>
+            row.items.map((item) => ({
+                room: row.room,
+                stay: item.stay,
+                isOverdue: item.isOverdue,
+                guestLabel: item.guestLabel,
+                detailLabel: item.detailLabel
+            }))
+        );
+    }, [bookingBoardRows]);
+
+    const boardScheduledItems = useMemo(
+        () => boardStayListItems.filter((item) => item.stay.status === 'SCHEDULED'),
+        [boardStayListItems]
+    );
+
+    const boardCheckedInItems = useMemo(
+        () => boardStayListItems.filter((item) => item.stay.status === 'CHECKED_IN' && !item.isOverdue),
+        [boardStayListItems]
+    );
+
+    const boardOverdueItems = useMemo(
+        () => boardStayListItems.filter((item) => item.stay.status === 'CHECKED_IN' && item.isOverdue),
+        [boardStayListItems]
+    );
+
+    const boardFreeDateItems = useMemo(() => {
+        return bookingBoardRows.flatMap((row) => {
+            const occupiedRanges = row.items
+                .map((item) => ({
+                    startIndex: item.startIndex,
+                    endIndex: Math.min(bookingBoardDayCount, item.startIndex + item.span)
+                }))
+                .sort((first, second) => first.startIndex - second.startIndex);
+
+            let cursor = 0;
+            const gaps: Array<{ room: typeof row.room; startIndex: number; endIndex: number; startDate: Date; endDate: Date }> = [];
+
+            for (const range of occupiedRanges) {
+                if (range.startIndex > cursor) {
+                    gaps.push({
+                        room: row.room,
+                        startIndex: cursor,
+                        endIndex: range.startIndex,
+                        startDate: addDays(bookingBoardRange.start, cursor),
+                        endDate: addDays(bookingBoardRange.start, range.startIndex)
+                    });
+                }
+                cursor = Math.max(cursor, range.endIndex);
+            }
+
+            if (cursor < bookingBoardDayCount) {
+                gaps.push({
+                    room: row.room,
+                    startIndex: cursor,
+                    endIndex: bookingBoardDayCount,
+                    startDate: addDays(bookingBoardRange.start, cursor),
+                    endDate: addDays(bookingBoardRange.start, bookingBoardDayCount)
+                });
+            }
+
+            return gaps;
+        });
+    }, [bookingBoardRange.start, bookingBoardRows]);
 
     const filteredRoomStayHistory = useMemo(() => {
         const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
@@ -1528,10 +1601,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         resetStayEditor();
     };
 
-    const handleOpenBookingForm = (room?: HotelDetailPayload['rooms'][number]) => {
-        const checkIn = new Date();
+    const handleOpenBookingForm = (room?: HotelDetailPayload['rooms'][number], startDate?: Date) => {
+        const checkIn = startDate ? new Date(startDate) : new Date();
         checkIn.setHours(14, 0, 0, 0);
-        if (checkIn.getTime() <= Date.now()) {
+        if (!startDate && checkIn.getTime() <= Date.now()) {
             checkIn.setDate(checkIn.getDate() + 1);
         }
         const checkOut = new Date(checkIn);
@@ -2631,9 +2704,34 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <div className="mt-4 space-y-3">
                                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                                             <div className="flex flex-wrap gap-1.5">
-                                                                <Badge label="Бронь" tone="default" />
-                                                                <Badge label="Заселён" tone="warning" />
-                                                                <Badge label="Выселен" tone="success" />
+                                                                <button
+                                                                    type="button"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-cyan-300 bg-cyan-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-cyan-900 transition break-words [overflow-wrap:anywhere] hover:bg-cyan-100 dark:border-cyan-300/35 dark:bg-cyan-400/15 dark:text-cyan-100 dark:hover:bg-cyan-400/20"
+                                                                    onClick={() => setBoardListPopup('scheduled')}
+                                                                >
+                                                                    Бронь <span className="font-semibold">{boardScheduledItems.length}</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-amber-300/35 dark:bg-amber-400/15 dark:text-amber-100 dark:hover:bg-amber-400/20"
+                                                                    onClick={() => setBoardListPopup('checkedIn')}
+                                                                >
+                                                                    Заселён <span className="font-semibold">{boardCheckedInItems.length}</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-rose-700 transition break-words [overflow-wrap:anywhere] hover:bg-rose-100 dark:border-rose-300/35 dark:bg-rose-500/15 dark:text-rose-100 dark:hover:bg-rose-500/20"
+                                                                    onClick={() => setBoardListPopup('overdue')}
+                                                                >
+                                                                    Просрочено <span className="font-semibold">{boardOverdueItems.length}</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-slate-600 transition break-words [overflow-wrap:anywhere] hover:bg-slate-100 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/55 dark:hover:bg-white/[0.08]"
+                                                                    onClick={() => setBoardListPopup('freeDates')}
+                                                                >
+                                                                    Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
+                                                                </button>
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 <Button
@@ -4268,6 +4366,115 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         </div>
                     </div>
                 )}
+                {boardListPopup && (() => {
+                    const isFreeDatesPopup = boardListPopup === 'freeDates';
+                    const stayItems = boardListPopup === 'scheduled'
+                        ? boardScheduledItems
+                        : boardListPopup === 'checkedIn'
+                            ? boardCheckedInItems
+                            : boardOverdueItems;
+                    const title = boardListPopup === 'scheduled'
+                        ? 'Брони'
+                        : boardListPopup === 'checkedIn'
+                            ? 'Заселённые'
+                            : boardListPopup === 'overdue'
+                                ? 'Просрочено'
+                                : 'Свободные даты';
+                    const count = isFreeDatesPopup ? boardFreeDateItems.length : stayItems.length;
+                    const periodLabel = `${formatBoardDay(bookingBoardRange.start)} - ${formatBoardDay(addDays(bookingBoardRange.end, -1))}`;
+
+                    return (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
+                            <Card className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-slate-700/55 bg-[#10141b] p-0 text-slate-100 shadow-2xl dark:bg-[#10141b]">
+                                <div className="flex items-start justify-between gap-3 border-b border-slate-700/55 px-4 py-3 sm:px-5">
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Шахматка · {periodLabel}</p>
+                                        <h3 className="mt-1 text-lg font-semibold">{title}</h3>
+                                        <p className="mt-1 text-xs text-slate-400">{count} записей</p>
+                                    </div>
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => setBoardListPopup(null)}>
+                                        ×
+                                    </Button>
+                                </div>
+
+                                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                                    {isFreeDatesPopup ? (
+                                        boardFreeDateItems.length ? (
+                                            <div className="space-y-2">
+                                                {boardFreeDateItems.map((item) => {
+                                                    const lastFreeDay = addDays(item.endDate, -1);
+                                                    const rangeLabel = item.startIndex + 1 === item.endIndex
+                                                        ? formatBoardDay(item.startDate)
+                                                        : `${formatBoardDay(item.startDate)} - ${formatBoardDay(lastFreeDay)}`;
+
+                                                    return (
+                                                        <button
+                                                            key={`admin-free-${item.room.id}-${item.startIndex}-${item.endIndex}`}
+                                                            type="button"
+                                                            className="w-full rounded-xl border border-slate-700/55 bg-slate-800/45 px-3 py-2.5 text-left transition hover:border-cyan-200/40 hover:bg-cyan-300/10"
+                                                            onClick={() => {
+                                                                setBoardListPopup(null);
+                                                                handleOpenBookingForm(item.room, item.startDate);
+                                                            }}
+                                                        >
+                                                            <div className="flex items-center justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="truncate text-sm font-semibold">№ {item.room.label}</p>
+                                                                    {item.room.floor ? <p className="mt-0.5 truncate text-[11px] text-slate-500">{item.room.floor}</p> : null}
+                                                                </div>
+                                                                <p className="shrink-0 text-xs font-semibold text-cyan-100">{rangeLabel}</p>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="py-8 text-center text-sm text-slate-400">Свободных интервалов в этом периоде нет.</p>
+                                        )
+                                    ) : stayItems.length ? (
+                                        <div className="space-y-2">
+                                            {stayItems.map((item) => (
+                                                <button
+                                                    key={`admin-board-list-${item.room.id}-${item.stay.id}`}
+                                                    type="button"
+                                                    className="w-full rounded-xl border border-slate-700/55 bg-slate-800/45 px-3 py-2.5 text-left transition hover:border-slate-500 hover:bg-slate-800/70"
+                                                    onClick={() => {
+                                                        setBoardListPopup(null);
+                                                        handleSelectStayForEdit(item.room, item.stay);
+                                                    }}
+                                                >
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="truncate text-sm font-semibold">№ {item.room.label} · {item.guestLabel}</p>
+                                                            <p className="mt-1 truncate text-xs text-slate-400">{item.detailLabel || stayStatusLabels[item.stay.status]}</p>
+                                                        </div>
+                                                        <Badge
+                                                            label={item.isOverdue ? 'Просрочено' : item.stay.status === 'SCHEDULED' ? 'Бронь' : stayStatusLabels[item.stay.status]}
+                                                            tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'}
+                                                        />
+                                                    </div>
+                                                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+                                                        <span>Заезд: <span className="text-slate-200">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>
+                                                        <span>Выезд: <span className="text-slate-200">{formatDateTime(item.stay.scheduledCheckOut, hotelTz)}</span></span>
+                                                    </div>
+                                                    {item.stay.tariffPending ? (
+                                                        <p className="mt-1 rounded-lg border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 py-1 text-[11px] font-semibold text-fuchsia-100">Тариф уточняется</p>
+                                                    ) : item.stay.totalAmount != null ? (
+                                                        <p className="mt-1 text-[11px] text-cyan-100/80">Тариф: {formatMoney(item.stay.totalAmount, hotelCur)} · оплачено {formatMoney(item.stay.amountPaid ?? 0, hotelCur)}</p>
+                                                    ) : (item.stay.amountPaid ?? 0) > 0 ? (
+                                                        <p className="mt-1 text-[11px] text-emerald-200/80">Оплата: {formatMoney(item.stay.amountPaid ?? 0, hotelCur)}</p>
+                                                    ) : null}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="py-8 text-center text-sm text-slate-400">Записей в этом периоде нет.</p>
+                                    )}
+                                </div>
+                            </Card>
+                        </div>
+                    );
+                })()}
                 {isOutflowModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center px-2 py-4 sm:px-6 sm:py-6">
                         <div className="absolute inset-0 bg-black/70" onClick={closeOutflowModal} />

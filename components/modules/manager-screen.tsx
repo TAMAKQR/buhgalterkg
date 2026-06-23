@@ -712,24 +712,24 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     };
 
     const managerInfoBlock = (
-        <div className="rounded-xl bg-white/[0.03] px-4 py-3 text-white">
-            <div className="flex flex-wrap items-center gap-4 text-sm text-white/70">
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-700 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700/55 dark:bg-slate-800/35 dark:text-slate-300">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
                 <button
                     type="button"
                     onClick={handleOpenProfile}
-                    className="min-w-0 text-left text-base font-semibold text-white underline decoration-dotted decoration-white/40 underline-offset-4 transition break-words [overflow-wrap:anywhere] hover:text-amber-200 focus:outline-none"
+                    className="min-w-0 text-left font-semibold text-slate-800 underline decoration-dotted decoration-slate-300 underline-offset-4 transition break-words [overflow-wrap:anywhere] hover:text-slate-600 focus:outline-none dark:text-slate-100 dark:decoration-slate-600 dark:hover:text-slate-300"
                 >
                     {managerName}
                 </button>
-                <span className="text-white/80">Ставка: {shiftPayDisplay ?? '—'}</span>
-                <span className="text-white/80">Процент: {shareDisplay ?? '—'}</span>
+                <span>Ставка: {shiftPayDisplay ?? '—'}</span>
+                <span>Процент: {shareDisplay ?? '—'}</span>
                 {data?.shift && payoutSummary && (
-                    <span className="font-semibold text-amber-100">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
                         Начислено: {formatKgs(payoutSummary.expected ?? 0)}
                     </span>
                 )}
                 {compensation?.bonus != null && compensation.bonus > 0 && (
-                    <span className="font-semibold text-emerald-300">
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-300">
                         Бонус: +{formatKgs(compensation.bonus)}
                     </span>
                 )}
@@ -955,6 +955,29 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         { id: 'shift', label: data?.shift ? `Смена №${data.shift.number}` : 'Принять смену' },
         { id: 'cash', label: 'Касса' },
         { id: 'history', label: 'История' }
+    ];
+    const panelMeta: Record<PanelKey, { description: string }> = {
+        rooms: { description: 'Номера и брони' },
+        shift: { description: 'Закрытие смены' },
+        cash: { description: 'Операции кассы' },
+        history: { description: 'Смены и выплаты' },
+    };
+    const activePanelConfig = panelTabs.find((tab) => tab.id === activePanel) ?? panelTabs[0];
+    const managerDesktopStats = [
+        { label: 'Касса', value: formatKgs(shiftCashValue), tone: 'text-slate-900 dark:text-slate-200' },
+        { label: 'Безнал', value: formatKgs(shiftCardValue), tone: 'text-slate-900 dark:text-slate-200' },
+        { label: 'Расход', value: formatKgs(shiftExpensesTotal), tone: shiftExpensesTotal > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
+        { label: 'Занято', value: `${occupiedCount}/${sortedRooms.length}`, tone: 'text-slate-900 dark:text-slate-200' },
+    ];
+    const managerMobileStats = [
+        { label: 'Касса', value: formatKgs(shiftCashValue), tone: 'text-slate-900 dark:text-slate-200' },
+        ...shiftCashByCurrency
+            .filter((item) => item.currency === 'USD')
+            .map((item) => ({ label: 'USD', value: formatCurrencyAmount(item.amount, item.currency), tone: 'text-slate-900 dark:text-slate-200' })),
+        { label: 'Б/н', value: formatKgs(shiftCardValue), tone: 'text-slate-900 dark:text-slate-200' },
+        { label: 'Расход', value: formatKgs(shiftExpensesTotal), tone: shiftExpensesTotal > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
+        { label: 'Занято', value: `${occupiedCount}/${sortedRooms.length}`, tone: 'text-slate-900 dark:text-slate-200' },
+        { label: 'Просрочено', value: String(overdueCount), tone: overdueCount ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
     ];
 
     const shareMessage = useMemo(() => {
@@ -2180,91 +2203,202 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }
 
     return (
-        <div>
-            <div className="min-h-screen bg-light-bg dark:bg-night">
-                <div className="desktop-container">
-                    <div className="flex min-h-screen flex-col gap-2.5 px-3 pb-16 pt-3 sm:gap-3 sm:px-5 sm:pt-4 lg:px-8">
-                        <header>
-                            {data?.shift ? (
-                                <div className="space-y-2">
-                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                        <div className="flex min-w-0 flex-1 flex-col">
-                                            <h1 className="text-base font-semibold text-light-text dark:text-white lg:text-xl">Смена №{data.shift.number}</h1>
-                                            <p className="text-[11px] text-slate-600 dark:text-white/40 lg:text-xs">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
-                                        </div>
-                                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                                            <Button
-                                                type="button"
-                                                size="icon"
-                                                variant="ghost"
-                                                className="h-8 w-8 rounded-xl"
-                                                onClick={handleCopyState}
-                                                disabled={!shareMessage}
-                                                aria-label="Скопировать состояние"
-                                                title="Скопировать состояние"
-                                            >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                                </svg>
-                                            </Button>
-                                            <Button type="button" size="sm" variant="ghost" className="h-8 rounded-xl px-2.5 text-[11px] text-amber-600 dark:text-amber-200/70" onClick={() => setActivePanel('shift')}>
-                                                Закрыть смену
-                                            </Button>
-                                            <ThemeToggle />
-                                            <button
-                                                type="button"
-                                                onClick={() => void refreshManagerState()}
-                                                className={`rounded-xl p-1.5 text-slate-500 dark:text-white/40 transition hover:text-slate-700 dark:hover:text-white/70 ${isValidating ? 'animate-spin' : ''}`}
-                                                aria-label="Обновить"
-                                            >
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
-                                            </button>
-                                            <ExitButton />
-                                        </div>
-                                    </div>
-                                    <OfflineStatusBanner />
-                                    <div className="grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5 sm:gap-2 sm:text-xs">
-                                        <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Касса <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftCashValue)}</span></span>
-                                        {shiftCashByCurrency
-                                            .filter((item) => item.currency === 'USD')
-                                            .map((item) => (
-                                                <span key={item.currency} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">USD <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatCurrencyAmount(item.amount, item.currency)}</span></span>
-                                            ))}
-                                        <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Б/н <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftCardValue)}</span></span>
-                                        <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Расход <span className="block break-words font-semibold text-light-text dark:text-white sm:inline">{formatKgs(shiftExpensesTotal)}</span></span>
-                                        <span className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1.5 leading-snug text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">Занято <span className="block font-semibold text-light-text dark:text-white sm:inline">{occupiedCount}/{sortedRooms.length}</span></span>
-                                        <span className={`min-w-0 rounded-xl border px-2 py-1.5 leading-snug shadow-sm ${overdueCount ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/15 dark:bg-rose-500/15 dark:text-rose-300' : 'border-slate-200 bg-white text-slate-700 dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50'}`}>Просрочено <span className="block font-semibold sm:inline">{overdueCount}</span></span>
-                                    </div>
+        <div className="min-h-screen bg-[#eef2f6] text-slate-800 dark:bg-[#10141b] dark:text-slate-200">
+            <div className="lg:grid lg:min-h-screen lg:grid-cols-[16rem_minmax(0,1fr)]">
+                <aside className="hidden border-r border-slate-200/80 bg-[#f7f9fb] px-5 py-5 text-slate-600 shadow-[12px_0_34px_-34px_rgba(15,23,42,0.34)] dark:border-slate-700/45 dark:bg-[#111821] dark:text-slate-300 dark:shadow-[12px_0_34px_-34px_rgba(0,0,0,0.8)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+                    <div className="border-b border-slate-200/80 pb-4 dark:border-slate-700/45">
+                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{primaryHotel.name}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{managerName}</p>
+                        {data?.shift ? (
+                            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-slate-100/60 px-3 py-2 dark:border-slate-700/55 dark:bg-slate-800/35">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Смена</p>
+                                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">№{data.shift.number}</p>
                                 </div>
-                            ) : (
-                                <>
-                                    <p className="mt-3 text-sm text-amber-200/80">Смена не открыта</p>
-                                    {managerInfoBlock}
-                                </>
-                            )}
-                        </header>
-                        <div className="sticky top-0 z-40 -mx-3 border-b border-slate-300 bg-light-bg px-3 py-2 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.7)] dark:border-white/[0.06] dark:bg-night sm:-mx-5 sm:px-5">
-                            <div className="flex gap-1 rounded-xl border border-slate-300 bg-white p-1 text-sm font-medium text-slate-800 shadow-[0_14px_30px_-26px_rgba(15,23,42,0.55)] dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">
+                                <p className="shrink-0 text-right text-[11px] text-slate-500 dark:text-slate-400">{formatDateTime(data.shift.openedAt, hotelTz)}</p>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <nav className="mt-4 space-y-1">
+                        {panelTabs.map((tab) => {
+                            const active = activePanel === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActivePanel(tab.id)}
+                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active
+                                        ? 'border border-slate-300/80 bg-slate-200/80 text-slate-900 shadow-[0_12px_26px_-24px_rgba(15,23,42,0.32)] dark:border-slate-600/55 dark:bg-slate-700/45 dark:text-slate-100 dark:shadow-[0_14px_32px_-26px_rgba(0,0,0,0.8)]'
+                                        : 'border border-transparent text-slate-600 hover:bg-slate-100/80 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/55 dark:hover:text-slate-200'
+                                        }`}
+                                >
+                                    <span className={`h-2 w-2 shrink-0 rounded-full ${active ? 'bg-slate-700 dark:bg-slate-200' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-sm font-semibold">{tab.label}</span>
+                                        <span className={`block truncate text-[11px] ${active ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}>{panelMeta[tab.id].description}</span>
+                                    </span>
+                                    {tab.hint ? <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${active ? 'bg-slate-300/70 text-slate-600 dark:bg-slate-900/30 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>{tab.hint}</span> : null}
+                                </button>
+                            );
+                        })}
+                    </nav>
+
+                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-200/80 pt-3 dark:border-slate-700/45">
+                        <ThemeToggle />
+                        <div className="flex items-center gap-1.5">
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-9 w-9"
+                                onClick={handleCopyState}
+                                disabled={!shareMessage}
+                                aria-label="Скопировать состояние"
+                                title="Скопировать состояние"
+                            >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                            </Button>
+                            <button
+                                type="button"
+                                onClick={() => void refreshManagerState()}
+                                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800/60 dark:hover:text-slate-200 ${isValidating ? 'animate-spin' : ''}`}
+                                aria-label="Обновить"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+                            </button>
+                            <ExitButton />
+                        </div>
+                    </div>
+                </aside>
+
+                <main className="min-w-0 bg-[#eef2f6] px-3 pb-16 pt-3 dark:bg-[#10141b] sm:px-5 lg:px-6 lg:py-6 xl:px-8">
+                    <header className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.42)] dark:border-slate-700/55 dark:bg-slate-800/35 lg:hidden">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{primaryHotel.name}</p>
+                                <h1 className="mt-1 truncate text-xl font-semibold text-slate-950 dark:text-slate-100">
+                                    {data?.shift ? `Смена №${data.shift.number}` : 'Смена не открыта'}
+                                </h1>
+                                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                    {data?.shift ? formatDateTime(data.shift.openedAt, hotelTz) : 'Примите смену, чтобы начать операции'}
+                                </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                                <ThemeToggle />
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-9 w-9"
+                                    onClick={handleCopyState}
+                                    disabled={!shareMessage}
+                                    aria-label="Скопировать состояние"
+                                    title="Скопировать состояние"
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                    </svg>
+                                </Button>
+                                <button
+                                    type="button"
+                                    onClick={() => void refreshManagerState()}
+                                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800/55 dark:hover:text-slate-200 ${isValidating ? 'animate-spin' : ''}`}
+                                    aria-label="Обновить"
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+                                </button>
+                                <ExitButton />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs xs:grid-cols-3">
+                            {managerMobileStats.map((item) => (
+                                <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-700/55 dark:bg-slate-800/35">
+                                    <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
+                                    <p className={`mt-0.5 truncate font-semibold ${item.tone}`}>{item.value}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </header>
+
+                    <div className="sticky top-0 z-40 -mx-3 mb-3 bg-[#eef2f6]/94 px-3 py-2 backdrop-blur-md dark:bg-[#10141b]/94 sm:-mx-5 sm:px-5 lg:hidden">
+                        <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700/55 dark:bg-slate-800/35">
+                            <div className="flex gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
                                 {panelTabs.map((tab) => (
                                     <button
                                         key={tab.id}
                                         type="button"
                                         onClick={() => setActivePanel(tab.id)}
-                                        className={`min-w-0 flex-1 rounded-lg px-3 py-1.5 text-center leading-tight transition-all break-words [overflow-wrap:anywhere] ${activePanel === tab.id ? 'bg-blue-600 text-white shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-transparent dark:hover:text-white/70'
+                                        className={`min-w-0 flex-1 rounded-md px-2 py-1.5 transition-all ${activePanel === tab.id
+                                            ? 'bg-slate-200/90 text-slate-900 shadow-sm dark:bg-slate-700/60 dark:text-slate-100'
+                                            : 'hover:text-slate-800 dark:hover:text-slate-200'
                                             }`}
                                     >
-                                        {tab.label}
+                                        <span className="block truncate">{tab.label}</span>
                                     </button>
                                 ))}
                             </div>
                         </div>
+                    </div>
+
+                    <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
+                        <div className="min-w-0">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{panelMeta[activePanelConfig.id].description}</p>
+                            <h1 className="mt-1 truncate text-2xl font-semibold tracking-normal text-slate-800 dark:text-slate-100">{activePanelConfig.label}</h1>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button type="button" size="sm" variant="secondary" onClick={() => setActivePanel('shift')}>
+                                Закрыть смену
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="gap-2"
+                                onClick={handleCopyState}
+                                disabled={!shareMessage}
+                            >
+                                Скопировать сводку
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="mb-5 space-y-3">
+                        <OfflineStatusBanner />
+                        {managerInfoBlock}
+                    </div>
+
+                    <div className="mb-5 hidden grid-cols-4 gap-3 lg:grid">
+                        {managerDesktopStats.map((item) => (
+                            <div key={item.label} className="min-w-0 rounded-lg border border-slate-200/80 bg-[#f9fafb] px-4 py-3 shadow-[0_10px_28px_-26px_rgba(15,23,42,0.28)] dark:border-slate-700/55 dark:bg-slate-800/35 dark:shadow-none">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
+                                <p className={`mt-1 truncate text-lg font-semibold ${item.tone}`}>{item.value}</p>
+                            </div>
+                        ))}
+                    </div>
 
                         {activePanel === 'rooms' && (
                             <section className="space-y-2.5 sm:space-y-3">
-                                <div className="flex items-center justify-between gap-2">
-                                    <h2 className="text-lg font-semibold text-light-text dark:text-white">Номера</h2>
-                                    <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2">
+                                <div className="rounded-xl border border-slate-200/80 bg-[#f9fafb] px-3 py-3 shadow-[0_12px_30px_-26px_rgba(15,23,42,0.3)] dark:border-slate-700/55 dark:bg-slate-800/35 dark:shadow-none">
+                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Номера</h2>
+                                                <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700/70 dark:bg-slate-900/30 dark:text-slate-300">
+                                                    {sortedRooms.length} в учете
+                                                </span>
+                                            </div>
+                                            <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                                <span>{availableCount} свободно</span>
+                                                <span className="text-slate-300 dark:text-slate-600">/</span>
+                                                <span className={overdueCount ? 'font-semibold text-rose-600 dark:text-rose-300' : ''}>{overdueCount} просрочено</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:justify-end">
                                         <Button
                                             type="button"
                                             size="sm"
@@ -2278,35 +2412,23 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <Users className="h-4 w-4" aria-hidden="true" />
                                             <span className="hidden sm:inline">Групповой заезд</span>
                                         </Button>
-                                        <div className="flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700 shadow-sm dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white/50">
+                                        <div className="flex rounded-lg border border-slate-200/80 bg-white p-1 text-xs font-medium text-slate-600 shadow-sm dark:border-slate-700/55 dark:bg-slate-900/25 dark:text-slate-400">
                                             <button
                                                 type="button"
-                                                className={`min-w-0 rounded-lg px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'cards' ? 'bg-blue-600 text-white shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-transparent dark:hover:text-white'}`}
+                                                className={`min-w-0 rounded-md px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'cards' ? 'bg-slate-200/95 text-slate-900 shadow-sm dark:bg-slate-700/70 dark:text-slate-100' : 'hover:text-slate-800 dark:hover:text-slate-200'}`}
                                                 onClick={() => setRoomViewMode('cards')}
                                             >
                                                 Карточки
                                             </button>
                                             <button
                                                 type="button"
-                                                className={`min-w-0 rounded-lg px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'board' ? 'bg-blue-600 text-white shadow-sm dark:bg-white/[0.12] dark:text-white' : 'hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-transparent dark:hover:text-white'}`}
+                                                className={`min-w-0 rounded-md px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'board' ? 'bg-slate-200/95 text-slate-900 shadow-sm dark:bg-slate-700/70 dark:text-slate-100' : 'hover:text-slate-800 dark:hover:text-slate-200'}`}
                                                 onClick={() => setRoomViewMode('board')}
                                             >
                                                 Шахматка
                                             </button>
                                         </div>
-                                        <div className="hidden sm:block">
-                                            <Badge label={`${sortedRooms.length} в учёте`} />
                                         </div>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.035]">
-                                        <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/30">Свободно</p>
-                                        <p className="mt-1 text-base font-semibold text-light-text dark:text-white">{availableCount}</p>
-                                    </div>
-                                    <div className={`rounded-2xl border px-3 py-2 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.34)] ${overdueCount ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/15 dark:bg-rose-500/15 dark:text-rose-300' : 'border-slate-200 bg-white text-slate-500 dark:border-white/[0.055] dark:bg-white/[0.035] dark:text-white/40'}`}>
-                                        <p className="text-[10px] uppercase tracking-[0.18em]">Просрочено</p>
-                                        <p className="mt-1 text-base font-semibold">{overdueCount}</p>
                                     </div>
                                 </div>
                                 {roomViewMode === 'board' ? (
@@ -2481,7 +2603,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="grid gap-2.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                    <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                         {sortedRooms.map((room) => {
                                         const isOccupied = room.status === 'OCCUPIED';
                                         const isOverdue = isOccupied && isPastDate(room.stay?.scheduledCheckOut);
@@ -2507,14 +2629,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const roomMealLabels = canUseMealPlan ? mealPlanLabels(room.stay?.mealPlan) : [];
 
                                         return (
-                                            <article key={room.id} className={`min-w-0 rounded-2xl border bg-white px-3 py-3 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] transition hover:shadow-md dark:shadow-none ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15' : 'border-slate-200 hover:border-slate-300 dark:border-white/[0.055] dark:bg-white/[0.035]'}`}>
-                                                <div className="flex flex-col gap-2.5">
-                                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                                        <span className="min-w-0 break-words text-sm font-semibold text-light-text dark:text-white">№ {room.label}</span>
+                                            <article key={room.id} className={`min-w-0 rounded-xl border bg-[#f9fafb] px-3 py-2.5 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]' : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}>
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                                            <span className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">№ {room.label}</span>
                                                         {room.status === 'DIRTY' ? (
                                                             <button
                                                                 type="button"
-                                                                className="inline-flex items-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700 transition hover:bg-emerald-50 hover:text-emerald-700 disabled:pointer-events-none disabled:opacity-50 dark:border-rose-500/15 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-300"
+                                                                className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 transition hover:bg-emerald-50 hover:text-emerald-700 disabled:pointer-events-none disabled:opacity-50 dark:border-rose-300/35 dark:bg-rose-500/15 dark:text-rose-200 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-200"
                                                                 disabled={updatingCleaningRoomId === room.id}
                                                                 onClick={() => handleToggleCleaningStatus(room)}
                                                                 title="Нажмите, чтобы отметить номер убранным"
@@ -2529,14 +2652,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 tone={isOverdue ? 'danger' : isOccupied ? 'warning' : 'success'}
                                                             />
                                                         )}
+                                                        </div>
+                                                        {room.floor ? <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{room.floor}</p> : null}
                                                     </div>
                                                     {isOccupied ? (
-                                                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                                                              <Button
                                                                  type="button"
                                                                  size="icon"
                                                                  variant="secondary"
-                                                                 className="h-8 w-8 rounded-xl"
+                                                                 className="h-8 w-8 rounded-lg"
                                                                 disabled={!hasOpenShift || !availableTransferRooms.length}
                                                                 onClick={() => showTransferModal(room)}
                                                                 title="Переселить"
@@ -2548,7 +2673,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 w-8 rounded-xl"
+                                                                 className="h-8 w-8 rounded-lg"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => showExtendModal(room)}
                                                                 title="Продлить"
@@ -2561,7 +2686,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                      type="button"
                                                                      size="icon"
                                                                      variant="secondary"
-                                                                     className="h-8 w-8 rounded-xl"
+                                                                      className="h-8 w-8 rounded-lg"
                                                                      onClick={() => showPaymentAdjustModal(room)}
                                                                      title="Исправить суммы"
                                                                      aria-label={`Исправить суммы в номере ${room.label}`}
@@ -2573,7 +2698,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                  type="button"
                                                                  size="icon"
                                                                 variant="ghost"
-                                                                className="h-8 w-8 rounded-xl text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
+                                                                className="h-8 w-8 rounded-lg text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
                                                                 title="Выселить"
@@ -2583,12 +2708,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </Button>
                                                         </div>
                                                     ) : (
-                                                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                                                             <Button
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 w-8 rounded-xl"
+                                                                className="h-8 w-8 rounded-lg"
                                                                 onClick={() => showBookingModal(room)}
                                                                 title="Поставить бронь"
                                                                 aria-label={`Поставить бронь на номер ${room.label}`}
@@ -2599,7 +2724,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 w-8 rounded-xl"
+                                                                className="h-8 w-8 rounded-lg"
                                                                 disabled={!hasOpenShift || room.status !== 'AVAILABLE'}
                                                                 onClick={() => showCheckInModal(room)}
                                                                 title={room.status === 'DIRTY' ? 'Сначала отметьте номер убранным' : 'Заселить'}
@@ -2733,40 +2858,40 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         )}
 
                         {activePanel === 'cash' && (
-                            <Card>
+                            <Card className="max-w-6xl">
                                 <CardHeader title="Касса" />
-                                <form className="grid gap-3 md:grid-cols-5" onSubmit={handleExpense}>
-                                    <Input type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
-                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('method')}>
+                                <form className="grid gap-3 lg:grid-cols-12" onSubmit={handleExpense}>
+                                    <Input className="lg:col-span-2" type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
+                                    <Select className="min-w-0 max-w-full lg:col-span-2" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
                                         <option value="CARD">Безнал</option>
                                     </Select>
-                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('currency')} disabled={selectedExpenseMethod !== 'CASH' || isAutoManagerPayout}>
+                                    <Select className="min-w-0 max-w-full lg:col-span-2" {...expenseForm.register('currency')} disabled={selectedExpenseMethod !== 'CASH' || isAutoManagerPayout}>
                                         <option value={localCashCurrency}>{hotelCur}</option>
                                         <option value="USD">USD</option>
                                     </Select>
-                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('entryType')}>
+                                    <Select className="min-w-0 max-w-full lg:col-span-2" {...expenseForm.register('entryType')}>
                                         <option value="CASH_OUT">Расход</option>
                                         <option value="CASH_IN">Поступление</option>
                                         <option value="MANAGER_PAYOUT">Выплата менеджеру</option>
                                         <option value="ADJUSTMENT">Корректировка</option>
                                     </Select>
-                                    <Select className="min-w-0 max-w-full" {...expenseForm.register('categoryId')} disabled={selectedExpenseEntryType !== 'CASH_OUT'}>
+                                    <Select className="min-w-0 max-w-full lg:col-span-4" {...expenseForm.register('categoryId')} disabled={selectedExpenseEntryType !== 'CASH_OUT'}>
                                         <option value="">{selectedExpenseEntryType === 'CASH_OUT' ? (expenseCategories.length ? 'Без категории' : 'Категорий пока нет') : 'Категория недоступна'}</option>
                                         {expenseCategories.map((category) => (
                                             <option key={category.id} value={category.id}>{category.name}</option>
                                         ))}
                                     </Select>
                                     {selectedExpenseMethod === 'CASH' && selectedExpenseCurrency === 'USD' ? (
-                                        <Input type="number" step="0.01" placeholder={`Курс USD к ${hotelCur}`} {...expenseForm.register('exchangeRate', { valueAsNumber: true })} />
+                                        <Input className="lg:col-span-3" type="number" step="0.01" placeholder={`Курс USD к ${hotelCur}`} {...expenseForm.register('exchangeRate', { valueAsNumber: true })} />
                                     ) : null}
                                     {isAutoManagerPayout ? (
-                                        <p className="md:col-span-5 text-xs text-slate-500 dark:text-white/50">
+                                        <p className="text-xs text-slate-500 dark:text-white/50 lg:col-span-12">
                                             Выплата рассчитывается по ставке и проценту менеджера. К выплате сейчас: <span className="font-semibold text-light-text dark:text-white">{formatKgs(payoutSummary?.pending ?? 0)}</span>
                                         </p>
                                     ) : null}
-                                    <TextArea rows={1} className="md:col-span-5" placeholder="Комментарий" {...expenseForm.register('note')} />
-                                    <Button type="submit" className="md:col-span-5" disabled={isAutoManagerPayout && (payoutSummary?.pending ?? 0) <= 0}>
+                                    <TextArea rows={1} className="lg:col-span-9" placeholder="Комментарий" {...expenseForm.register('note')} />
+                                    <Button type="submit" className="lg:col-span-3 lg:self-stretch" disabled={isAutoManagerPayout && (payoutSummary?.pending ?? 0) <= 0}>
                                         Записать операцию
                                     </Button>
                                 </form>
@@ -2893,7 +3018,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 ) : (
                                     <p className="mt-4 text-sm text-slate-600 dark:text-white/60">Нет смен, подходящих под фильтр.</p>
                                 )}
-                                {filteredProfileShifts.length > 0 && (
+                                {filteredProfileShifts.length > 1 && (
                                     <div className="mt-4 max-h-[280px] space-y-2 overflow-y-auto pr-1">
                                         {filteredProfileShifts.map((shift) => (
                                             <button
@@ -2916,8 +3041,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 )}
                             </Card>
                         )}
-                    </div>
-
                     {isProfileOpen && (
                         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-2 sm:p-4">
                             <div className="relative w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
@@ -4233,7 +4356,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         </div>
                     )}
 
-                </div>
+                </main>
             </div>
         </div>
     );

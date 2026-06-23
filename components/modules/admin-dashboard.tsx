@@ -14,6 +14,7 @@ import {
     LogOut,
     Settings2,
     SlidersHorizontal,
+    Trophy,
     Users,
     type LucideIcon,
 } from "lucide-react";
@@ -48,6 +49,40 @@ type ExpenseEntry = {
     hotelName?: string;
     currency?: string | null;
     timezone?: string | null;
+};
+
+type HotelRankingItem = {
+    id: string;
+    name: string;
+    currency?: string | null;
+    score: number;
+    revenue: number;
+    net: number;
+    expenses: number;
+    rooms: number;
+    shifts: number;
+    stays: number;
+    roomNights: number;
+    revenuePerRoom: number;
+    averageStayRevenue: number;
+    occupancyRate: number;
+    expenseRatio: number;
+};
+
+type ManagerRankingItem = {
+    id: string;
+    name: string;
+    score: number;
+    revenue: number;
+    net: number;
+    expenses: number;
+    shifts: number;
+    stays: number;
+    roomNights: number;
+    revenuePerShift: number;
+    averageStayRevenue: number;
+    expenseRatio: number;
+    hotels: string[];
 };
 
 type AdminHotelSummary = {
@@ -150,6 +185,15 @@ type AdminOverview = {
         onTrack: boolean;
     };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number; collections: number }>;
+    rankings?: {
+        period: {
+            startAt: string;
+            endAt: string;
+            days: number;
+        };
+        hotels: HotelRankingItem[];
+        managers: ManagerRankingItem[];
+    };
     recentExpenses?: ExpenseEntry[];
 };
 
@@ -697,6 +741,87 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </Card>
+    );
+}
+
+function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, className }: {
+    title: string;
+    subtitle: string;
+    kind: "hotels" | "managers";
+    items: Array<HotelRankingItem | ManagerRankingItem>;
+    defaultCurrency?: string;
+    className?: string;
+}) {
+    return (
+        <Card className={`p-4 ${className ?? ""}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">{subtitle}</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+                </div>
+                <Trophy className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-300" aria-hidden="true" />
+            </div>
+            <div className="mt-4 space-y-2">
+                {items.length ? items.map((item, index) => {
+                    const currency = "currency" in item ? item.currency ?? defaultCurrency : defaultCurrency;
+                    const scoreTone = item.score >= 75
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                        : item.score >= 45
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-400/12 dark:text-amber-100"
+                            : "bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-white/55";
+                    const primaryMetric = kind === "hotels"
+                        ? `на номер ${formatCurrency((item as HotelRankingItem).revenuePerRoom, currency ?? undefined)}`
+                        : `на смену ${formatCurrency((item as ManagerRankingItem).revenuePerShift, currency ?? undefined)}`;
+                    const activityMetric = kind === "hotels"
+                        ? `загрузка ${formatPercent((item as HotelRankingItem).occupancyRate)}`
+                        : `${(item as ManagerRankingItem).shifts} смен · ${(item as ManagerRankingItem).stays} заездов`;
+                    const contextLabel = kind === "managers"
+                        ? (item as ManagerRankingItem).hotels.join(", ")
+                        : `${(item as HotelRankingItem).rooms} номеров · ${(item as HotelRankingItem).roomNights} номеро-дней`;
+
+                    return (
+                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-semibold text-slate-600 shadow-sm dark:bg-white/[0.06] dark:text-white/60">
+                                            {index + 1}
+                                        </span>
+                                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{item.name}</p>
+                                    </div>
+                                    <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-white/40">{contextLabel || "Без объекта"}</p>
+                                </div>
+                                <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold ${scoreTone}`}>
+                                    {item.score}
+                                </span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-white/42 sm:grid-cols-4">
+                                <span>
+                                    <span className="block text-[10px] uppercase tracking-[0.12em]">Выручка</span>
+                                    <strong className="text-slate-900 dark:text-white">{formatCurrency(item.revenue, currency ?? undefined)}</strong>
+                                </span>
+                                <span>
+                                    <span className="block text-[10px] uppercase tracking-[0.12em]">Чистыми</span>
+                                    <strong className={item.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"}>{formatCurrency(item.net, currency ?? undefined)}</strong>
+                                </span>
+                                <span>
+                                    <span className="block text-[10px] uppercase tracking-[0.12em]">Эффект</span>
+                                    <strong className="text-slate-900 dark:text-white">{primaryMetric}</strong>
+                                </span>
+                                <span>
+                                    <span className="block text-[10px] uppercase tracking-[0.12em]">Активность</span>
+                                    <strong className="text-slate-900 dark:text-white">{activityMetric}</strong>
+                                </span>
+                            </div>
+                        </div>
+                    );
+                }) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
+                        Пока нет данных для рейтинга за выбранный период.
+                    </p>
+                )}
             </div>
         </Card>
     );
@@ -1820,6 +1945,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             payouts={overview.totals.payouts}
                                             adjustments={overview.totals.adjustments}
                                             currency={overviewCurrency}
+                                        />
+                                        <EfficiencyRankingCard
+                                            title="Лучшие отели"
+                                            subtitle="Рейтинг эффективности"
+                                            kind="hotels"
+                                            items={overview.rankings?.hotels ?? []}
+                                            defaultCurrency={overviewCurrency}
+                                            className="col-span-1 lg:col-span-2"
+                                        />
+                                        <EfficiencyRankingCard
+                                            title="Лучшие менеджеры"
+                                            subtitle="Рейтинг эффективности"
+                                            kind="managers"
+                                            items={overview.rankings?.managers ?? []}
+                                            defaultCurrency={overviewCurrency}
+                                            className="col-span-1 lg:col-span-2"
                                         />
                                         <ExpenseFeed
                                             title="Последние списания по фильтру"
