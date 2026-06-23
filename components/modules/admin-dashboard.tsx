@@ -620,23 +620,33 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
 
         return Array.from(buckets.values())
             .sort((a, b) => b.amount - a.amount)
-            .slice(0, 10);
+            .slice(0, 7);
     }, [entries]);
+    const maxAmount = Math.max(...grouped.map((item) => item.amount), 0);
 
     return (
         <Card className={`p-4 ${className ?? ""}`}>
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Структура расходов</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По категориям</h3>
-            <div className="mt-4 space-y-2.5">
-                {grouped.length ? grouped.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                        <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{item.label}</p>
-                            <p className="mt-1 text-[11px] text-slate-500 dark:text-white/40">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
+            <div className="mt-4 space-y-3">
+                {grouped.length ? grouped.map((item) => {
+                    const width = maxAmount > 0 ? Math.max(8, Math.round((item.amount / maxAmount) * 100)) : 0;
+                    return (
+                        <div key={item.label} className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <p className="min-w-0 truncate font-medium text-slate-900 dark:text-white">{item.label}</p>
+                                <p className="shrink-0 font-semibold text-slate-900 dark:text-white">{formatCurrency(item.amount, defaultCurrency)}</p>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                                <div
+                                    className="h-full rounded-full bg-slate-800 dark:bg-slate-200"
+                                    style={{ width: `${width}%` }}
+                                />
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-white/38">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
                         </div>
-                        <p className="shrink-0 text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(item.amount, defaultCurrency)}</p>
-                    </div>
-                )) : (
+                    );
+                }) : (
                     <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
                         Нет операций за выбранный период.
                     </p>
@@ -654,6 +664,7 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
     className?: string;
 }) {
     const [query, setQuery] = useState("");
+    const [isOpen, setIsOpen] = useState(false);
     const deferredQuery = useDeferredValue(query);
 
     const filteredEntries = useMemo(() => {
@@ -686,15 +697,20 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                 <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Журнал операций</p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все операции по фильтру</h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">{filteredEntries.length} записей скрыты из статистики, чтобы не забивать экран.</p>
                 </div>
-                <div className="w-full sm:max-w-xs">
+                <div className="flex w-full flex-col gap-2 sm:max-w-md sm:flex-row sm:items-center">
                     <Input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder="Поиск по причине, менеджеру, объекту"
                     />
+                    <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => setIsOpen((value) => !value)}>
+                        {isOpen ? "Скрыть" : "Показать"}
+                    </Button>
                 </div>
             </div>
+            {isOpen ? (
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
                 <div className="max-h-[28rem] overflow-auto">
                     <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-white/[0.06]">
@@ -742,6 +758,11 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
                     </table>
                 </div>
             </div>
+            ) : (
+                <div className="mt-4 rounded-2xl border border-dashed border-slate-200/80 bg-slate-50 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.025] dark:text-white/40">
+                    Журнал доступен по кнопке “Показать”. В сводке остаются только агрегаты и последние важные списания.
+                </div>
+            )}
         </Card>
     );
 }
@@ -763,7 +784,15 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                 </div>
                 <Trophy className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-300" aria-hidden="true" />
             </div>
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
+                <div className="hidden grid-cols-[2.2rem_minmax(0,1.25fr)_7rem_7rem_7rem_7rem] gap-3 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/35 lg:grid">
+                    <span>№</span>
+                    <span>{kind === "hotels" ? "Объект" : "Менеджер"}</span>
+                    <span className="text-right">Score</span>
+                    <span className="text-right">Выручка</span>
+                    <span className="text-right">Чистыми</span>
+                    <span className="text-right">{kind === "hotels" ? "На номер" : "На смену"}</span>
+                </div>
                 {items.length ? items.map((item, index) => {
                     const currency = "currency" in item ? item.currency ?? defaultCurrency : defaultCurrency;
                     const scoreTone = item.score >= 75
@@ -782,22 +811,31 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                         : `${(item as HotelRankingItem).rooms} номеров · ${(item as HotelRankingItem).roomNights} номеро-дней`;
 
                     return (
-                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                            <div className="flex items-start justify-between gap-3">
+                        <div key={item.id} className="border-b border-slate-200/70 px-3 py-3 last:border-b-0 dark:border-white/[0.05]">
+                            <div className="grid gap-3 lg:grid-cols-[2.2rem_minmax(0,1.25fr)_7rem_7rem_7rem_7rem] lg:items-center">
+                                <span className="hidden text-sm font-semibold text-slate-500 dark:text-white/45 lg:block">{index + 1}</span>
                                 <div className="min-w-0">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-semibold text-slate-600 shadow-sm dark:bg-white/[0.06] dark:text-white/60">
-                                            {index + 1}
+                                    <div className="flex min-w-0 items-center justify-between gap-2 lg:block">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-white/[0.06] dark:text-white/60 lg:hidden">
+                                                {index + 1}
+                                            </span>
+                                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{item.name}</p>
+                                        </div>
+                                        <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold lg:hidden ${scoreTone}`}>
+                                            {item.score}
                                         </span>
-                                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{item.name}</p>
                                     </div>
                                     <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-white/40">{contextLabel || "Без объекта"}</p>
                                 </div>
-                                <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold ${scoreTone}`}>
+                                <span className={`hidden justify-self-end rounded-lg px-2 py-1 text-xs font-semibold lg:inline-flex ${scoreTone}`}>
                                     {item.score}
                                 </span>
+                                <p className="hidden truncate text-right text-sm font-semibold text-slate-900 dark:text-white lg:block">{formatCurrency(item.revenue, currency ?? undefined)}</p>
+                                <p className={`hidden truncate text-right text-sm font-semibold lg:block ${item.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"}`}>{formatCurrency(item.net, currency ?? undefined)}</p>
+                                <p className="hidden truncate text-right text-sm font-semibold text-slate-900 dark:text-white lg:block">{kind === "hotels" ? formatCurrency((item as HotelRankingItem).revenuePerRoom, currency ?? undefined) : formatCurrency((item as ManagerRankingItem).revenuePerShift, currency ?? undefined)}</p>
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-white/42 sm:grid-cols-4">
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-white/42 sm:grid-cols-4 lg:hidden">
                                 <span>
                                     <span className="block text-[10px] uppercase tracking-[0.12em]">Выручка</span>
                                     <strong className="text-slate-900 dark:text-white">{formatCurrency(item.revenue, currency ?? undefined)}</strong>
@@ -815,10 +853,14 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                     <strong className="text-slate-900 dark:text-white">{activityMetric}</strong>
                                 </span>
                             </div>
+                            <div className="mt-2 hidden items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-white/38 lg:flex">
+                                <span>{activityMetric}</span>
+                                <span>средний чек {formatCurrency(item.averageStayRevenue, currency ?? undefined)} · расходы {formatCurrency(item.expenses, currency ?? undefined)}</span>
+                            </div>
                         </div>
                     );
                 }) : (
-                    <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40">
+                    <p className="px-3 py-4 text-sm text-slate-500 dark:text-white/40">
                         Пока нет данных для рейтинга за выбранный период.
                     </p>
                 )}
@@ -1964,7 +2006,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                         <ExpenseFeed
                                             title="Последние списания по фильтру"
-                                            entries={(overview.recentExpenses ?? []).slice(0, 8)}
+                                            entries={(overview.recentExpenses ?? []).slice(0, 5)}
                                             defaultCurrency={overviewCurrency}
                                             defaultTimezone={overviewTimezone}
                                             showHotelName={!filters.hotelId}
