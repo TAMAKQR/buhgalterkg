@@ -85,6 +85,12 @@ type ManagerRankingItem = {
     hotels: string[];
 };
 
+type ManagersByHotelRankingGroup = {
+    hotelId: string;
+    hotelName: string;
+    managers: ManagerRankingItem[];
+};
+
 type AdminHotelSummary = {
     id: string;
     name: string;
@@ -193,6 +199,7 @@ type AdminOverview = {
         };
         hotels: HotelRankingItem[];
         managers: ManagerRankingItem[];
+        managersByHotel?: ManagersByHotelRankingGroup[];
     };
     recentExpenses?: ExpenseEntry[];
 };
@@ -862,6 +869,62 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                 }) : (
                     <p className="px-3 py-4 text-sm text-slate-500 dark:text-white/40">
                         Пока нет данных для рейтинга за выбранный период.
+                    </p>
+                )}
+            </div>
+        </Card>
+    );
+}
+
+function ManagersByHotelRankingCard({ groups, defaultCurrency, className }: {
+    groups: ManagersByHotelRankingGroup[];
+    defaultCurrency?: string;
+    className?: string;
+}) {
+    return (
+        <Card className={`p-4 ${className ?? ""}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">По каждому объекту</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Лучшие менеджеры филиалов</h3>
+                </div>
+                <Users className="h-4 w-4 shrink-0 text-slate-500 dark:text-white/40" aria-hidden="true" />
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {groups.length ? groups.map((group) => (
+                    <div key={group.hotelId} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                        <div className="flex items-center justify-between gap-3">
+                            <p className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white">{group.hotelName}</p>
+                            <span className="rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+                                {group.managers.length}
+                            </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                            {group.managers.map((manager, index) => {
+                                const scoreTone = manager.score >= 75
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                                    : manager.score >= 45
+                                        ? "bg-amber-50 text-amber-700 dark:bg-amber-400/12 dark:text-amber-100"
+                                        : "bg-white text-slate-600 dark:bg-white/[0.06] dark:text-white/55";
+
+                                return (
+                                    <div key={`${group.hotelId}-${manager.id}`} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white px-2.5 py-2 dark:bg-white/[0.04]">
+                                        <span className="text-xs font-semibold text-slate-400 dark:text-white/35">{index + 1}</span>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
+                                            <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/38">
+                                                {formatCurrency(manager.revenue, defaultCurrency)} · {manager.shifts} смен · {manager.stays} заездов
+                                            </p>
+                                        </div>
+                                        <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${scoreTone}`}>{manager.score}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200/80 px-3 py-4 text-sm text-slate-500 dark:border-white/[0.06] dark:text-white/40 lg:col-span-2">
+                        Пока нет менеджеров с данными по объектам за выбранный период.
                     </p>
                 )}
             </div>
@@ -1998,11 +2061,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         />
                                         <EfficiencyRankingCard
                                             title="Лучшие менеджеры"
-                                            subtitle="Рейтинг эффективности"
+                                            subtitle="Общий рейтинг"
                                             kind="managers"
                                             items={overview.rankings?.managers ?? []}
                                             defaultCurrency={overviewCurrency}
                                             className="col-span-1 lg:col-span-2"
+                                        />
+                                        <ManagersByHotelRankingCard
+                                            groups={overview.rankings?.managersByHotel ?? []}
+                                            defaultCurrency={overviewCurrency}
+                                            className="col-span-1 lg:col-span-4"
                                         />
                                         <ExpenseFeed
                                             title="Последние списания по фильтру"

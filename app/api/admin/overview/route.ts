@@ -441,6 +441,21 @@ export async function GET(request: NextRequest) {
             shifts: number;
             hotels: Set<string>;
         }>();
+        const managerHotelRankBuckets = new Map<string, {
+            id: string;
+            hotelId: string;
+            hotelName: string;
+            managerId: string;
+            managerName: string;
+            revenue: number;
+            expenses: number;
+            payouts: number;
+            collections: number;
+            adjustments: number;
+            stays: number;
+            roomNights: number;
+            shifts: number;
+        }>();
 
         const ensureHotelBucket = (hotel: { id: string; name: string; currency?: string | null }) => {
             const existing = hotelRankBuckets.get(hotel.id);
@@ -488,6 +503,51 @@ export async function GET(request: NextRequest) {
             return created;
         };
 
+        const ensureManagerHotelBucket = (
+            hotel: { id: string; name: string },
+            manager: { id: string; displayName: string }
+        ) => {
+            const key = `${hotel.id}:${manager.id}`;
+            const existing = managerHotelRankBuckets.get(key);
+            if (existing) {
+                return existing;
+            }
+            const created = {
+                id: key,
+                hotelId: hotel.id,
+                hotelName: hotel.name,
+                managerId: manager.id,
+                managerName: manager.displayName,
+                revenue: 0,
+                expenses: 0,
+                payouts: 0,
+                collections: 0,
+                adjustments: 0,
+                stays: 0,
+                roomNights: 0,
+                shifts: 0,
+            };
+            managerHotelRankBuckets.set(key, created);
+            return created;
+        };
+
+        const applyRankingAmount = (
+            bucket: { revenue: number; expenses: number; payouts: number; collections: number; adjustments: number },
+            entry: (typeof rankingLedgerEntries)[number]
+        ) => {
+            if (entry.entryType === LedgerEntryType.CASH_IN) {
+                bucket.revenue += entry.amount;
+            } else if (isCollectionLedgerEntry(entry)) {
+                bucket.collections += entry.amount;
+            } else if (entry.entryType === LedgerEntryType.CASH_OUT) {
+                bucket.expenses += entry.amount;
+            } else if (entry.entryType === LedgerEntryType.MANAGER_PAYOUT) {
+                bucket.payouts += entry.amount;
+            } else if (entry.entryType === LedgerEntryType.ADJUSTMENT) {
+                bucket.adjustments += entry.amount;
+            }
+        };
+
         for (const hotel of targetHotels) {
             ensureHotelBucket({ id: hotel.id, name: hotel.name, currency: hotel.currency });
         }
@@ -495,27 +555,17 @@ export async function GET(request: NextRequest) {
         for (const entry of rankingLedgerEntries) {
             const hotelBucket = ensureHotelBucket(entry.hotel);
             const managerBucket = entry.managerId && entry.manager ? ensureManagerBucket(entry.manager) : null;
+            const managerHotelBucket = entry.managerId && entry.manager ? ensureManagerHotelBucket(entry.hotel, entry.manager) : null;
             if (managerBucket) {
                 managerBucket.hotels.add(entry.hotel.name);
             }
 
-            const applyAmount = (bucket: typeof hotelBucket | NonNullable<typeof managerBucket>) => {
-                if (entry.entryType === LedgerEntryType.CASH_IN) {
-                    bucket.revenue += entry.amount;
-                } else if (isCollectionLedgerEntry(entry)) {
-                    bucket.collections += entry.amount;
-                } else if (entry.entryType === LedgerEntryType.CASH_OUT) {
-                    bucket.expenses += entry.amount;
-                } else if (entry.entryType === LedgerEntryType.MANAGER_PAYOUT) {
-                    bucket.payouts += entry.amount;
-                } else if (entry.entryType === LedgerEntryType.ADJUSTMENT) {
-                    bucket.adjustments += entry.amount;
-                }
-            };
-
-            applyAmount(hotelBucket);
+            applyRankingAmount(hotelBucket, entry);
             if (managerBucket) {
-                applyAmount(managerBucket);
+                applyRankingAmount(managerBucket, entry);
+            }
+            if (managerHotelBucket) {
+                applyRankingAmount(managerHotelBucket, entry);
             }
         }
 
@@ -527,9 +577,12 @@ export async function GET(request: NextRequest) {
 
             if (stay.shift?.managerId && stay.shift.manager) {
                 const managerBucket = ensureManagerBucket(stay.shift.manager);
+                const managerHotelBucket = ensureManagerHotelBucket(stay.hotel, stay.shift.manager);
                 managerBucket.hotels.add(stay.hotel.name);
                 managerBucket.stays += 1;
                 managerBucket.roomNights += nights;
+                managerHotelBucket.stays += 1;
+                managerHotelBucket.roomNights += nights;
             }
         }
 
@@ -539,8 +592,10 @@ export async function GET(request: NextRequest) {
                 hotelBucket.shifts += 1;
             }
             const managerBucket = ensureManagerBucket(shift.manager);
+            const managerHotelBucket = ensureManagerHotelBucket(shift.hotel, shift.manager);
             managerBucket.hotels.add(shift.hotel.name);
             managerBucket.shifts += 1;
+            managerHotelBucket.shifts += 1;
         }
 
         const hotelBuckets = Array.from(hotelRankBuckets.values()).map((item) => {
@@ -643,6 +698,76 @@ export async function GET(request: NextRequest) {
             })
             .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
             .slice(0, 8);
+
+        const managerHotelBuckets = Array.from(managerHotelRankBuckets.values()).map((item) => {
+            const net = item.revenue - item.expenses - item.payouts + item.adjustments;
+            const expenseTotal = item.expenses + item.payouts;
+            return {
+                ...item,
+                net,
+                expenseTotal,
+                revenuePerShift: item.shifts > 0 ? Math.round(item.revenue / item.shifts) : item.revenue,
+                averageStayRevenue: item.stays > 0 ? Math.round(item.revenue / item.stays) : 0,
+                expenseRatio: item.revenue > 0 ? expenseTotal / item.revenue : 0,
+            };
+        });
+        const managerHotelGroups = Array.from(
+            managerHotelBuckets.reduce((groups, item) => {
+                const list = groups.get(item.hotelId) ?? [];
+                list.push(item);
+                groups.set(item.hotelId, list);
+                return groups;
+            }, new Map<string, typeof managerHotelBuckets>())
+        )
+            .map(([hotelId, items]) => {
+                const localMax = {
+                    revenue: Math.max(...items.map((item) => item.revenue), 0),
+                    net: Math.max(...items.map((item) => clampPositive(item.net)), 0),
+                    revenuePerShift: Math.max(...items.map((item) => item.revenuePerShift), 0),
+                    averageStayRevenue: Math.max(...items.map((item) => item.averageStayRevenue), 0),
+                };
+                const managers = items
+                    .map((item) => {
+                        const expenseControl = item.revenue > 0 ? Math.max(0, 1 - item.expenseRatio) : 0;
+                        const score = Math.round(
+                            scorePart(item.revenue, localMax.revenue) * 35 +
+                            scorePart(item.net, localMax.net) * 25 +
+                            scorePart(item.revenuePerShift, localMax.revenuePerShift) * 20 +
+                            scorePart(item.averageStayRevenue, localMax.averageStayRevenue) * 10 +
+                            expenseControl * 10
+                        );
+
+                        return {
+                            id: item.managerId,
+                            name: item.managerName,
+                            score,
+                            revenue: item.revenue,
+                            net: item.net,
+                            expenses: item.expenseTotal,
+                            shifts: item.shifts,
+                            stays: item.stays,
+                            roomNights: item.roomNights,
+                            revenuePerShift: item.revenuePerShift,
+                            averageStayRevenue: item.averageStayRevenue,
+                            expenseRatio: item.expenseRatio,
+                            hotels: [item.hotelName],
+                        };
+                    })
+                    .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
+                    .slice(0, 4);
+
+                return {
+                    hotelId,
+                    hotelName: items[0]?.hotelName ?? "Объект",
+                    managers,
+                };
+            })
+            .filter((group) => group.managers.length > 0)
+            .sort((first, second) => {
+                const firstScore = first.managers[0]?.score ?? 0;
+                const secondScore = second.managers[0]?.score ?? 0;
+                return secondScore - firstScore || first.hotelName.localeCompare(second.hotelName, "ru");
+            });
 
         const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
         const ledgerTotals: Record<LedgerEntryType, { total: number; cash: number; card: number }> = {
@@ -851,6 +976,7 @@ export async function GET(request: NextRequest) {
                 },
                 hotels: hotelLeaders,
                 managers: managerLeaders,
+                managersByHotel: managerHotelGroups,
             },
             recentExpenses: recentExpenses
                 .map((entry) => ({
