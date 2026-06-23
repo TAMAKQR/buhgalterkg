@@ -791,8 +791,9 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                 </div>
                 <Trophy className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-300" aria-hidden="true" />
             </div>
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
-                <div className="hidden grid-cols-[2.2rem_minmax(0,1.25fr)_7rem_7rem_7rem_7rem] gap-3 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/35 lg:grid">
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-white/[0.06]">
+                <div className="min-w-[680px]">
+                <div className="hidden grid-cols-[2.2rem_minmax(170px,1fr)_4.5rem_7rem_7rem_7rem] gap-3 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/35 lg:grid">
                     <span>№</span>
                     <span>{kind === "hotels" ? "Объект" : "Менеджер"}</span>
                     <span className="text-right">Score</span>
@@ -819,7 +820,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
 
                     return (
                         <div key={item.id} className="border-b border-slate-200/70 px-3 py-3 last:border-b-0 dark:border-white/[0.05]">
-                            <div className="grid gap-3 lg:grid-cols-[2.2rem_minmax(0,1.25fr)_7rem_7rem_7rem_7rem] lg:items-center">
+                            <div className="grid gap-3 lg:grid-cols-[2.2rem_minmax(170px,1fr)_4.5rem_7rem_7rem_7rem] lg:items-center">
                                 <span className="hidden text-sm font-semibold text-slate-500 dark:text-white/45 lg:block">{index + 1}</span>
                                 <div className="min-w-0">
                                     <div className="flex min-w-0 items-center justify-between gap-2 lg:block">
@@ -827,7 +828,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-white/[0.06] dark:text-white/60 lg:hidden">
                                                 {index + 1}
                                             </span>
-                                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{item.name}</p>
+                                            <p className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white" title={item.name}>{item.name}</p>
                                         </div>
                                         <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold lg:hidden ${scoreTone}`}>
                                             {item.score}
@@ -871,6 +872,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                         Пока нет данных для рейтинга за выбранный период.
                     </p>
                 )}
+                </div>
             </div>
         </Card>
     );
