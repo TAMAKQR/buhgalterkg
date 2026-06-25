@@ -1,0 +1,2 @@
+ALTER TABLE "Hotel"
+ADD COLUMN "guest_qr_enabled" BOOLEAN NOT NULL DEFAULT true;

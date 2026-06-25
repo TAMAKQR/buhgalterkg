@@ -94,6 +94,7 @@ type HotelDetailRecord = {
     extranetNames: string[];
     hasMealPlan: boolean;
     allowPostpaidStays: boolean;
+    guestQrEnabled: boolean;
     expenseCategories: ExpenseCategory[];
     assignments: Array<HotelAssignment & { user: User }>;
     shifts: Array<Shift & { manager: User }>;
@@ -166,6 +167,7 @@ const updateHotelSchema = z
         extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
         hasMealPlan: z.boolean().optional(),
         allowPostpaidStays: z.boolean().optional(),
+        guestQrEnabled: z.boolean().optional(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -451,6 +453,7 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             extranetNames: hotelRecord.extranetNames,
             hasMealPlan: hotelRecord.hasMealPlan,
             allowPostpaidStays: hotelRecord.allowPostpaidStays,
+            guestQrEnabled: hotelRecord.guestQrEnabled,
             financialCycleStartDay: hotelRecord.financialCycleStartDay,
             managerSharePct: hotelRecord.managerSharePct,
             cleaningChatId: hotelRecord.cleaningChatId,

@@ -60,11 +60,15 @@ export async function POST(request: NextRequest) {
         if (hotelId) {
             const hotel = await prisma.hotel.findUnique({
                 where: { id: hotelId },
-                select: { id: true }
+                select: { id: true, guestQrEnabled: true }
             });
 
             if (!hotel) {
                 return new NextResponse('Hotel not found', { status: 404 });
+            }
+
+            if (!hotel.guestQrEnabled) {
+                return new NextResponse('Guest QR is disabled for this hotel', { status: 403 });
             }
         }
 

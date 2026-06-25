@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
                 hotel: {
                     select: {
                         id: true,
-                        name: true
+                        name: true,
+                        guestQrEnabled: true
                     }
                 },
                 guestProfile: {
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest) {
 
         if (token.hotelId) {
             assertHotelAccess(session, token.hotelId);
+        }
+
+        if (token.hotel && !token.hotel.guestQrEnabled) {
+            return new NextResponse('Guest QR is disabled for this hotel', { status: 403 });
         }
 
         await prisma.guestQrToken.update({

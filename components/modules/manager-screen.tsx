@@ -68,6 +68,7 @@ interface ManagerStateResponse {
         extranetNames?: string[];
         hasMealPlan?: boolean;
         allowPostpaidStays?: boolean;
+        guestQrEnabled?: boolean;
     };
     shift?: {
         id: string;
@@ -412,6 +413,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const hotelCur = data?.hotel?.currency ?? 'KGS';
     const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
     const canUsePostpaidStays = Boolean(data?.hotel?.allowPostpaidStays);
+    const canUseGuestQr = Boolean(data?.hotel?.guestQrEnabled);
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatCurrencyAmount = useCallback((amount?: number | null, currency?: string | null) => (
         formatMoney(typeof amount === 'number' ? amount : 0, currency || hotelCur)
@@ -1478,6 +1480,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }, []);
 
     const openGuestQrModal = () => {
+        if (!canUseGuestQr) {
+            toast('GuestPass / QR отключен для этой точки', 'error');
+            return;
+        }
+
         if (!data?.shift) {
             toast('Сначала откройте смену, чтобы заселить гостя по QR', 'error');
             return;
@@ -2505,7 +2512,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 variant="ghost"
                                 className="h-9 w-9"
                                 onClick={openGuestQrModal}
-                                disabled={!hasOpenShift}
+                                disabled={!hasOpenShift || !canUseGuestQr}
                                 aria-label="QR гостя"
                                 title="QR гостя"
                             >
@@ -2559,7 +2566,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     variant="ghost"
                                     className="h-9 w-9"
                                     onClick={openGuestQrModal}
-                                    disabled={!hasOpenShift}
+                                    disabled={!hasOpenShift || !canUseGuestQr}
                                     aria-label="QR гостя"
                                     title="QR гостя"
                                 >
@@ -2627,7 +2634,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             <h1 className="mt-1 truncate text-2xl font-semibold tracking-normal text-slate-800 dark:text-slate-100">{activePanelConfig.label}</h1>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Button type="button" size="sm" variant="secondary" className="gap-2" disabled={!hasOpenShift} onClick={openGuestQrModal}>
+                            <Button type="button" size="sm" variant="secondary" className="gap-2" disabled={!hasOpenShift || !canUseGuestQr} onClick={openGuestQrModal}>
                                 <QrCode className="h-4 w-4" aria-hidden="true" />
                                 QR гость
                             </Button>

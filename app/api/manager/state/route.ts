@@ -301,7 +301,8 @@ export async function GET(request: NextRequest) {
                 usesExtranets: hotel.usesExtranets,
                 extranetNames: hotel.extranetNames,
                 hasMealPlan: hotel.hasMealPlan,
-                allowPostpaidStays: hotel.allowPostpaidStays
+                allowPostpaidStays: hotel.allowPostpaidStays,
+                guestQrEnabled: hotel.guestQrEnabled
             },
             expenseCategories: hotel.expenseCategories.map((category) => ({
                 id: category.id,

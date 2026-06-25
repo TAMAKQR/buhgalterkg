@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const hotels = await prisma.hotel.findMany({
+            where: { guestQrEnabled: true },
             orderBy: { name: 'asc' },
             select: {
                 id: true,

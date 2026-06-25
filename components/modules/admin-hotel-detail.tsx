@@ -135,6 +135,7 @@ interface HotelDetailPayload {
     extranetNames?: string[];
     hasMealPlan?: boolean | null;
     allowPostpaidStays?: boolean | null;
+    guestQrEnabled?: boolean | null;
     managerSharePct?: number | null;
     notes?: string | null;
     roomCount: number;

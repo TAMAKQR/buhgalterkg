@@ -30,6 +30,7 @@ const createHotelSchema = z.object({
     extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
     hasMealPlan: z.boolean().optional(),
     allowPostpaidStays: z.boolean().optional(),
+    guestQrEnabled: z.boolean().optional(),
     financialCycleStartDay: z.number().int().min(1).max(31).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
     monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -236,6 +237,7 @@ export async function GET(request: NextRequest) {
             extranetNames: hotel.extranetNames,
             hasMealPlan: hotel.hasMealPlan,
             allowPostpaidStays: hotel.allowPostpaidStays,
+            guestQrEnabled: hotel.guestQrEnabled,
             financialCycleStartDay: hotel.financialCycleStartDay,
             managerSharePct: hotel.managerSharePct,
             monthlyPayrollCost: hotel.monthlyPayrollCost,
@@ -311,6 +313,7 @@ export async function POST(request: NextRequest) {
                 extranetNames: sanitizeExtranetNames(payload.extranetNames ?? []),
                 hasMealPlan: payload.hasMealPlan ?? false,
                 allowPostpaidStays: payload.allowPostpaidStays ?? false,
+                guestQrEnabled: payload.guestQrEnabled ?? false,
                 country
             }
         });
