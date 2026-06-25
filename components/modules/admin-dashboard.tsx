@@ -2395,74 +2395,111 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     Гостей пока нет или фильтр ничего не нашел.
                                 </Card>
                             ) : (
-                                <div className="grid gap-3 lg:grid-cols-2">
-                                    {guestProfiles.map((guest) => {
-                                        const statusMeta = guestVerificationMeta[guest.verificationStatus];
-                                        const guestTz = guest.hotel?.timezone ?? overviewDisplay.timezone;
-                                        return (
-                                            <Card key={guest.id} className="p-4 lg:!rounded-lg">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <h3 className="truncate text-base font-semibold text-slate-950 dark:text-white">{guest.fullName}</h3>
-                                                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-white/40">
-                                                            {guest.hotel?.name ?? "Объект не указан"}
-                                                            {guest.phone ? ` · ${guest.phone}` : ""}
-                                                        </p>
-                                                    </div>
-                                                    <span className={`inline-flex shrink-0 rounded-md border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}>
-                                                        {statusMeta.label}
-                                                    </span>
-                                                </div>
+                                <>
+                                    <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_46px_-38px_rgba(15,23,42,0.45)] dark:border-white/[0.06] dark:bg-white/[0.03] lg:block">
+                                        <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-white/[0.06]">
+                                            <thead className="bg-slate-50/90 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-white/[0.03] dark:text-white/32">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left font-medium">Гость</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Объект</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Документ</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Статус</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Последний визит</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Последнее действие</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-200/70 dark:divide-white/[0.05]">
+                                                {guestProfiles.map((guest) => {
+                                                    const statusMeta = guestVerificationMeta[guest.verificationStatus];
+                                                    const guestTz = guest.hotel?.timezone ?? overviewDisplay.timezone;
+                                                    const lastAudit = guest.auditLogs[0];
+                                                    return (
+                                                        <tr key={guest.id} className="transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.035]">
+                                                            <td className="max-w-[240px] px-4 py-3">
+                                                                <p className="truncate font-semibold text-slate-950 dark:text-white">{guest.fullName}</p>
+                                                                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/40">
+                                                                    {[guest.phone, guest.telegramId ? `tg ${guest.telegramId}` : null].filter(Boolean).join(" · ") || "контакты не указаны"}
+                                                                </p>
+                                                            </td>
+                                                            <td className="max-w-[180px] px-4 py-3 text-slate-600 dark:text-white/55">
+                                                                <p className="truncate">{guest.hotel?.name ?? "—"}</p>
+                                                            </td>
+                                                            <td className="max-w-[160px] px-4 py-3">
+                                                                <p className="truncate font-medium text-slate-800 dark:text-white/75">{guest.documentNumber || "—"}</p>
+                                                                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/35">
+                                                                    согласие {guest.consentAcceptedAt ? formatDT(guest.consentAcceptedAt, guestTz) : "—"}
+                                                                </p>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`inline-flex rounded-md border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}>
+                                                                    {statusMeta.label}
+                                                                </span>
+                                                                {guest.verifiedAt ? (
+                                                                    <p className="mt-1 max-w-[160px] truncate text-xs text-slate-500 dark:text-white/35">
+                                                                        {guest.verifiedByName || "—"} · {formatDT(guest.verifiedAt, guestTz)}
+                                                                    </p>
+                                                                ) : null}
+                                                            </td>
+                                                            <td className="max-w-[190px] px-4 py-3 text-slate-600 dark:text-white/55">
+                                                                {guest.lastStay ? (
+                                                                    <>
+                                                                        <p className="truncate">№{guest.lastStay.roomLabel} · {guest.lastStay.hotelName}</p>
+                                                                        <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/35">{formatDT(guest.lastStay.scheduledCheckIn, guest.lastStay.timezone ?? guestTz)}</p>
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-slate-400 dark:text-white/28">—</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="max-w-[230px] px-4 py-3 text-slate-600 dark:text-white/55">
+                                                                {lastAudit ? (
+                                                                    <>
+                                                                        <p className="truncate">{guestAuditActionLabels[lastAudit.action] ?? lastAudit.action}{lastAudit.actorName ? ` · ${lastAudit.actorName}` : ""}</p>
+                                                                        <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/35">
+                                                                            {formatDT(lastAudit.createdAt, guestTz)}
+                                                                            {lastAudit.changedFields.length ? ` · ${formatGuestAuditFields(lastAudit.changedFields)}` : ""}
+                                                                        </p>
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-slate-400 dark:text-white/28">—</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                        <p className="uppercase tracking-[0.14em] text-slate-500 dark:text-white/35">Документ</p>
-                                                        <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{guest.documentNumber || "—"}</p>
+                                    <div className="grid gap-2 lg:hidden">
+                                        {guestProfiles.map((guest) => {
+                                            const statusMeta = guestVerificationMeta[guest.verificationStatus];
+                                            const guestTz = guest.hotel?.timezone ?? overviewDisplay.timezone;
+                                            const lastAudit = guest.auditLogs[0];
+                                            return (
+                                                <Card key={guest.id} className="p-3">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <h3 className="truncate text-sm font-semibold text-slate-950 dark:text-white">{guest.fullName}</h3>
+                                                            <p className="mt-1 truncate text-xs text-slate-500 dark:text-white/40">{guest.hotel?.name ?? "Объект не указан"}{guest.phone ? ` · ${guest.phone}` : ""}</p>
+                                                        </div>
+                                                        <span className={`inline-flex shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>
+                                                            {statusMeta.label}
+                                                        </span>
                                                     </div>
-                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                        <p className="uppercase tracking-[0.14em] text-slate-500 dark:text-white/35">Согласие</p>
-                                                        <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{guest.consentAcceptedAt ? formatDT(guest.consentAcceptedAt, guestTz) : "—"}</p>
+                                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-white/50">
+                                                        <p className="truncate">Документ: <span className="font-medium text-slate-900 dark:text-white/75">{guest.documentNumber || "—"}</span></p>
+                                                        <p className="truncate">Согласие: {guest.consentAcceptedAt ? formatDT(guest.consentAcceptedAt, guestTz) : "—"}</p>
                                                     </div>
-                                                </div>
-
-                                                <div className="mt-3 space-y-1.5 text-xs text-slate-500 dark:text-white/45">
-                                                    {guest.verifiedAt ? (
-                                                        <p className="truncate">
-                                                            Проверил: <span className="text-slate-800 dark:text-white/75">{guest.verifiedByName || "—"}</span> · {formatDT(guest.verifiedAt, guestTz)}
+                                                    {lastAudit ? (
+                                                        <p className="mt-2 truncate text-xs text-slate-500 dark:text-white/35">
+                                                            {guestAuditActionLabels[lastAudit.action] ?? lastAudit.action} · {formatDT(lastAudit.createdAt, guestTz)}
                                                         </p>
                                                     ) : null}
-                                                    {guest.lastStay ? (
-                                                        <p className="truncate">
-                                                            Последний визит: №{guest.lastStay.roomLabel} · {guest.lastStay.hotelName} · {formatDT(guest.lastStay.scheduledCheckIn, guest.lastStay.timezone ?? guestTz)}
-                                                        </p>
-                                                    ) : (
-                                                        <p>Проживаний пока нет</p>
-                                                    )}
-                                                </div>
-
-                                                {guest.auditLogs.length ? (
-                                                    <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Последние действия</p>
-                                                        <div className="mt-2 space-y-1.5 text-xs text-slate-600 dark:text-white/50">
-                                                            {guest.auditLogs.map((entry) => (
-                                                                <div key={entry.id} className="min-w-0">
-                                                                    <p className="truncate font-medium text-slate-800 dark:text-white/75">
-                                                                        {guestAuditActionLabels[entry.action] ?? entry.action}
-                                                                        {entry.actorName ? ` · ${entry.actorName}` : ""}
-                                                                    </p>
-                                                                    <p className="truncate text-slate-500 dark:text-white/35">
-                                                                        {formatDT(entry.createdAt, guestTz)}
-                                                                        {entry.changedFields.length ? ` · ${formatGuestAuditFields(entry.changedFields)}` : ""}
-                                                                    </p>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ) : null}
-                                            </Card>
-                                        );
-                                    })}
-                                </div>
+                                                </Card>
+                                            );
+                                        })}
+                                    </div>
+                                </>
                             )}
                         </section>
                     )}
