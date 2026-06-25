@@ -29,7 +29,34 @@ type GuestProfileResult = {
     };
 };
 
+type TelegramWebAppUser = {
+    id: number;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+};
+
+type TelegramWebApp = {
+    initData?: string;
+    initDataUnsafe?: {
+        user?: TelegramWebAppUser;
+    };
+    ready?: () => void;
+    expand?: () => void;
+};
+
+declare global {
+    interface Window {
+        Telegram?: {
+            WebApp?: TelegramWebApp;
+        };
+    }
+}
+
 const storedGuestKey = 'hotel-ops-guest-profile';
+
+const formatTelegramName = (user?: TelegramWebAppUser | null) =>
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
@@ -42,6 +69,8 @@ export const GuestApp = () => {
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<GuestProfileResult | null>(null);
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    const [telegramInitData, setTelegramInitData] = useState('');
+    const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser | null>(null);
 
     useEffect(() => {
         const saved = localStorage.getItem(storedGuestKey);
@@ -71,6 +100,26 @@ export const GuestApp = () => {
             })
             .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Ошибка загрузки'))
             .finally(() => setIsLoadingHotels(false));
+    }, []);
+
+    useEffect(() => {
+        const webApp = window.Telegram?.WebApp;
+        if (!webApp) {
+            return;
+        }
+
+        webApp.ready?.();
+        webApp.expand?.();
+
+        const user = webApp.initDataUnsafe?.user ?? null;
+        const telegramName = formatTelegramName(user);
+
+        setTelegramInitData(webApp.initData ?? '');
+        setTelegramUser(user);
+
+        if (telegramName) {
+            setFullName((current) => current.trim() ? current : telegramName);
+        }
     }, []);
 
     useEffect(() => {
@@ -114,6 +163,7 @@ export const GuestApp = () => {
                     hotelId: hotelId || undefined,
                     fullName: fullName.trim(),
                     phone: phone.trim() || undefined,
+                    telegramInitData: telegramInitData || undefined,
                     documentNumber: documentNumber.trim() || undefined
                 })
             });
@@ -147,6 +197,11 @@ export const GuestApp = () => {
                     <p className="mt-2 text-sm leading-6 text-slate-300">
                         Заполните данные один раз. На ресепшене менеджер сканирует код и быстро создаст заселение.
                     </p>
+                    {telegramUser ? (
+                        <div className="mt-3 inline-flex rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
+                            Telegram: {formatTelegramName(telegramUser) || telegramUser.username || telegramUser.id}
+                        </div>
+                    ) : null}
                 </section>
 
                 {profile ? (

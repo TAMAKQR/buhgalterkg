@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { handleApiError } from '@/lib/server/errors';
+import { verifyTelegramWebAppInitData } from '@/lib/server/telegram-webapp';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,7 @@ const guestProfileSchema = z.object({
     hotelId: z.string().cuid().optional().nullable(),
     fullName: z.string().trim().min(2).max(120),
     phone: z.string().trim().max(40).optional().nullable(),
+    telegramInitData: z.string().max(4096).optional().nullable(),
     telegramId: z.string().trim().max(64).optional().nullable(),
     documentNumber: z.string().trim().max(80).optional().nullable(),
     notes: z.string().trim().max(300).optional().nullable()
@@ -67,13 +69,32 @@ export async function POST(request: NextRequest) {
         }
 
         const phone = normalizeOptionalText(payload.phone);
-        const telegramId = normalizeOptionalText(payload.telegramId);
+        const verifiedTelegram = (() => {
+            const initData = normalizeOptionalText(payload.telegramInitData);
+            const token = process.env.GUEST_TELEGRAM_BOT_TOKEN;
+
+            if (!initData || !token) {
+                return null;
+            }
+
+            return verifyTelegramWebAppInitData(initData, token);
+        })();
+        const telegramId = verifiedTelegram?.user?.id ? String(verifiedTelegram.user.id) : null;
         const documentNumber = normalizeOptionalText(payload.documentNumber);
         const notes = normalizeOptionalText(payload.notes);
         const code = await createUniqueGuestCode();
 
         const result = await prisma.$transaction(async (tx) => {
-            const existingProfile = phone
+            const existingByTelegram = telegramId
+                ? await tx.guestProfile.findFirst({
+                    where: {
+                        hotelId,
+                        telegramId
+                    },
+                    orderBy: { updatedAt: 'desc' }
+                })
+                : null;
+            const existingByPhone = !existingByTelegram && phone
                 ? await tx.guestProfile.findFirst({
                     where: {
                         hotelId,
@@ -82,15 +103,17 @@ export async function POST(request: NextRequest) {
                     orderBy: { updatedAt: 'desc' }
                 })
                 : null;
+            const existingProfile = existingByTelegram ?? existingByPhone;
 
             const profile = existingProfile
                 ? await tx.guestProfile.update({
                     where: { id: existingProfile.id },
                     data: {
                         fullName: payload.fullName,
-                        telegramId,
-                        documentNumber,
-                        notes
+                        phone: phone ?? existingProfile.phone,
+                        telegramId: telegramId ?? existingProfile.telegramId,
+                        documentNumber: documentNumber ?? existingProfile.documentNumber,
+                        notes: notes ?? existingProfile.notes
                     }
                 })
                 : await tx.guestProfile.create({
