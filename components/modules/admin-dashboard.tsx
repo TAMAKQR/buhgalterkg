@@ -209,7 +209,7 @@ type AdminOverview = {
     recentExpenses?: ExpenseEntry[];
 };
 
-type AdminTab = "overview" | "hotels" | "manage";
+type AdminTab = "overview" | "hotels" | "guests" | "manage";
 
 type OverviewFilters = {
     startDate: string;
@@ -266,6 +266,50 @@ type HotelFormState = {
     monthlyUtilitiesCost: string;
     monthlySuppliesCost: string;
     monthlyOtherCost: string;
+};
+
+type GuestVerificationStatus = "PENDING" | "VERIFIED" | "NEEDS_REVIEW";
+type GuestProfileAuditAction = "PROFILE_CREATED" | "PROFILE_UPDATED" | "DOCUMENT_VERIFIED" | "CONSENT_ACCEPTED";
+
+type AdminGuestProfile = {
+    id: string;
+    fullName: string;
+    phone?: string | null;
+    telegramId?: string | null;
+    documentNumber?: string | null;
+    verificationStatus: GuestVerificationStatus;
+    verifiedAt?: string | null;
+    verifiedByName?: string | null;
+    verifiedHotelName?: string | null;
+    consentAcceptedAt?: string | null;
+    consentVersion?: string | null;
+    notes?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    hotel?: {
+        id: string;
+        name: string;
+        timezone?: string | null;
+        currency?: string | null;
+    } | null;
+    lastStay?: {
+        id: string;
+        status: string;
+        hotelName: string;
+        roomLabel: string;
+        scheduledCheckIn: string;
+        scheduledCheckOut: string;
+        timezone?: string | null;
+    } | null;
+    auditLogs: Array<{
+        id: string;
+        action: GuestProfileAuditAction;
+        actorType: "GUEST" | "MANAGER" | "ADMIN" | "SYSTEM";
+        actorName?: string | null;
+        hotelName?: string | null;
+        changedFields: string[];
+        createdAt: string;
+    }>;
 };
 
 // notify is replaced by useToast() inside the component
@@ -338,6 +382,30 @@ const fromMinorUnits = (value?: number | null) => {
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
+const guestVerificationMeta: Record<GuestVerificationStatus, { label: string; className: string }> = {
+    PENDING: { label: "Не проверен", className: "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.06] dark:text-white/62" },
+    VERIFIED: { label: "Проверен", className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/55 dark:bg-[#123428] dark:text-emerald-100" },
+    NEEDS_REVIEW: { label: "Уточнить", className: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-300/50 dark:bg-[#3b2b12] dark:text-amber-100" },
+};
+const guestAuditActionLabels: Record<GuestProfileAuditAction, string> = {
+    PROFILE_CREATED: "Профиль создан",
+    PROFILE_UPDATED: "Профиль изменен",
+    DOCUMENT_VERIFIED: "Документ подтвержден",
+    CONSENT_ACCEPTED: "Согласие принято",
+};
+const guestAuditFieldLabels: Record<string, string> = {
+    fullName: "имя",
+    phone: "телефон",
+    documentNumber: "документ",
+    verificationStatus: "статус",
+    verifiedAt: "дата проверки",
+    verifiedById: "кто проверил",
+    verifiedHotelId: "объект проверки",
+    notes: "заметка",
+    consentAcceptedAt: "согласие",
+    consentVersion: "версия согласия",
+};
+const formatGuestAuditFields = (fields: string[]) => fields.map((field) => guestAuditFieldLabels[field] ?? field).join(", ");
 const paymentMethodLabel = (method: "CASH" | "CARD") => (method === "CASH" ? "нал" : "карта");
 const expenseTypeLabel = (entry: ExpenseEntry) => {
     if (isCollectionLedgerEntry(entry)) return "Инкассация";
@@ -1366,6 +1434,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const { data: hotelDirectory, mutate, isLoading } = useSWR<AdminHotelSummary[]>(['admin-hotels', country], () => fetchWithAuth('/api/hotels'));
     const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month", getDisplaySettings().timezone));
     const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
+    const [guestFilters, setGuestFilters] = useState<{ hotelId: string; status: string; search: string }>({ hotelId: "", status: "", search: "" });
+    const deferredGuestSearch = useDeferredValue(guestFilters.search);
 
     const overviewQuery = useMemo(() => {
         const params = new URLSearchParams();
@@ -1392,11 +1462,27 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
     const filteredHotelsUrl = overviewQuery ? `/api/hotels?${overviewQuery}` : '/api/hotels';
+    const guestsUrl = useMemo(() => {
+        const params = new URLSearchParams();
+        if (guestFilters.hotelId) {
+            params.set("hotelId", guestFilters.hotelId);
+        }
+        if (guestFilters.status) {
+            params.set("status", guestFilters.status);
+        }
+        if (deferredGuestSearch.trim()) {
+            params.set("search", deferredGuestSearch.trim());
+        }
+        params.set("limit", "120");
+        return `/api/admin/guest-profiles?${params.toString()}`;
+    }, [deferredGuestSearch, guestFilters.hotelId, guestFilters.status]);
     const { data: overview } = useSWR<AdminOverview>(['admin-overview', country, overviewUrl], () => fetchWithAuth(overviewUrl));
     const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(['admin-filtered-hotels', country, filteredHotelsUrl], () => fetchWithAuth(filteredHotelsUrl));
+    const { data: guestProfilesData, isLoading: isLoadingGuests } = useSWR<{ guests: AdminGuestProfile[] }>(['admin-guest-profiles', country, guestsUrl], () => fetchWithAuth(guestsUrl));
 
     const hotels = useMemo(() => hotelDirectory ?? [], [hotelDirectory]);
     const overviewHotels = useMemo(() => filteredHotelSummaries ?? hotels, [filteredHotelSummaries, hotels]);
+    const guestProfiles = guestProfilesData?.guests ?? [];
     const overviewDisplay = useMemo(() => {
         if (overview?.display) {
             return overview.display;
@@ -1714,6 +1800,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const adminTabs: Array<{ id: AdminTab; label: string; hint?: string; description: string; icon: LucideIcon }> = [
         { id: "overview", label: "Сводка", description: "Финансы, загрузка и темп", icon: BarChart3 },
         { id: "hotels", label: "Объекты", hint: hotels.length ? String(hotels.length) : undefined, description: "Состояние филиалов", icon: Hotel },
+        { id: "guests", label: "Гости", hint: guestProfiles.length ? String(guestProfiles.length) : undefined, description: "Клиенты и проверки", icon: Users },
         { id: "manage", label: "Управление", description: "Настройки и доступы", icon: Settings2 },
     ];
 
@@ -2249,6 +2336,136 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </section>
                     )
                     }
+
+                    {activeTab === "guests" && (
+                        <section className="space-y-3">
+                            <Card className="p-4 lg:!rounded-lg">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                                    <Field label="Поиск" htmlFor="guest-search" hint="имя, телефон, документ">
+                                        <Input
+                                            id="guest-search"
+                                            value={guestFilters.search}
+                                            onChange={(event) => setGuestFilters((prev) => ({ ...prev, search: event.target.value }))}
+                                            placeholder="Например, Азамат или +996"
+                                        />
+                                    </Field>
+                                    <Field label="Объект" htmlFor="guest-hotel">
+                                        <select
+                                            id="guest-hotel"
+                                            value={guestFilters.hotelId}
+                                            onChange={(event) => setGuestFilters((prev) => ({ ...prev, hotelId: event.target.value }))}
+                                            className={selectClassName}
+                                        >
+                                            <option value="">Все объекты</option>
+                                            {hotels.map((hotel) => (
+                                                <option key={`guest-filter-hotel-${hotel.id}`} value={hotel.id}>
+                                                    {hotel.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </Field>
+                                    <Field label="Статус" htmlFor="guest-status">
+                                        <select
+                                            id="guest-status"
+                                            value={guestFilters.status}
+                                            onChange={(event) => setGuestFilters((prev) => ({ ...prev, status: event.target.value }))}
+                                            className={selectClassName}
+                                        >
+                                            <option value="">Все статусы</option>
+                                            <option value="PENDING">Не проверен</option>
+                                            <option value="VERIFIED">Проверен</option>
+                                            <option value="NEEDS_REVIEW">Уточнить</option>
+                                        </select>
+                                    </Field>
+                                </div>
+                            </Card>
+
+                            {isLoadingGuests ? (
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                    {Array.from({ length: 4 }).map((_, index) => (
+                                        <Card key={`guest-skeleton-${index}`} className="p-4 lg:!rounded-lg">
+                                            <Skeleton className="h-5 w-44" />
+                                            <Skeleton className="mt-3 h-4 w-full" />
+                                            <Skeleton className="mt-2 h-4 w-2/3" />
+                                        </Card>
+                                    ))}
+                                </div>
+                            ) : guestProfiles.length === 0 ? (
+                                <Card className="p-4 text-sm text-slate-500 dark:text-white/45 lg:!rounded-lg">
+                                    Гостей пока нет или фильтр ничего не нашел.
+                                </Card>
+                            ) : (
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                    {guestProfiles.map((guest) => {
+                                        const statusMeta = guestVerificationMeta[guest.verificationStatus];
+                                        const guestTz = guest.hotel?.timezone ?? overviewDisplay.timezone;
+                                        return (
+                                            <Card key={guest.id} className="p-4 lg:!rounded-lg">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <h3 className="truncate text-base font-semibold text-slate-950 dark:text-white">{guest.fullName}</h3>
+                                                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-white/40">
+                                                            {guest.hotel?.name ?? "Объект не указан"}
+                                                            {guest.phone ? ` · ${guest.phone}` : ""}
+                                                        </p>
+                                                    </div>
+                                                    <span className={`inline-flex shrink-0 rounded-md border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}>
+                                                        {statusMeta.label}
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                        <p className="uppercase tracking-[0.14em] text-slate-500 dark:text-white/35">Документ</p>
+                                                        <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{guest.documentNumber || "—"}</p>
+                                                    </div>
+                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                        <p className="uppercase tracking-[0.14em] text-slate-500 dark:text-white/35">Согласие</p>
+                                                        <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{guest.consentAcceptedAt ? formatDT(guest.consentAcceptedAt, guestTz) : "—"}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-3 space-y-1.5 text-xs text-slate-500 dark:text-white/45">
+                                                    {guest.verifiedAt ? (
+                                                        <p className="truncate">
+                                                            Проверил: <span className="text-slate-800 dark:text-white/75">{guest.verifiedByName || "—"}</span> · {formatDT(guest.verifiedAt, guestTz)}
+                                                        </p>
+                                                    ) : null}
+                                                    {guest.lastStay ? (
+                                                        <p className="truncate">
+                                                            Последний визит: №{guest.lastStay.roomLabel} · {guest.lastStay.hotelName} · {formatDT(guest.lastStay.scheduledCheckIn, guest.lastStay.timezone ?? guestTz)}
+                                                        </p>
+                                                    ) : (
+                                                        <p>Проживаний пока нет</p>
+                                                    )}
+                                                </div>
+
+                                                {guest.auditLogs.length ? (
+                                                    <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Последние действия</p>
+                                                        <div className="mt-2 space-y-1.5 text-xs text-slate-600 dark:text-white/50">
+                                                            {guest.auditLogs.map((entry) => (
+                                                                <div key={entry.id} className="min-w-0">
+                                                                    <p className="truncate font-medium text-slate-800 dark:text-white/75">
+                                                                        {guestAuditActionLabels[entry.action] ?? entry.action}
+                                                                        {entry.actorName ? ` · ${entry.actorName}` : ""}
+                                                                    </p>
+                                                                    <p className="truncate text-slate-500 dark:text-white/35">
+                                                                        {formatDT(entry.createdAt, guestTz)}
+                                                                        {entry.changedFields.length ? ` · ${formatGuestAuditFields(entry.changedFields)}` : ""}
+                                                                    </p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </Card>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </section>
+                    )}
 
                     {activeTab === "manage" && (
                         <section className="grid gap-3 lg:grid-cols-2">
