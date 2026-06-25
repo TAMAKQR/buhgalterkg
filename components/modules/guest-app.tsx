@@ -3,7 +3,7 @@
 import QRCode from 'qrcode';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
+import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -187,6 +187,7 @@ export const GuestApp = () => {
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<GuestProfileResult | null>(null);
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    const [isQrOpen, setIsQrOpen] = useState(false);
     const [telegramInitData, setTelegramInitData] = useState('');
     const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser | null>(null);
 
@@ -254,6 +255,7 @@ export const GuestApp = () => {
     useEffect(() => {
         if (!profile?.qr.code) {
             setQrDataUrl(null);
+            setIsQrOpen(false);
             return;
         }
 
@@ -416,18 +418,15 @@ export const GuestApp = () => {
                             </Button>
                         </div>
 
-                        <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                            <div className="flex flex-col items-center rounded-[22px] bg-white p-3 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.55)]">
-                                {qrDataUrl ? (
-                                    <img src={qrDataUrl} alt="QR гостя" className="h-64 w-64 rounded-2xl bg-white" />
-                                ) : (
-                                    <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white text-sm text-slate-500">
-                                        Генерируем QR
-                                    </div>
-                                )}
-                                <p className="mt-3 rounded-full bg-slate-950 px-4 py-2 font-mono text-base font-semibold tracking-[0.18em] text-white">
-                                    {profile.qr.code}
-                                </p>
+                        <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-3">
+                            <div className="flex items-center gap-3 rounded-[20px] bg-white px-3 py-3">
+                                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
+                                    <QrCode className="h-5 w-5" aria-hidden="true" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-950">QR скрыт</p>
+                                    <p className="mt-0.5 text-xs leading-5 text-slate-500">Откройте его только на стойке регистрации.</p>
+                                </div>
                             </div>
                             <div className={`mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm leading-5 ${profile.guest.verificationStatus === 'VERIFIED' ? 'bg-emerald-50 text-emerald-800' : 'bg-sky-50 text-sky-900'}`}>
                                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -440,6 +439,9 @@ export const GuestApp = () => {
                             {expiryLabel ? (
                                 <p className="mt-2 text-center text-xs text-slate-500">QR активен до {expiryLabel}</p>
                             ) : null}
+                            <Button type="button" className="mt-3 w-full py-3" onClick={() => setIsQrOpen(true)}>
+                                Показать QR
+                            </Button>
                         </div>
                     </section>
                 ) : (
@@ -517,6 +519,49 @@ export const GuestApp = () => {
 
                 <HotelDirectory hotels={hotels} isLoading={isLoadingHotels} />
             </div>
+            {profile && isQrOpen ? (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 pb-4 backdrop-blur-[2px]" onClick={() => setIsQrOpen(false)}>
+                    <section
+                        className="w-full max-w-md rounded-[30px] border border-white/70 bg-white p-4 shadow-[0_28px_80px_-28px_rgba(15,23,42,0.75)]"
+                        onClick={(event) => event.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="QR гостя"
+                    >
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">GuestPass</p>
+                                <h2 className="mt-1 text-lg font-semibold text-slate-950">Покажите QR менеджеру</h2>
+                            </div>
+                            <button
+                                type="button"
+                                className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 text-slate-600"
+                                onClick={() => setIsQrOpen(false)}
+                                aria-label="Закрыть QR"
+                            >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                        </div>
+                        <div className="mt-4 flex flex-col items-center rounded-[26px] bg-slate-50 p-4">
+                            <div className="rounded-[24px] bg-white p-3 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.7)]">
+                                {qrDataUrl ? (
+                                    <img src={qrDataUrl} alt="QR гостя" className="h-64 w-64 rounded-2xl bg-white" />
+                                ) : (
+                                    <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white text-sm text-slate-500">
+                                        Генерируем QR
+                                    </div>
+                                )}
+                            </div>
+                            <p className="mt-3 rounded-full bg-slate-950 px-4 py-2 font-mono text-base font-semibold tracking-[0.18em] text-white">
+                                {profile.qr.code}
+                            </p>
+                            <p className="mt-3 text-center text-xs leading-5 text-slate-500">
+                                После сканирования менеджер привяжет профиль к брони или заселению.
+                            </p>
+                        </div>
+                    </section>
+                </div>
+            ) : null}
         </main>
     );
 };
