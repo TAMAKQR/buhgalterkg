@@ -2232,15 +2232,15 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             key={tab.id}
                                             type="button"
                                             onClick={() => setActiveTab(tab.id)}
+                                            aria-label={tab.label}
                                             className={`flex-1 rounded-md px-2.5 py-1.5 transition-all ${activeTab === tab.id
                                                 ? "bg-white text-slate-950 shadow-sm dark:bg-white/[0.12] dark:text-white"
                                                 : "hover:text-slate-950 dark:hover:text-white/70"
                                                 }`}
                                         >
-                                            <span className="flex items-center justify-center gap-1.5">
-                                                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                                                <span>{tab.label}</span>
-                                                {tab.hint ? <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-white/[0.06] dark:text-white/40">{tab.hint}</span> : null}
+                                            <span className="relative flex min-h-8 items-center justify-center">
+                                                <Icon className="h-4 w-4" aria-hidden="true" />
+                                                {tab.hint ? <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-white/45" aria-hidden="true" /> : null}
                                             </span>
                                         </button>
                                     );
