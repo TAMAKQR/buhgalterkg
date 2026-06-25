@@ -8,22 +8,15 @@ import { getSessionUser } from '@/lib/server/session';
 
 export const dynamic = 'force-dynamic';
 
-const guestProfilesQuerySchema = z.object({
-    hotelId: z.string().cuid().optional(),
-    status: z.enum(['PENDING', 'VERIFIED', 'NEEDS_REVIEW']).optional(),
-    search: z.string().trim().max(120).optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(80)
-});
-
-const createGuestProfileSchema = z.object({
+const updateGuestProfileSchema = z.object({
     hotelId: z.string().cuid().optional().nullable(),
     fullName: z.string().trim().min(2).max(120),
     phone: z.string().trim().max(40).optional().nullable(),
     telegramId: z.string().trim().max(64).optional().nullable(),
     documentNumber: z.string().trim().max(80).optional().nullable(),
-    verificationStatus: z.enum(['PENDING', 'VERIFIED', 'NEEDS_REVIEW']).default('PENDING'),
+    verificationStatus: z.enum(['PENDING', 'VERIFIED', 'NEEDS_REVIEW']),
     notes: z.string().trim().max(300).optional().nullable(),
-    consentAccepted: z.boolean(),
+    consentAccepted: z.boolean().optional(),
     consentVersion: z.string().trim().max(40).optional().nullable()
 });
 
@@ -176,60 +169,55 @@ const serializeGuestProfile = (profile: {
     }))
 });
 
-export async function GET(request: NextRequest) {
+const profileSnapshot = (profile: {
+    hotelId?: string | null;
+    fullName: string;
+    phone?: string | null;
+    telegramId?: string | null;
+    documentNumber?: string | null;
+    verificationStatus?: string | null;
+    notes?: string | null;
+    consentAcceptedAt?: Date | null;
+    consentVersion?: string | null;
+}) => ({
+    hotelId: profile.hotelId ?? null,
+    fullName: profile.fullName,
+    phone: profile.phone ?? null,
+    telegramId: profile.telegramId ?? null,
+    documentNumber: profile.documentNumber ?? null,
+    verificationStatus: profile.verificationStatus ?? null,
+    notes: profile.notes ?? null,
+    consentAcceptedAt: profile.consentAcceptedAt?.toISOString() ?? null,
+    consentVersion: profile.consentVersion ?? null
+});
+
+const changedFields = (before: ReturnType<typeof profileSnapshot>, after: ReturnType<typeof profileSnapshot>) =>
+    Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
+
+export async function PATCH(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const payload = updateGuestProfileSchema.parse(await request.json());
 
-        const searchParams = request.nextUrl.searchParams;
-        const query = guestProfilesQuerySchema.parse({
-            hotelId: searchParams.get('hotelId') || undefined,
-            status: searchParams.get('status') || undefined,
-            search: searchParams.get('search') || undefined,
-            limit: searchParams.get('limit') || undefined
+        const existing = await prisma.guestProfile.findUnique({
+            where: { id: params.guestProfileId },
+            select: {
+                id: true,
+                hotelId: true,
+                fullName: true,
+                phone: true,
+                telegramId: true,
+                documentNumber: true,
+                verificationStatus: true,
+                notes: true,
+                consentAcceptedAt: true,
+                consentVersion: true
+            }
         });
 
-        const search = query.search?.trim();
-        const profiles = await prisma.guestProfile.findMany({
-            where: {
-                ...(query.hotelId ? { hotelId: query.hotelId } : {}),
-                ...(query.status ? { verificationStatus: query.status } : {}),
-                ...(search
-                    ? {
-                        OR: [
-                            { fullName: { contains: search, mode: 'insensitive' } },
-                            { phone: { contains: search, mode: 'insensitive' } },
-                            { documentNumber: { contains: search, mode: 'insensitive' } },
-                            { telegramId: { contains: search, mode: 'insensitive' } }
-                        ]
-                    }
-                    : {})
-            },
-            orderBy: { updatedAt: 'desc' },
-            take: query.limit,
-            select: guestProfileSelect
-        });
-
-        return NextResponse.json({
-            guests: profiles.map(serializeGuestProfile)
-        });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return new NextResponse(error.message, { status: 400 });
-        }
-
-        return handleApiError(error, 'Failed to load guest profiles');
-    }
-}
-
-export async function POST(request: NextRequest) {
-    try {
-        const session = await getSessionUser(request);
-        assertAdmin(session);
-
-        const payload = createGuestProfileSchema.parse(await request.json());
-        if (!payload.consentAccepted) {
-            return new NextResponse('Personal data consent is required', { status: 400 });
+        if (!existing) {
+            return new NextResponse('Guest profile not found', { status: 404 });
         }
 
         const hotelId = payload.hotelId ?? null;
@@ -243,18 +231,28 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        const consentAcceptedAt = new Date();
-        const consentVersion = normalizeOptionalText(payload.consentVersion) ?? CURRENT_CONSENT_VERSION;
-        const shouldVerify = payload.verificationStatus === 'VERIFIED' && Boolean(normalizeOptionalText(payload.documentNumber));
+        const before = profileSnapshot(existing);
+        const nextDocumentNumber = normalizeOptionalText(payload.documentNumber);
+        const shouldVerify = payload.verificationStatus === 'VERIFIED' && Boolean(nextDocumentNumber);
+        if (payload.verificationStatus === 'VERIFIED' && !nextDocumentNumber) {
+            return new NextResponse('Document number is required before verification', { status: 400 });
+        }
+        const consentAcceptedAt = payload.consentAccepted
+            ? existing.consentAcceptedAt ?? new Date()
+            : existing.consentAcceptedAt;
+        const consentVersion = payload.consentAccepted
+            ? normalizeOptionalText(payload.consentVersion) ?? existing.consentVersion ?? CURRENT_CONSENT_VERSION
+            : existing.consentVersion;
 
         const profile = await prisma.$transaction(async (tx) => {
-            const created = await tx.guestProfile.create({
+            const updated = await tx.guestProfile.update({
+                where: { id: existing.id },
                 data: {
                     hotelId,
                     fullName: payload.fullName,
                     phone: normalizeOptionalText(payload.phone),
                     telegramId: normalizeOptionalText(payload.telegramId),
-                    documentNumber: normalizeOptionalText(payload.documentNumber),
+                    documentNumber: nextDocumentNumber,
                     verificationStatus: shouldVerify ? 'VERIFIED' : payload.verificationStatus,
                     verifiedAt: shouldVerify ? new Date() : null,
                     verifiedById: shouldVerify ? session.id : null,
@@ -266,33 +264,39 @@ export async function POST(request: NextRequest) {
                 select: guestProfileSelect
             });
 
-            await tx.guestProfileAuditLog.create({
-                data: {
-                    guestProfileId: created.id,
-                    hotelId,
-                    actorUserId: session.id,
-                    actorType: 'ADMIN',
-                    actorLabel: session.displayName,
-                    action: 'PROFILE_CREATED',
-                    changedFields: ['fullName', 'phone', 'telegramId', 'documentNumber', 'verificationStatus', 'notes', 'consentAcceptedAt', 'consentVersion'],
-                    before: Prisma.JsonNull,
-                    after: {
-                        fullName: created.fullName,
-                        phone: created.phone,
-                        telegramId: created.telegramId,
-                        documentNumber: created.documentNumber,
-                        verificationStatus: created.verificationStatus,
-                        notes: created.notes,
-                        consentAcceptedAt: created.consentAcceptedAt?.toISOString() ?? null,
-                        consentVersion: created.consentVersion
-                    }
-                }
+            const after = profileSnapshot({
+                hotelId: updated.hotel?.id ?? null,
+                fullName: updated.fullName,
+                phone: updated.phone,
+                telegramId: updated.telegramId,
+                documentNumber: updated.documentNumber,
+                verificationStatus: updated.verificationStatus,
+                notes: updated.notes,
+                consentAcceptedAt: updated.consentAcceptedAt,
+                consentVersion: updated.consentVersion
             });
+            const fields = changedFields(before, after);
 
-            if (shouldVerify) {
+            if (fields.length) {
                 await tx.guestProfileAuditLog.create({
                     data: {
-                        guestProfileId: created.id,
+                        guestProfileId: updated.id,
+                        hotelId,
+                        actorUserId: session.id,
+                        actorType: 'ADMIN',
+                        actorLabel: session.displayName,
+                        action: 'PROFILE_UPDATED',
+                        changedFields: fields,
+                        before,
+                        after
+                    }
+                });
+            }
+
+            if (before.verificationStatus !== 'VERIFIED' && after.verificationStatus === 'VERIFIED') {
+                await tx.guestProfileAuditLog.create({
+                    data: {
+                        guestProfileId: updated.id,
                         hotelId,
                         actorUserId: session.id,
                         actorType: 'ADMIN',
@@ -303,15 +307,43 @@ export async function POST(request: NextRequest) {
                 });
             }
 
-            return created;
+            return updated;
         });
 
-        return NextResponse.json({ guest: serializeGuestProfile(profile) }, { status: 201 });
+        return NextResponse.json({ guest: serializeGuestProfile(profile) });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
 
-        return handleApiError(error, 'Failed to create guest profile');
+        return handleApiError(error, 'Failed to update guest profile');
+    }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
+    try {
+        const session = await getSessionUser(request);
+        assertAdmin(session);
+
+        const existing = await prisma.guestProfile.findUnique({
+            where: { id: params.guestProfileId },
+            select: { id: true }
+        });
+
+        if (!existing) {
+            return new NextResponse('Guest profile not found', { status: 404 });
+        }
+
+        await prisma.guestProfile.delete({
+            where: { id: existing.id }
+        });
+
+        return NextResponse.json({ ok: true });
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            return new NextResponse('Guest profile not found', { status: 404 });
+        }
+
+        return handleApiError(error, 'Failed to delete guest profile');
     }
 }

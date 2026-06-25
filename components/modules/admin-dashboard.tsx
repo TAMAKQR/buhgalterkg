@@ -312,6 +312,19 @@ type AdminGuestProfile = {
     }>;
 };
 
+type GuestFormState = {
+    id?: string;
+    hotelId: string;
+    fullName: string;
+    phone: string;
+    telegramId: string;
+    documentNumber: string;
+    verificationStatus: GuestVerificationStatus;
+    notes: string;
+    consentAccepted: boolean;
+    consentVersion: string;
+};
+
 // notify is replaced by useToast() inside the component
 
 const DEFAULT_COUNTRY: CountryCode = "KG";
@@ -344,6 +357,31 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     monthlyUtilitiesCost: "0",
     monthlySuppliesCost: "0",
     monthlyOtherCost: "0",
+});
+
+const createEmptyGuestForm = (): GuestFormState => ({
+    hotelId: "",
+    fullName: "",
+    phone: "",
+    telegramId: "",
+    documentNumber: "",
+    verificationStatus: "PENDING",
+    notes: "",
+    consentAccepted: true,
+    consentVersion: "admin-manual-2026-06-25",
+});
+
+const guestToForm = (guest: AdminGuestProfile): GuestFormState => ({
+    id: guest.id,
+    hotelId: guest.hotel?.id ?? "",
+    fullName: guest.fullName ?? "",
+    phone: guest.phone ?? "",
+    telegramId: guest.telegramId ?? "",
+    documentNumber: guest.documentNumber ?? "",
+    verificationStatus: guest.verificationStatus,
+    notes: guest.notes ?? "",
+    consentAccepted: Boolean(guest.consentAcceptedAt),
+    consentVersion: guest.consentVersion ?? "admin-manual-2026-06-25",
 });
 
 const formatCurrency = (value: number, currency?: string) => formatMoney(value, currency);
@@ -1478,7 +1516,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [deferredGuestSearch, guestFilters.hotelId, guestFilters.status]);
     const { data: overview } = useSWR<AdminOverview>(['admin-overview', country, overviewUrl], () => fetchWithAuth(overviewUrl));
     const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(['admin-filtered-hotels', country, filteredHotelsUrl], () => fetchWithAuth(filteredHotelsUrl));
-    const { data: guestProfilesData, isLoading: isLoadingGuests } = useSWR<{ guests: AdminGuestProfile[] }>(['admin-guest-profiles', country, guestsUrl], () => fetchWithAuth(guestsUrl));
+    const { data: guestProfilesData, isLoading: isLoadingGuests, mutate: mutateGuests } = useSWR<{ guests: AdminGuestProfile[] }>(['admin-guest-profiles', country, guestsUrl], () => fetchWithAuth(guestsUrl));
 
     const hotels = useMemo(() => hotelDirectory ?? [], [hotelDirectory]);
     const overviewHotels = useMemo(() => filteredHotelSummaries ?? hotels, [filteredHotelSummaries, hotels]);
@@ -1498,6 +1536,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const [isDeletingHotel, setIsDeletingHotel] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [rankingDetail, setRankingDetail] = useState<RankingDetailSelection | null>(null);
+    const [guestForm, setGuestForm] = useState<GuestFormState | null>(null);
+    const [isSavingGuest, setIsSavingGuest] = useState(false);
+    const [guestToDelete, setGuestToDelete] = useState<AdminGuestProfile | null>(null);
+    const [isDeletingGuest, setIsDeletingGuest] = useState(false);
     const [activeTab, setActiveTab] = useState<AdminTab>("overview");
     const { toast: notify } = useToast();
 
@@ -1593,6 +1635,100 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             setResettingPassword(false);
         }
     };
+
+    const openCreateGuestForm = useCallback(() => {
+        setGuestForm({
+            ...createEmptyGuestForm(),
+            hotelId: guestFilters.hotelId || hotels[0]?.id || "",
+        });
+    }, [guestFilters.hotelId, hotels]);
+
+    const openEditGuestForm = useCallback((guest: AdminGuestProfile) => {
+        setGuestForm(guestToForm(guest));
+    }, []);
+
+    const handleGuestFormChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = event.target;
+        const nextValue = event.target instanceof HTMLInputElement && event.target.type === "checkbox"
+            ? event.target.checked
+            : value;
+        setGuestForm((prev) => (prev ? { ...prev, [name]: nextValue } : prev));
+    }, []);
+
+    const handleSaveGuest = useCallback(async (event: FormEvent) => {
+        event.preventDefault();
+        if (!guestForm) return;
+
+        if (!guestForm.fullName.trim()) {
+            notify("Укажите имя гостя", "error");
+            return;
+        }
+        if (!guestForm.consentAccepted) {
+            notify("Нужно отметить согласие на обработку данных", "error");
+            return;
+        }
+        if (guestForm.verificationStatus === "VERIFIED" && !guestForm.documentNumber.trim()) {
+            notify("Для статуса Проверен нужен номер документа", "error");
+            return;
+        }
+
+        setIsSavingGuest(true);
+        try {
+            const isEdit = Boolean(guestForm.id);
+            const response = await fetch(withCountry(isEdit ? `/api/admin/guest-profiles/${guestForm.id}` : "/api/admin/guest-profiles"), {
+                method: isEdit ? "PATCH" : "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                cache: "no-store",
+                body: JSON.stringify({
+                    hotelId: guestForm.hotelId || null,
+                    fullName: guestForm.fullName.trim(),
+                    phone: guestForm.phone.trim() || null,
+                    telegramId: guestForm.telegramId.trim() || null,
+                    documentNumber: guestForm.documentNumber.trim() || null,
+                    verificationStatus: guestForm.verificationStatus,
+                    notes: guestForm.notes.trim() || null,
+                    consentAccepted: guestForm.consentAccepted,
+                    consentVersion: guestForm.consentVersion.trim() || undefined,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            await mutateGuests();
+            setGuestForm(null);
+            notify(isEdit ? "Гость обновлен" : "Гость добавлен", "success");
+        } catch (error) {
+            notify(error instanceof Error ? error.message : "Не удалось сохранить гостя", "error");
+        } finally {
+            setIsSavingGuest(false);
+        }
+    }, [guestForm, mutateGuests, notify, withCountry]);
+
+    const handleDeleteGuest = useCallback(async () => {
+        if (!guestToDelete) return;
+
+        setIsDeletingGuest(true);
+        try {
+            const response = await fetch(withCountry(`/api/admin/guest-profiles/${guestToDelete.id}`), {
+                method: "DELETE",
+                credentials: "include",
+                cache: "no-store",
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            await mutateGuests();
+            setGuestToDelete(null);
+            notify("Гость удален", "success");
+        } catch (error) {
+            notify(error instanceof Error ? error.message : "Не удалось удалить гостя", "error");
+        } finally {
+            setIsDeletingGuest(false);
+        }
+    }, [guestToDelete, mutateGuests, notify, withCountry]);
 
     useEffect(() => {
         if (!selectedHotelId) {
@@ -2377,6 +2513,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <option value="NEEDS_REVIEW">Уточнить</option>
                                         </select>
                                     </Field>
+                                    <Button type="button" className="shrink-0" onClick={openCreateGuestForm}>
+                                        Добавить гостя
+                                    </Button>
                                 </div>
                             </Card>
 
@@ -2406,6 +2545,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     <th className="px-4 py-3 text-left font-medium">Статус</th>
                                                     <th className="px-4 py-3 text-left font-medium">Последний визит</th>
                                                     <th className="px-4 py-3 text-left font-medium">Последнее действие</th>
+                                                    <th className="px-4 py-3 text-right font-medium">Действия</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-200/70 dark:divide-white/[0.05]">
@@ -2463,6 +2603,16 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                                     <span className="text-slate-400 dark:text-white/28">—</span>
                                                                 )}
                                                             </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex justify-end gap-2">
+                                                                    <Button type="button" size="sm" variant="secondary" onClick={() => openEditGuestForm(guest)}>
+                                                                        Изменить
+                                                                    </Button>
+                                                                    <Button type="button" size="sm" variant="danger" onClick={() => setGuestToDelete(guest)}>
+                                                                        Удалить
+                                                                    </Button>
+                                                                </div>
+                                                            </td>
                                                         </tr>
                                                     );
                                                 })}
@@ -2495,6 +2645,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                             {guestAuditActionLabels[lastAudit.action] ?? lastAudit.action} · {formatDT(lastAudit.createdAt, guestTz)}
                                                         </p>
                                                     ) : null}
+                                                    <div className="mt-3 grid grid-cols-2 gap-2">
+                                                        <Button type="button" size="sm" variant="secondary" onClick={() => openEditGuestForm(guest)}>
+                                                            Изменить
+                                                        </Button>
+                                                        <Button type="button" size="sm" variant="danger" onClick={() => setGuestToDelete(guest)}>
+                                                            Удалить
+                                                        </Button>
+                                                    </div>
                                                 </Card>
                                             );
                                         })}
@@ -2961,6 +3119,127 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         onClick={() => { setConfirmDelete(false); handleDeleteHotel(); }}
                                     >
                                         Удалить
+                                    </Button>
+                                </div>
+                            </Card>
+                        </div>
+                    )}
+                    {guestForm && (
+                        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-3 py-4 backdrop-blur-sm">
+                            <Card className="mx-auto w-full max-w-xl space-y-4 p-5 text-light-text dark:text-white">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-base font-semibold">{guestForm.id ? "Редактировать гостя" : "Добавить гостя"}</p>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/45">Профиль, документ, согласие и статус проверки.</p>
+                                    </div>
+                                    <Button type="button" size="sm" variant="ghost" disabled={isSavingGuest} onClick={() => setGuestForm(null)}>
+                                        ×
+                                    </Button>
+                                </div>
+                                <form className="space-y-3" onSubmit={handleSaveGuest}>
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <Field label="Объект" htmlFor="guest-form-hotel">
+                                            <select
+                                                id="guest-form-hotel"
+                                                name="hotelId"
+                                                value={guestForm.hotelId}
+                                                onChange={handleGuestFormChange}
+                                                className={selectClassName}
+                                                disabled={isSavingGuest}
+                                            >
+                                                <option value="">Без объекта</option>
+                                                {hotels.map((hotel) => (
+                                                    <option key={`guest-form-hotel-${hotel.id}`} value={hotel.id}>
+                                                        {hotel.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </Field>
+                                        <Field label="Статус" htmlFor="guest-form-status">
+                                            <select
+                                                id="guest-form-status"
+                                                name="verificationStatus"
+                                                value={guestForm.verificationStatus}
+                                                onChange={handleGuestFormChange}
+                                                className={selectClassName}
+                                                disabled={isSavingGuest}
+                                            >
+                                                <option value="PENDING">Не проверен</option>
+                                                <option value="VERIFIED">Проверен</option>
+                                                <option value="NEEDS_REVIEW">Уточнить</option>
+                                            </select>
+                                        </Field>
+                                    </div>
+                                    <Field label="Имя и фамилия" htmlFor="guest-form-fullName">
+                                        <Input
+                                            id="guest-form-fullName"
+                                            name="fullName"
+                                            value={guestForm.fullName}
+                                            onChange={handleGuestFormChange}
+                                            disabled={isSavingGuest}
+                                            required
+                                        />
+                                    </Field>
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <Field label="Телефон" htmlFor="guest-form-phone">
+                                            <Input id="guest-form-phone" name="phone" value={guestForm.phone} onChange={handleGuestFormChange} disabled={isSavingGuest} />
+                                        </Field>
+                                        <Field label="Telegram ID" htmlFor="guest-form-telegramId">
+                                            <Input id="guest-form-telegramId" name="telegramId" value={guestForm.telegramId} onChange={handleGuestFormChange} disabled={isSavingGuest} />
+                                        </Field>
+                                    </div>
+                                    <Field label="Номер документа" htmlFor="guest-form-documentNumber" hint={guestForm.verificationStatus === "VERIFIED" ? "обязательно для статуса Проверен" : undefined}>
+                                        <Input id="guest-form-documentNumber" name="documentNumber" value={guestForm.documentNumber} onChange={handleGuestFormChange} disabled={isSavingGuest} />
+                                    </Field>
+                                    <Field label="Заметка" htmlFor="guest-form-notes" hint="необязательно">
+                                        <TextArea id="guest-form-notes" name="notes" rows={3} value={guestForm.notes} onChange={handleGuestFormChange} disabled={isSavingGuest} />
+                                    </Field>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input
+                                                type="checkbox"
+                                                name="consentAccepted"
+                                                checked={guestForm.consentAccepted}
+                                                onChange={handleGuestFormChange}
+                                                disabled={isSavingGuest}
+                                                className="mt-1 accent-emerald-500"
+                                            />
+                                            <span>Согласие на обработку персональных данных получено</span>
+                                        </label>
+                                        <Input
+                                            name="consentVersion"
+                                            value={guestForm.consentVersion}
+                                            onChange={handleGuestFormChange}
+                                            disabled={isSavingGuest || !guestForm.consentAccepted}
+                                            className="mt-3"
+                                            placeholder="Версия согласия"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                        <Button type="button" variant="secondary" disabled={isSavingGuest} onClick={() => setGuestForm(null)}>
+                                            Отмена
+                                        </Button>
+                                        <Button type="submit" disabled={isSavingGuest}>
+                                            {isSavingGuest ? "Сохраняем..." : "Сохранить"}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </Card>
+                        </div>
+                    )}
+                    {guestToDelete && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-light-text dark:text-white">
+                                <p className="text-base font-semibold">Удалить гостя?</p>
+                                <p className="text-sm text-slate-500 dark:text-white/50">
+                                    Профиль {guestToDelete.fullName} будет удален вместе с QR и историей профиля. Проживания останутся в системе.
+                                </p>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="secondary" className="flex-1" disabled={isDeletingGuest} onClick={() => setGuestToDelete(null)}>
+                                        Отмена
+                                    </Button>
+                                    <Button type="button" variant="danger" className="flex-1" disabled={isDeletingGuest} onClick={() => void handleDeleteGuest()}>
+                                        {isDeletingGuest ? "Удаляем..." : "Удалить"}
                                     </Button>
                                 </div>
                             </Card>
