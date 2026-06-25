@@ -8,6 +8,7 @@ import {
     Activity,
     BarChart3,
     Building2,
+    ChevronDown,
     CircleDollarSign,
     Download,
     Hotel,
@@ -542,6 +543,47 @@ function SectionCard({ title, subtitle, actions, className, children }: { title:
             </div>
             {children}
         </Card>
+    );
+}
+
+function CollapsibleSection({
+    title,
+    subtitle,
+    summary,
+    defaultOpen = false,
+    className,
+    children,
+}: {
+    title: string;
+    subtitle?: string;
+    summary?: string;
+    defaultOpen?: boolean;
+    className?: string;
+    children: React.ReactNode;
+}) {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    return (
+        <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.04] ${className ?? ""}`}>
+            <button
+                type="button"
+                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-white/[0.035]"
+                onClick={() => setIsOpen((current) => !current)}
+                aria-expanded={isOpen}
+            >
+                <span className="min-w-0">
+                    {subtitle ? <span className="block text-[11px] uppercase tracking-[0.2em] text-slate-500 dark:text-white/30">{subtitle}</span> : null}
+                    <span className="mt-0.5 block truncate text-sm font-semibold text-slate-900 dark:text-white">{title}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                    {summary ? <span className="hidden text-xs text-slate-500 dark:text-white/38 sm:inline">{summary}</span> : null}
+                    <span className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/50">
+                        <ChevronDown className={`h-4 w-4 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                    </span>
+                </span>
+            </button>
+            {isOpen ? <div className="border-t border-slate-200/80 p-3 dark:border-white/[0.06] sm:p-4">{children}</div> : null}
+        </section>
     );
 }
 
@@ -2374,71 +2416,93 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
                                             </p>
                                         </Card>
-                                        {overview.dailySeries && overview.dailySeries.length > 0 && (
-                                            <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
-                                        )}
-                                        <AnalyticsFlowChart
-                                            inflow={overview.totals.cashIn}
-                                            outflow={overview.totals.cashOut + overview.totals.collections}
-                                            net={overview.totals.netCash}
-                                            currency={overviewCurrency}
-                                        />
-                                        <PaymentMethodChart
-                                            cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash + overview.totals.collectionsBreakdown.cash}
-                                            cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card + overview.totals.collectionsBreakdown.card}
-                                            currency={overviewCurrency}
-                                        />
-                                        <ExpenseStructureChart
-                                            cashOut={overview.totals.cashOut}
-                                            collections={overview.totals.collections}
-                                            payouts={overview.totals.payouts}
-                                            adjustments={overview.totals.adjustments}
-                                            currency={overviewCurrency}
-                                        />
-                                        <EfficiencyRankingCard
-                                            title="Лучшие отели"
-                                            subtitle="Рейтинг эффективности"
-                                            kind="hotels"
-                                            items={overview.rankings?.hotels ?? []}
-                                            defaultCurrency={overviewCurrency}
-                                            className="col-span-1 lg:col-span-2"
-                                            onSelect={(item) => setRankingDetail({ kind: "hotel", item: item as HotelRankingItem })}
-                                        />
-                                        <EfficiencyRankingCard
-                                            title="Лучшие менеджеры"
-                                            subtitle="Общий рейтинг"
-                                            kind="managers"
-                                            items={overview.rankings?.managers ?? []}
-                                            defaultCurrency={overviewCurrency}
-                                            className="col-span-1 lg:col-span-2"
-                                            onSelect={(item) => setRankingDetail({ kind: "manager", item: item as ManagerRankingItem })}
-                                        />
-                                        <ManagersByHotelRankingCard
-                                            groups={overview.rankings?.managersByHotel ?? []}
-                                            defaultCurrency={overviewCurrency}
+                                        <CollapsibleSection
+                                            title="Графики"
+                                            subtitle="Динамика и структура"
+                                            summary={overview.dailySeries?.length ? `${overview.dailySeries.length} дней` : "структура"}
                                             className="col-span-1 lg:col-span-4"
-                                            onSelectManager={(manager, hotelName) => setRankingDetail({ kind: "manager", item: manager, hotelName })}
-                                        />
-                                        <ExpenseFeed
-                                            title="Последние списания по фильтру"
-                                            entries={(overview.recentExpenses ?? []).slice(0, 5)}
-                                            defaultCurrency={overviewCurrency}
-                                            defaultTimezone={overviewTimezone}
-                                            showHotelName={!filters.hotelId}
-                                            className="col-span-1 lg:col-span-2"
-                                        />
-                                        <ExpenseReasonSummary
-                                            entries={overview.recentExpenses ?? []}
-                                            defaultCurrency={overviewCurrency}
-                                            className="col-span-1 lg:col-span-2"
-                                        />
-                                        <ExpenseTable
-                                            entries={overview.recentExpenses ?? []}
-                                            defaultCurrency={overviewCurrency}
-                                            defaultTimezone={overviewTimezone}
-                                            showHotelName={!filters.hotelId}
+                                        >
+                                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                                                {overview.dailySeries && overview.dailySeries.length > 0 ? (
+                                                    <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
+                                                ) : null}
+                                                <AnalyticsFlowChart
+                                                    inflow={overview.totals.cashIn}
+                                                    outflow={overview.totals.cashOut + overview.totals.collections}
+                                                    net={overview.totals.netCash}
+                                                    currency={overviewCurrency}
+                                                />
+                                                <PaymentMethodChart
+                                                    cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash + overview.totals.collectionsBreakdown.cash}
+                                                    cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card + overview.totals.collectionsBreakdown.card}
+                                                    currency={overviewCurrency}
+                                                />
+                                                <ExpenseStructureChart
+                                                    cashOut={overview.totals.cashOut}
+                                                    collections={overview.totals.collections}
+                                                    payouts={overview.totals.payouts}
+                                                    adjustments={overview.totals.adjustments}
+                                                    currency={overviewCurrency}
+                                                />
+                                            </div>
+                                        </CollapsibleSection>
+                                        <CollapsibleSection
+                                            title="Рейтинг"
+                                            subtitle="Отели и менеджеры"
+                                            summary={`${overview.rankings?.hotels.length ?? 0} / ${overview.rankings?.managers.length ?? 0}`}
                                             className="col-span-1 lg:col-span-4"
-                                        />
+                                        >
+                                            <div className="grid grid-cols-1 gap-3">
+                                                <EfficiencyRankingCard
+                                                    title="Лучшие отели"
+                                                    subtitle="Эффективность"
+                                                    kind="hotels"
+                                                    items={overview.rankings?.hotels ?? []}
+                                                    defaultCurrency={overviewCurrency}
+                                                    onSelect={(item) => setRankingDetail({ kind: "hotel", item: item as HotelRankingItem })}
+                                                />
+                                                <EfficiencyRankingCard
+                                                    title="Лучшие менеджеры"
+                                                    subtitle="Общий рейтинг"
+                                                    kind="managers"
+                                                    items={overview.rankings?.managers ?? []}
+                                                    defaultCurrency={overviewCurrency}
+                                                    onSelect={(item) => setRankingDetail({ kind: "manager", item: item as ManagerRankingItem })}
+                                                />
+                                                <ManagersByHotelRankingCard
+                                                    groups={overview.rankings?.managersByHotel ?? []}
+                                                    defaultCurrency={overviewCurrency}
+                                                    onSelectManager={(manager, hotelName) => setRankingDetail({ kind: "manager", item: manager, hotelName })}
+                                                />
+                                            </div>
+                                        </CollapsibleSection>
+                                        <CollapsibleSection
+                                            title="Расходы"
+                                            subtitle="Списания и журнал"
+                                            summary={`${overview.recentExpenses?.length ?? 0} операций`}
+                                            className="col-span-1 lg:col-span-4"
+                                        >
+                                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                                                <ExpenseFeed
+                                                    title="Последние списания по фильтру"
+                                                    entries={(overview.recentExpenses ?? []).slice(0, 5)}
+                                                    defaultCurrency={overviewCurrency}
+                                                    defaultTimezone={overviewTimezone}
+                                                    showHotelName={!filters.hotelId}
+                                                />
+                                                <ExpenseReasonSummary
+                                                    entries={overview.recentExpenses ?? []}
+                                                    defaultCurrency={overviewCurrency}
+                                                />
+                                                <ExpenseTable
+                                                    entries={overview.recentExpenses ?? []}
+                                                    defaultCurrency={overviewCurrency}
+                                                    defaultTimezone={overviewTimezone}
+                                                    showHotelName={!filters.hotelId}
+                                                    className="xl:col-span-2"
+                                                />
+                                            </div>
+                                        </CollapsibleSection>
                                     </>
                                 ) : (
                                     <OverviewSkeleton />
