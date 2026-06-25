@@ -26,6 +26,7 @@ import {
     type OfflineOperation
 } from '@/lib/offline';
 import { ArrowRightLeft, Banknote, CalendarPlus, Camera, LogIn, LogOut, Pencil, QrCode, Sparkles, Users } from 'lucide-react';
+import jsQR from 'jsqr';
 
 type ManagerRoomStay = {
     id: string;
@@ -447,6 +448,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [paymentAdjustError, setPaymentAdjustError] = useState<string | null>(null);
     const [guestQrModal, setGuestQrModal] = useState<GuestQrModalState | null>(null);
     const qrVideoRef = useRef<HTMLVideoElement | null>(null);
+    const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const qrStreamRef = useRef<MediaStream | null>(null);
     const [bookingDetails, setBookingDetails] = useState<{
         roomId: string;
@@ -1533,7 +1535,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }, [guestQrModal?.code, request, sortedRooms]);
 
     const startGuestQrScanner = async () => {
-        if (!window.BarcodeDetector) {
+        if (!navigator.mediaDevices?.getUserMedia && !window.BarcodeDetector) {
             setGuestQrModal((prev) => (prev ? { ...prev, error: 'На этом устройстве камера не умеет читать QR. Введите код вручную.' } : prev));
             return;
         }
@@ -1560,7 +1562,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             video.srcObject = stream;
             await video.play();
 
-            const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+            const detector = window.BarcodeDetector
+                ? new window.BarcodeDetector({ formats: ['qr_code'] })
+                : null;
             const scanFrame = async () => {
                 if (!qrStreamRef.current || !qrVideoRef.current) {
                     return;
@@ -1568,8 +1572,28 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                 try {
                     if (qrVideoRef.current.readyState >= 2) {
-                        const codes = await detector.detect(qrVideoRef.current);
-                        const value = codes[0]?.rawValue?.trim();
+                        let value = '';
+
+                        if (detector) {
+                            const codes = await detector.detect(qrVideoRef.current);
+                            value = codes[0]?.rawValue?.trim() ?? '';
+                        }
+
+                        if (!value) {
+                            const canvas = qrCanvasRef.current;
+                            const width = qrVideoRef.current.videoWidth;
+                            const height = qrVideoRef.current.videoHeight;
+                            const context = canvas?.getContext('2d', { willReadFrequently: true });
+
+                            if (canvas && context && width > 0 && height > 0) {
+                                canvas.width = width;
+                                canvas.height = height;
+                                context.drawImage(qrVideoRef.current, 0, 0, width, height);
+                                const imageData = context.getImageData(0, 0, width, height);
+                                value = jsQR(imageData.data, width, height)?.data?.trim() ?? '';
+                            }
+                        }
+
                         if (value) {
                             stopGuestQrScanner();
                             void lookupGuestQrCode(value);
@@ -3832,6 +3856,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         playsInline
                                         className={`h-56 w-full rounded-xl border border-white/10 bg-black object-cover ${guestQrModal.isScanning ? 'block' : 'hidden'}`}
                                     />
+                                    <canvas ref={qrCanvasRef} className="hidden" />
 
                                     {guestQrModal.error ? (
                                         <p className="rounded-lg border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
