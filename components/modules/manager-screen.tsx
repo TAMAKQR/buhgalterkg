@@ -269,10 +269,19 @@ type GuestQrLookupResult = {
     }>;
 };
 
+type GuestProfileEditState = {
+    fullName: string;
+    phone: string;
+    documentNumber: string;
+    notes: string;
+};
+
 interface GuestQrModalState {
     code: string;
     result: GuestQrLookupResult | null;
     selectedRoomId: string;
+    profileEdit: GuestProfileEditState | null;
+    isSavingProfile: boolean;
     isLookingUp: boolean;
     isScanning: boolean;
     error: string | null;
@@ -1495,6 +1504,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             code: '',
             result: null,
             selectedRoomId: firstAvailableRoom?.id ?? '',
+            profileEdit: null,
+            isSavingProfile: false,
             isLookingUp: false,
             isScanning: false,
             error: null
@@ -1526,6 +1537,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     code,
                     result,
                     selectedRoomId: prev.selectedRoomId || firstAvailableRoom?.id || '',
+                    profileEdit: null,
+                    isSavingProfile: false,
                     isLookingUp: false,
                     error: null
                 }
@@ -1540,6 +1553,84 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 : prev));
         }
     }, [guestQrModal?.code, request, sortedRooms]);
+
+    const startGuestProfileEdit = () => {
+        setGuestQrModal((prev) => {
+            const guest = prev?.result?.guest;
+            if (!prev || !guest) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                profileEdit: {
+                    fullName: guest.fullName,
+                    phone: guest.phone ?? '',
+                    documentNumber: guest.documentNumber ?? '',
+                    notes: guest.notes ?? ''
+                },
+                error: null
+            };
+        });
+    };
+
+    const cancelGuestProfileEdit = () => {
+        setGuestQrModal((prev) => (prev ? { ...prev, profileEdit: null, error: null } : prev));
+    };
+
+    const updateGuestProfileEdit = (field: keyof GuestProfileEditState, value: string) => {
+        setGuestQrModal((prev) => (prev?.profileEdit
+            ? { ...prev, profileEdit: { ...prev.profileEdit, [field]: value }, error: null }
+            : prev));
+    };
+
+    const saveGuestProfileEdit = async () => {
+        const guest = guestQrModal?.result?.guest;
+        const edit = guestQrModal?.profileEdit;
+        if (!guest || !edit) {
+            return;
+        }
+
+        if (!edit.fullName.trim()) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Укажите имя гостя' } : prev));
+            return;
+        }
+
+        setGuestQrModal((prev) => (prev ? { ...prev, isSavingProfile: true, error: null } : prev));
+        try {
+            const updated = await request<{ guest: GuestQrLookupResult['guest'] }>(`/api/manager/guest-profiles/${guest.id}`, {
+                method: 'PATCH',
+                body: {
+                    fullName: edit.fullName.trim(),
+                    phone: edit.phone.trim() || null,
+                    documentNumber: edit.documentNumber.trim() || null,
+                    notes: edit.notes.trim() || null
+                }
+            });
+
+            setGuestQrModal((prev) => (prev?.result
+                ? {
+                    ...prev,
+                    result: {
+                        ...prev.result,
+                        guest: updated.guest
+                    },
+                    profileEdit: null,
+                    isSavingProfile: false,
+                    error: null
+                }
+                : prev));
+            toast('Профиль гостя обновлен', 'success');
+        } catch (profileError) {
+            setGuestQrModal((prev) => (prev
+                ? {
+                    ...prev,
+                    isSavingProfile: false,
+                    error: profileError instanceof Error ? profileError.message : 'Не удалось сохранить профиль'
+                }
+                : prev));
+        }
+    };
 
     const startGuestQrScanner = async () => {
         if (!navigator.mediaDevices?.getUserMedia && !window.BarcodeDetector) {
@@ -3873,17 +3964,71 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                                     {guestQrModal.result ? (
                                         <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Найден гость</p>
-                                                    <h4 className="mt-1 break-words text-lg font-semibold">{guestQrModal.result.guest.fullName}</h4>
-                                                    <p className="text-sm text-white/55">{guestQrModal.result.guest.phone || 'телефон не указан'}</p>
-                                                    {guestQrModal.result.guest.documentNumber ? (
-                                                        <p className="text-xs text-white/40">Документ: {guestQrModal.result.guest.documentNumber}</p>
-                                                    ) : null}
+                                            {guestQrModal.profileEdit ? (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Редактировать гостя</p>
+                                                        <Badge tone="success" label="QR" />
+                                                    </div>
+                                                    <Input
+                                                        value={guestQrModal.profileEdit.fullName}
+                                                        onChange={(event) => updateGuestProfileEdit('fullName', event.target.value)}
+                                                        placeholder="Имя и фамилия"
+                                                        className="text-white"
+                                                        disabled={guestQrModal.isSavingProfile}
+                                                    />
+                                                    <Input
+                                                        value={guestQrModal.profileEdit.phone}
+                                                        onChange={(event) => updateGuestProfileEdit('phone', event.target.value)}
+                                                        placeholder="Телефон"
+                                                        className="text-white"
+                                                        disabled={guestQrModal.isSavingProfile}
+                                                    />
+                                                    <Input
+                                                        value={guestQrModal.profileEdit.documentNumber}
+                                                        onChange={(event) => updateGuestProfileEdit('documentNumber', event.target.value)}
+                                                        placeholder="Паспорт или ID"
+                                                        className="text-white"
+                                                        disabled={guestQrModal.isSavingProfile}
+                                                    />
+                                                    <TextArea
+                                                        rows={2}
+                                                        value={guestQrModal.profileEdit.notes}
+                                                        onChange={(event) => updateGuestProfileEdit('notes', event.target.value)}
+                                                        placeholder="Заметка по гостю"
+                                                        className="text-white"
+                                                        disabled={guestQrModal.isSavingProfile}
+                                                    />
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <Button type="button" variant="secondary" disabled={guestQrModal.isSavingProfile} onClick={cancelGuestProfileEdit}>
+                                                            Отмена
+                                                        </Button>
+                                                        <Button type="button" disabled={guestQrModal.isSavingProfile} onClick={() => void saveGuestProfileEdit()}>
+                                                            {guestQrModal.isSavingProfile ? 'Сохраняем...' : 'Сохранить'}
+                                                        </Button>
+                                                    </div>
                                                 </div>
-                                                <Badge tone="success" label="QR" />
-                                            </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Найден гость</p>
+                                                        <h4 className="mt-1 break-words text-lg font-semibold">{guestQrModal.result.guest.fullName}</h4>
+                                                        <p className="text-sm text-white/55">{guestQrModal.result.guest.phone || 'телефон не указан'}</p>
+                                                        {guestQrModal.result.guest.documentNumber ? (
+                                                            <p className="text-xs text-white/40">Документ: {guestQrModal.result.guest.documentNumber}</p>
+                                                        ) : null}
+                                                        {guestQrModal.result.guest.notes ? (
+                                                            <p className="mt-1 text-xs text-white/35">{guestQrModal.result.guest.notes}</p>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="flex shrink-0 flex-col items-end gap-2">
+                                                        <Badge tone="success" label="QR" />
+                                                        <Button type="button" size="sm" variant="secondary" onClick={startGuestProfileEdit}>
+                                                            Изменить
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {guestQrModal.result.recentStays.length ? (
                                                 <div className="mt-3 rounded-lg border border-white/10 bg-black/12 p-2">
@@ -3916,7 +4061,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </Select>
                                             </label>
 
-                                            <Button type="button" className="mt-3 w-full py-3" onClick={handleUseGuestQr}>
+                                            <Button type="button" className="mt-3 w-full py-3" disabled={Boolean(guestQrModal.profileEdit) || guestQrModal.isSavingProfile} onClick={handleUseGuestQr}>
                                                 Заселить этого гостя
                                             </Button>
                                         </div>
