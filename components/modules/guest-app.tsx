@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { BadgeCheck, Building2, CheckCircle2, FileText, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
 
 type GuestHotel = {
     id: string;
@@ -57,6 +58,18 @@ const storedGuestKey = 'hotel-ops-guest-profile';
 
 const formatTelegramName = (user?: TelegramWebAppUser | null) =>
     [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+
+const formatExpiry = (value?: string | null) => {
+    if (!value) {
+        return null;
+    }
+
+    try {
+        return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(new Date(value));
+    } catch {
+        return null;
+    }
+};
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
@@ -144,6 +157,14 @@ export const GuestApp = () => {
         () => hotels.find((hotel) => hotel.id === hotelId) ?? null,
         [hotelId, hotels]
     );
+    const profileHotel = useMemo(
+        () => hotels.find((hotel) => hotel.id === profile?.guest.hotelId) ?? selectedHotel,
+        [hotels, profile?.guest.hotelId, selectedHotel]
+    );
+    const telegramLabel = telegramUser ? formatTelegramName(telegramUser) || telegramUser.username || String(telegramUser.id) : '';
+    const isTelegramLinked = Boolean(telegramInitData && telegramUser);
+    const hasDocumentNumber = Boolean((profile?.guest.documentNumber ?? documentNumber).trim());
+    const expiryLabel = formatExpiry(profile?.qr.expiresAt);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -189,101 +210,186 @@ export const GuestApp = () => {
     };
 
     return (
-        <main className="min-h-screen bg-slate-950 px-4 py-5 text-white">
+        <main className="min-h-screen bg-[#f3f6fb] px-4 py-4 text-slate-950">
             <div className="mx-auto flex w-full max-w-md flex-col gap-4">
-                <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/25">
-                    <p className="text-xs uppercase tracking-[0.22em] text-sky-200/65">Hotel Guest</p>
-                    <h1 className="mt-2 text-2xl font-semibold">Мой гостевой QR</h1>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">
-                        Заполните данные один раз. На ресепшене менеджер сканирует код и быстро создаст заселение.
-                    </p>
-                    {telegramUser ? (
-                        <div className="mt-3 inline-flex rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
-                            Telegram: {formatTelegramName(telegramUser) || telegramUser.username || telegramUser.id}
+                <section className="overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-[0_24px_70px_-36px_rgba(15,23,42,0.7)]">
+                    <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.28),transparent_32%),linear-gradient(135deg,#0f172a,#111827)] p-5">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-[11px] uppercase tracking-[0.22em] text-sky-100/70">GuestPass</p>
+                                <h1 className="mt-2 text-2xl font-semibold tracking-tight">Быстрое заселение</h1>
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2.5">
+                                <QrCode className="h-5 w-5" aria-hidden="true" />
+                            </div>
                         </div>
-                    ) : null}
+                        <p className="mt-4 max-w-sm text-sm leading-6 text-slate-200/80">
+                            Заполните профиль один раз. Менеджер сканирует QR, сверяет документ на стойке и заселяет без повторного ручного ввода.
+                        </p>
+                        <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
+                                <Smartphone className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
+                                Telegram
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
+                                <FileText className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
+                                Документ
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
+                                <ShieldCheck className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
+                                Проверка
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Статус профиля</p>
+                            <h2 className="mt-1 text-lg font-semibold">{profile ? 'QR готов' : 'Нужно заполнить данные'}</h2>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${profile ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {profile ? 'Активен' : 'Новый'}
+                        </span>
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                            <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                                Telegram
+                            </span>
+                            <span className={`text-xs font-semibold ${isTelegramLinked ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                {isTelegramLinked ? telegramLabel || 'подключен' : 'не подключен'}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                            <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                <FileText className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                                Документ
+                            </span>
+                            <span className={`text-xs font-semibold ${hasDocumentNumber ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                {hasDocumentNumber ? 'номер указан' : 'можно позже'}
+                            </span>
+                        </div>
+                    </div>
                 </section>
 
                 {profile ? (
-                    <section className="rounded-2xl border border-white/10 bg-white p-4 text-slate-950 shadow-xl">
+                    <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
                         <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Гость</p>
-                                <h2 className="mt-1 text-xl font-semibold">{profile.guest.fullName}</h2>
-                                <p className="text-sm text-slate-500">{selectedHotel?.name ?? 'Отель выбран'}</p>
+                            <div className="min-w-0">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Гость</p>
+                                <h2 className="mt-1 truncate text-xl font-semibold">{profile.guest.fullName}</h2>
+                                <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-slate-500">
+                                    <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                    {profileHotel?.name ?? 'Отель выбран'}
+                                </p>
                             </div>
-                            <Button type="button" size="sm" variant="ghost" onClick={resetProfile}>
+                            <Button type="button" size="sm" variant="secondary" onClick={resetProfile}>
                                 Изменить
                             </Button>
                         </div>
 
-                        <div className="mt-4 flex flex-col items-center rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                            {qrDataUrl ? (
-                                <img src={qrDataUrl} alt="QR гостя" className="h-64 w-64 rounded-xl bg-white" />
-                            ) : (
-                                <div className="flex h-64 w-64 items-center justify-center rounded-xl bg-white text-sm text-slate-500">
-                                    Генерируем QR
-                                </div>
-                            )}
-                            <p className="mt-3 rounded-full bg-slate-950 px-4 py-2 font-mono text-lg font-semibold tracking-[0.18em] text-white">
-                                {profile.qr.code}
-                            </p>
-                            <p className="mt-2 text-center text-xs leading-5 text-slate-500">
-                                Если камера не считает QR, покажите менеджеру этот код.
-                            </p>
+                        <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                            <div className="flex flex-col items-center rounded-[22px] bg-white p-3 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.55)]">
+                                {qrDataUrl ? (
+                                    <img src={qrDataUrl} alt="QR гостя" className="h-64 w-64 rounded-2xl bg-white" />
+                                ) : (
+                                    <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white text-sm text-slate-500">
+                                        Генерируем QR
+                                    </div>
+                                )}
+                                <p className="mt-3 rounded-full bg-slate-950 px-4 py-2 font-mono text-base font-semibold tracking-[0.18em] text-white">
+                                    {profile.qr.code}
+                                </p>
+                            </div>
+                            <div className="mt-3 flex items-start gap-2 rounded-2xl bg-emerald-50 px-3 py-2.5 text-sm leading-5 text-emerald-800">
+                                <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                <span>
+                                    Покажите QR менеджеру. Документ сверяется глазами на стойке; фото паспорта в чат отправлять не нужно.
+                                </span>
+                            </div>
+                            {expiryLabel ? (
+                                <p className="mt-2 text-center text-xs text-slate-500">QR активен до {expiryLabel}</p>
+                            ) : null}
                         </div>
                     </section>
                 ) : (
-                    <form className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl" onSubmit={handleSubmit}>
-                        <div className="space-y-3">
+                    <form className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]" onSubmit={handleSubmit}>
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-2xl bg-slate-100 p-2.5">
+                                <UserRound className="h-5 w-5 text-slate-600" aria-hidden="true" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold">Профиль гостя</h2>
+                                <p className="text-sm text-slate-500">Эти данные подтянутся при сканировании QR.</p>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
                             <label className="block">
-                                <span className="mb-1 block text-xs uppercase tracking-[0.18em] text-slate-400">Отель</span>
+                                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Отель</span>
                                 <Select
                                     value={hotelId}
                                     onChange={(event) => setHotelId(event.target.value)}
-                                    disabled={isLoadingHotels}
-                                    className="text-white"
+                                    disabled={isLoadingHotels || hotels.length === 0}
                                 >
-                                    {hotels.map((hotel) => (
+                                    {hotels.length ? hotels.map((hotel) => (
                                         <option key={hotel.id} value={hotel.id}>
                                             {hotel.name}
                                         </option>
-                                    ))}
+                                    )) : (
+                                        <option value="">Нет доступных объектов</option>
+                                    )}
                                 </Select>
+                                {selectedHotel?.address ? (
+                                    <p className="mt-1.5 truncate text-xs text-slate-500">{selectedHotel.address}</p>
+                                ) : null}
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-xs uppercase tracking-[0.18em] text-slate-400">Имя и фамилия</span>
+                                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Имя и фамилия</span>
                                 <Input
                                     value={fullName}
                                     onChange={(event) => setFullName(event.target.value)}
                                     placeholder="Например, Азамат Ибраев"
-                                    className="text-white"
+                                    autoComplete="name"
                                 />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-xs uppercase tracking-[0.18em] text-slate-400">Телефон</span>
+                                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Телефон</span>
                                 <Input
                                     value={phone}
                                     onChange={(event) => setPhone(event.target.value)}
                                     placeholder="+996..."
-                                    className="text-white"
+                                    type="tel"
+                                    autoComplete="tel"
                                 />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-xs uppercase tracking-[0.18em] text-slate-400">Документ</span>
+                                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Номер документа</span>
                                 <Input
                                     value={documentNumber}
                                     onChange={(event) => setDocumentNumber(event.target.value)}
                                     placeholder="Паспорт или ID, можно позже"
-                                    className="text-white"
+                                    autoComplete="off"
                                 />
                             </label>
                         </div>
 
-                        {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
+                        <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-900">
+                            <div className="flex gap-2">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                <p>
+                                    Лучший сценарий: гость заполняет профиль сам, а менеджер один раз сверяет документ при заселении и больше не переносит данные вручную.
+                                </p>
+                            </div>
+                        </div>
 
-                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || isLoadingHotels}>
-                            {isSubmitting ? 'Создаем...' : 'Получить QR'}
+                        {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+
+                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || isLoadingHotels || hotels.length === 0}>
+                            {isSubmitting ? 'Создаем QR...' : 'Получить QR'}
                         </Button>
                     </form>
                 )}
