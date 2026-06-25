@@ -24,6 +24,8 @@ type GuestProfileResult = {
         documentNumber?: string | null;
         verificationStatus?: GuestVerificationStatus | null;
         verifiedAt?: string | null;
+        consentAcceptedAt?: string | null;
+        consentVersion?: string | null;
         hotelId?: string | null;
     };
     qr: {
@@ -59,6 +61,7 @@ declare global {
 }
 
 const storedGuestKey = 'hotel-ops-guest-profile';
+const CURRENT_CONSENT_VERSION = 'guestpass-2026-06-25';
 
 const formatTelegramName = (user?: TelegramWebAppUser | null) =>
     [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
@@ -89,6 +92,7 @@ export const GuestApp = () => {
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
     const [documentNumber, setDocumentNumber] = useState('');
+    const [consentAccepted, setConsentAccepted] = useState(false);
     const [isLoadingHotels, setIsLoadingHotels] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -211,6 +215,11 @@ export const GuestApp = () => {
             return;
         }
 
+        if (!consentAccepted) {
+            setError('Нужно согласие на обработку данных для создания QR');
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             const response = await fetch('/api/guest/profile', {
@@ -221,7 +230,9 @@ export const GuestApp = () => {
                     fullName: fullName.trim(),
                     phone: phone.trim() || undefined,
                     telegramInitData: telegramInitData || undefined,
-                    documentNumber: documentNumber.trim() || undefined
+                    documentNumber: documentNumber.trim() || undefined,
+                    consentAccepted: true,
+                    consentVersion: CURRENT_CONSENT_VERSION
                 })
             });
 
@@ -243,6 +254,7 @@ export const GuestApp = () => {
         localStorage.removeItem(storedGuestKey);
         setProfile(null);
         setQrDataUrl(null);
+        setConsentAccepted(false);
     };
 
     return (
@@ -424,9 +436,24 @@ export const GuestApp = () => {
                             </div>
                         </div>
 
+                        <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                            <input
+                                type="checkbox"
+                                checked={consentAccepted}
+                                onChange={(event) => setConsentAccepted(event.target.checked)}
+                                className="mt-1 accent-slate-900"
+                            />
+                            <span>
+                                Я согласен на обработку моих данных для создания профиля, QR-заселения и проверки документа в отеле.{' '}
+                                <a href="/guest/privacy" className="font-semibold text-slate-950 underline underline-offset-2">
+                                    Политика конфиденциальности
+                                </a>
+                            </span>
+                        </label>
+
                         {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
-                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || isLoadingHotels || hotels.length === 0}>
+                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || isLoadingHotels || hotels.length === 0 || !consentAccepted}>
                             {isSubmitting ? 'Создаем QR...' : 'Получить QR'}
                         </Button>
                     </form>

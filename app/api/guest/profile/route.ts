@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { handleApiError } from '@/lib/server/errors';
 import { verifyTelegramWebAppInitData } from '@/lib/server/telegram-webapp';
@@ -14,12 +15,45 @@ const guestProfileSchema = z.object({
     telegramInitData: z.string().max(4096).optional().nullable(),
     telegramId: z.string().trim().max(64).optional().nullable(),
     documentNumber: z.string().trim().max(80).optional().nullable(),
-    notes: z.string().trim().max(300).optional().nullable()
+    notes: z.string().trim().max(300).optional().nullable(),
+    consentAccepted: z.boolean(),
+    consentVersion: z.string().trim().max(40).optional().nullable()
 });
+
+const CURRENT_CONSENT_VERSION = 'guestpass-2026-06-25';
 
 const normalizeOptionalText = (value?: string | null) => {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+};
+
+const guestProfileSnapshot = (profile: {
+    fullName: string;
+    phone?: string | null;
+    documentNumber?: string | null;
+    verificationStatus?: string | null;
+    notes?: string | null;
+    consentAcceptedAt?: Date | null;
+    consentVersion?: string | null;
+}) => ({
+    fullName: profile.fullName,
+    phone: profile.phone ?? null,
+    documentNumber: profile.documentNumber ?? null,
+    verificationStatus: profile.verificationStatus ?? null,
+    notes: profile.notes ?? null,
+    consentAcceptedAt: profile.consentAcceptedAt?.toISOString() ?? null,
+    consentVersion: profile.consentVersion ?? null
+});
+
+const changedProfileFields = (
+    before: ReturnType<typeof guestProfileSnapshot> | null,
+    after: ReturnType<typeof guestProfileSnapshot>
+) => {
+    if (!before) {
+        return Object.keys(after).filter((field) => after[field as keyof typeof after] !== null);
+    }
+
+    return Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
 };
 
 const qrAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -56,6 +90,10 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const payload = guestProfileSchema.parse(body);
 
+        if (!payload.consentAccepted) {
+            return new NextResponse('Personal data consent is required', { status: 400 });
+        }
+
         const hotelId = payload.hotelId ?? null;
         if (hotelId) {
             const hotel = await prisma.hotel.findUnique({
@@ -86,6 +124,8 @@ export async function POST(request: NextRequest) {
         const telegramId = verifiedTelegram?.user?.id ? String(verifiedTelegram.user.id) : null;
         const documentNumber = normalizeOptionalText(payload.documentNumber);
         const notes = normalizeOptionalText(payload.notes);
+        const consentVersion = normalizeOptionalText(payload.consentVersion) ?? CURRENT_CONSENT_VERSION;
+        const consentAcceptedAt = new Date();
         const code = await createUniqueGuestCode();
 
         const result = await prisma.$transaction(async (tx) => {
@@ -108,6 +148,10 @@ export async function POST(request: NextRequest) {
                 })
                 : null;
             const existingProfile = existingByTelegram ?? existingByPhone;
+            const beforeSnapshot = existingProfile ? guestProfileSnapshot(existingProfile) : null;
+            const documentChanged = existingProfile
+                ? (existingProfile.documentNumber ?? null) !== (documentNumber ?? existingProfile.documentNumber ?? null)
+                : false;
 
             const profile = existingProfile
                 ? await tx.guestProfile.update({
@@ -117,7 +161,17 @@ export async function POST(request: NextRequest) {
                         phone: phone ?? existingProfile.phone,
                         telegramId: telegramId ?? existingProfile.telegramId,
                         documentNumber: documentNumber ?? existingProfile.documentNumber,
-                        notes: notes ?? existingProfile.notes
+                        notes: notes ?? existingProfile.notes,
+                        consentAcceptedAt,
+                        consentVersion,
+                        ...(documentChanged && existingProfile.verificationStatus === 'VERIFIED'
+                            ? {
+                                verificationStatus: 'NEEDS_REVIEW',
+                                verifiedAt: null,
+                                verifiedById: null,
+                                verifiedHotelId: null
+                            }
+                            : {})
                     }
                 })
                 : await tx.guestProfile.create({
@@ -127,9 +181,49 @@ export async function POST(request: NextRequest) {
                         phone,
                         telegramId,
                         documentNumber,
-                        notes
+                        notes,
+                        consentAcceptedAt,
+                        consentVersion
                     }
                 });
+
+            const afterSnapshot = guestProfileSnapshot(profile);
+            const changedFields = changedProfileFields(beforeSnapshot, afterSnapshot);
+            if (!existingProfile || changedFields.length) {
+                await tx.guestProfileAuditLog.create({
+                    data: {
+                        guestProfileId: profile.id,
+                        hotelId,
+                        actorType: 'GUEST',
+                        actorLabel: telegramId ? `telegram:${telegramId}` : phone ? `phone:${phone}` : 'guest',
+                        action: existingProfile ? 'PROFILE_UPDATED' : 'PROFILE_CREATED',
+                        changedFields,
+                        before: beforeSnapshot ?? Prisma.JsonNull,
+                        after: afterSnapshot
+                    }
+                });
+            }
+
+            if (!existingProfile || existingProfile.consentVersion !== consentVersion || !existingProfile.consentAcceptedAt) {
+                await tx.guestProfileAuditLog.create({
+                    data: {
+                        guestProfileId: profile.id,
+                        hotelId,
+                        actorType: 'GUEST',
+                        actorLabel: telegramId ? `telegram:${telegramId}` : phone ? `phone:${phone}` : 'guest',
+                        action: 'CONSENT_ACCEPTED',
+                        changedFields: ['consentAcceptedAt', 'consentVersion'],
+                        before: beforeSnapshot ? {
+                            consentAcceptedAt: beforeSnapshot.consentAcceptedAt,
+                            consentVersion: beforeSnapshot.consentVersion
+                        } : Prisma.JsonNull,
+                        after: {
+                            consentAcceptedAt: afterSnapshot.consentAcceptedAt,
+                            consentVersion: afterSnapshot.consentVersion
+                        }
+                    }
+                });
+            }
 
             const token = await tx.guestQrToken.create({
                 data: {
@@ -152,6 +246,8 @@ export async function POST(request: NextRequest) {
                 documentNumber: result.profile.documentNumber,
                 verificationStatus: result.profile.verificationStatus,
                 verifiedAt: result.profile.verifiedAt?.toISOString() ?? null,
+                consentAcceptedAt: result.profile.consentAcceptedAt?.toISOString() ?? null,
+                consentVersion: result.profile.consentVersion,
                 notes: result.profile.notes,
                 hotelId: result.profile.hotelId
             },

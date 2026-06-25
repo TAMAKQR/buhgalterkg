@@ -251,6 +251,17 @@ interface PaymentAdjustState {
 }
 
 type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
+type GuestProfileAuditAction = 'PROFILE_CREATED' | 'PROFILE_UPDATED' | 'DOCUMENT_VERIFIED' | 'CONSENT_ACCEPTED';
+
+type GuestProfileAuditLogItem = {
+    id: string;
+    action: GuestProfileAuditAction;
+    actorType: 'GUEST' | 'MANAGER' | 'ADMIN' | 'SYSTEM';
+    actorName?: string | null;
+    hotelName?: string | null;
+    changedFields: string[];
+    createdAt: string;
+};
 
 type GuestQrLookupResult = {
     guest: {
@@ -275,6 +286,7 @@ type GuestQrLookupResult = {
         scheduledCheckIn: string;
         scheduledCheckOut: string;
     }>;
+    auditLogs: GuestProfileAuditLogItem[];
 };
 
 type GuestProfileEditState = {
@@ -303,6 +315,30 @@ const guestVerificationMeta: Record<GuestVerificationStatus, { label: string; to
 };
 
 const getGuestVerificationMeta = (status?: GuestVerificationStatus | null) => guestVerificationMeta[status ?? 'PENDING'];
+
+const guestAuditActionLabels: Record<GuestProfileAuditAction, string> = {
+    PROFILE_CREATED: 'Профиль создан',
+    PROFILE_UPDATED: 'Профиль изменен',
+    DOCUMENT_VERIFIED: 'Документ подтвержден',
+    CONSENT_ACCEPTED: 'Согласие принято'
+};
+
+const guestAuditFieldLabels: Record<string, string> = {
+    fullName: 'имя',
+    phone: 'телефон',
+    documentNumber: 'документ',
+    verificationStatus: 'статус',
+    verifiedAt: 'дата проверки',
+    verifiedById: 'кто проверил',
+    verifiedHotelId: 'объект проверки',
+    notes: 'заметка',
+    consentAcceptedAt: 'согласие',
+    consentVersion: 'версия согласия'
+};
+
+const formatGuestAuditFields = (fields: string[]) => fields
+    .map((field) => guestAuditFieldLabels[field] ?? field)
+    .join(', ');
 
 type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
     detect(source: CanvasImageSource): Promise<Array<{ rawValue?: string }>>;
@@ -1617,7 +1653,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         setGuestQrModal((prev) => (prev ? { ...prev, isSavingProfile: true, error: null } : prev));
         try {
-            const updated = await request<{ guest: GuestQrLookupResult['guest'] }>(`/api/manager/guest-profiles/${guest.id}`, {
+            const updated = await request<{ guest: GuestQrLookupResult['guest']; auditLog?: GuestProfileAuditLogItem | null }>(`/api/manager/guest-profiles/${guest.id}`, {
                 method: 'PATCH',
                 body: {
                     fullName: edit.fullName.trim(),
@@ -1632,7 +1668,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     ...prev,
                     result: {
                         ...prev.result,
-                        guest: updated.guest
+                        guest: updated.guest,
+                        auditLogs: updated.auditLog
+                            ? [updated.auditLog, ...prev.result.auditLogs.filter((entry) => entry.id !== updated.auditLog?.id)].slice(0, 5)
+                            : prev.result.auditLogs
                     },
                     profileEdit: null,
                     isSavingProfile: false,
@@ -1664,7 +1703,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         setGuestQrModal((prev) => (prev ? { ...prev, isVerifyingProfile: true, error: null } : prev));
         try {
-            const updated = await request<{ guest: GuestQrLookupResult['guest'] }>(`/api/manager/guest-profiles/${guest.id}/verify`, {
+            const updated = await request<{ guest: GuestQrLookupResult['guest']; auditLog?: GuestProfileAuditLogItem | null }>(`/api/manager/guest-profiles/${guest.id}/verify`, {
                 method: 'POST'
             });
 
@@ -1673,7 +1712,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     ...prev,
                     result: {
                         ...prev.result,
-                        guest: updated.guest
+                        guest: updated.guest,
+                        auditLogs: updated.auditLog
+                            ? [updated.auditLog, ...prev.result.auditLogs.filter((entry) => entry.id !== updated.auditLog?.id)].slice(0, 5)
+                            : prev.result.auditLogs
                     },
                     isVerifyingProfile: false,
                     error: null
@@ -4120,6 +4162,26 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             <p key={stay.id} className="truncate">
                                                                 {stay.hotelName} · №{stay.roomLabel} · {formatDateTime(stay.scheduledCheckIn, hotelTz)}
                                                             </p>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {guestQrModal.result.auditLogs.length ? (
+                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/12 p-2">
+                                                    <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/35">История профиля</p>
+                                                    <div className="space-y-1.5 text-xs text-white/55">
+                                                        {guestQrModal.result.auditLogs.slice(0, 5).map((entry) => (
+                                                            <div key={entry.id} className="min-w-0">
+                                                                <p className="truncate text-white/70">
+                                                                    {guestAuditActionLabels[entry.action] ?? entry.action}
+                                                                    {entry.actorName ? ` · ${entry.actorName}` : ''}
+                                                                </p>
+                                                                <p className="truncate text-white/35">
+                                                                    {formatDateTime(entry.createdAt, hotelTz)}
+                                                                    {entry.changedFields.length ? ` · ${formatGuestAuditFields(entry.changedFields)}` : ''}
+                                                                </p>
+                                                            </div>
                                                         ))}
                                                     </div>
                                                 </div>

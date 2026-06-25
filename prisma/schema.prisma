@@ -23,6 +23,7 @@ model User {
   shifts      Shift[]           @relation("ShiftManager")
   receivedHandovers Shift[]     @relation("ShiftHandoverRecipient")
   verifiedGuestProfiles GuestProfile[] @relation("GuestProfileVerifiedBy")
+  guestProfileAuditLogs GuestProfileAuditLog[]
 }
 
 model Hotel {
@@ -53,6 +54,7 @@ model Hotel {
   assignments     HotelAssignment[]
   guestProfiles   GuestProfile[]
   verifiedGuestProfiles GuestProfile[] @relation("GuestProfileVerifiedHotel")
+  guestProfileAuditLogs GuestProfileAuditLog[]
   guestQrTokens   GuestQrToken[]
   rooms           Room[]
   stays           RoomStay[]
@@ -72,6 +74,8 @@ model GuestProfile {
   verifiedAt     DateTime?      @map("verified_at")
   verifiedById   String?        @map("verified_by_id")
   verifiedHotelId String?       @map("verified_hotel_id")
+  consentAcceptedAt DateTime?   @map("consent_accepted_at")
+  consentVersion String?        @map("consent_version")
   notes          String?
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
@@ -80,6 +84,7 @@ model GuestProfile {
   verifiedHotel  Hotel?         @relation("GuestProfileVerifiedHotel", fields: [verifiedHotelId], references: [id], onDelete: SetNull)
   qrTokens       GuestQrToken[]
   stays          RoomStay[]
+  auditLogs      GuestProfileAuditLog[]
 
   @@index([hotelId])
   @@index([phone])
@@ -87,6 +92,29 @@ model GuestProfile {
   @@index([verificationStatus])
   @@index([verifiedById])
   @@index([verifiedHotelId])
+  @@index([consentAcceptedAt])
+}
+
+model GuestProfileAuditLog {
+  id             String                  @id @default(cuid())
+  guestProfileId String                  @map("guest_profile_id")
+  hotelId        String?                 @map("hotel_id")
+  actorUserId    String?                 @map("actor_user_id")
+  actorType      GuestProfileActorType   @default(SYSTEM) @map("actor_type")
+  actorLabel     String?                 @map("actor_label")
+  action         GuestProfileAuditAction
+  changedFields  String[]                @default([]) @map("changed_fields")
+  before         Json?
+  after          Json?
+  createdAt      DateTime                @default(now()) @map("created_at")
+  guestProfile   GuestProfile            @relation(fields: [guestProfileId], references: [id], onDelete: Cascade)
+  hotel          Hotel?                  @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  actorUser      User?                   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([guestProfileId, createdAt])
+  @@index([hotelId])
+  @@index([actorUserId])
+  @@index([action])
 }
 
 model GuestQrToken {
@@ -315,6 +343,20 @@ enum GuestVerificationStatus {
   PENDING
   VERIFIED
   NEEDS_REVIEW
+}
+
+enum GuestProfileActorType {
+  GUEST
+  MANAGER
+  ADMIN
+  SYSTEM
+}
+
+enum GuestProfileAuditAction {
+  PROFILE_CREATED
+  PROFILE_UPDATED
+  DOCUMENT_VERIFIED
+  CONSENT_ACCEPTED
 }
 
 model BonusTier {

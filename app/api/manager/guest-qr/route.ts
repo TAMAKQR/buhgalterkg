@@ -47,6 +47,24 @@ export async function POST(request: NextRequest) {
                         verifiedHotel: {
                             select: { name: true }
                         },
+                        auditLogs: {
+                            orderBy: { createdAt: 'desc' },
+                            take: 5,
+                            select: {
+                                id: true,
+                                action: true,
+                                actorType: true,
+                                actorLabel: true,
+                                changedFields: true,
+                                createdAt: true,
+                                hotel: {
+                                    select: { name: true }
+                                },
+                                actorUser: {
+                                    select: { displayName: true }
+                                }
+                            }
+                        },
                         stays: {
                             orderBy: { scheduledCheckIn: 'desc' },
                             take: 5,
@@ -111,6 +129,15 @@ export async function POST(request: NextRequest) {
                 status: stay.status,
                 scheduledCheckIn: stay.scheduledCheckIn.toISOString(),
                 scheduledCheckOut: stay.scheduledCheckOut.toISOString()
+            })),
+            auditLogs: token.guestProfile.auditLogs.map((entry) => ({
+                id: entry.id,
+                action: entry.action,
+                actorType: entry.actorType,
+                actorName: entry.actorUser?.displayName ?? entry.actorLabel ?? null,
+                hotelName: entry.hotel?.name ?? null,
+                changedFields: entry.changedFields,
+                createdAt: entry.createdAt.toISOString()
             }))
         });
     } catch (error) {
