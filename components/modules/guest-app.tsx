@@ -3,7 +3,7 @@
 import QRCode from 'qrcode';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, Smartphone, UserRound, X } from 'lucide-react';
+import { BadgeCheck, CheckCircle2, FileText, MapPin, Pencil, QrCode, Smartphone, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -164,8 +164,7 @@ function HotelDirectory({ hotels, isLoading }: { hotels: GuestHotel[]; isLoading
     return (
         <section className="space-y-3">
             <div className="px-1">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Объекты</p>
-                <h2 className="mt-1 text-lg font-semibold text-slate-950">Выберите отель при брони или на ресепшене</h2>
+                <h2 className="text-base font-semibold text-slate-950">Отели</h2>
             </div>
             <div className="grid gap-3">
                 {hotels.map((hotel) => (
@@ -342,9 +341,7 @@ export const GuestApp = () => {
                 <header className="flex items-center justify-between gap-3 px-1 py-1">
                     <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">GuestPass</p>
-                        <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
-                            {profile ? 'Профиль гостя' : 'Быстрое заселение'}
-                        </h1>
+                        <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{profile ? profile.guest.fullName : 'Быстрое заселение'}</h1>
                     </div>
                     <StatusPill className={profile ? profileVerification.className : 'bg-white text-slate-600 shadow-sm ring-1 ring-slate-200'}>
                         {profile ? profileVerification.label : 'Новый'}
@@ -357,51 +354,30 @@ export const GuestApp = () => {
                             <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.22),transparent_36%),linear-gradient(135deg,#0f172a,#111827)] p-5">
                                 <div className="flex items-start justify-between gap-4">
                                     <div className="min-w-0">
-                                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Digital pass</p>
+                                        <UserRound className="h-5 w-5 text-white/55" aria-hidden="true" />
                                         <h2 className="mt-2 truncate text-2xl font-semibold tracking-tight">{profile.guest.fullName}</h2>
-                                        <p className="mt-2 flex items-center gap-1.5 text-sm text-white/65">
-                                            <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                            Отель привяжется на ресепшене
-                                        </p>
+                                        <p className="mt-2 font-mono text-sm font-semibold tracking-[0.16em] text-white/65">{profile.qr.code}</p>
                                     </div>
                                     <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/10 text-sm font-semibold">
                                         {profileInitials}
                                     </div>
                                 </div>
-                                <div className="mt-5 rounded-[22px] border border-white/10 bg-white/[0.08] p-3">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <span className="text-xs uppercase tracking-[0.18em] text-white/45">QR код</span>
-                                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/75">скрыт</span>
-                                    </div>
-                                    <p className="mt-3 font-mono text-lg font-semibold tracking-[0.18em] text-white">{profile.qr.code}</p>
-                                </div>
                             </div>
                         </section>
 
-                        <section className="rounded-[26px] border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.35)]">
-                            <div className="flex items-center justify-between gap-3">
-                                <div>
-                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">На ресепшене</p>
-                                    <h2 className="mt-1 text-lg font-semibold">Покажите QR менеджеру</h2>
-                                </div>
-                                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
-                                    <QrCode className="h-5 w-5" aria-hidden="true" />
-                                </div>
-                            </div>
-                            <div className="mt-4 grid gap-2">
+                        <section className="rounded-[24px] border border-slate-200/80 bg-white p-3 shadow-[0_18px_46px_-38px_rgba(15,23,42,0.32)]">
+                            <div className="grid gap-2">
                                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
-                                    <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                    <span className="inline-flex items-center gap-2 text-sm text-slate-600">
                                         <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                                        Telegram
                                     </span>
                                     <span className={`text-xs font-semibold ${isTelegramLinked ? 'text-emerald-600' : 'text-slate-400'}`}>
                                         {isTelegramLinked ? telegramLabel || 'подключен' : 'не подключен'}
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
-                                    <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                    <span className="inline-flex items-center gap-2 text-sm text-slate-600">
                                         <FileText className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                                        Документ
                                     </span>
                                     <span className={`text-xs font-semibold ${hasDocumentNumber ? 'text-emerald-600' : 'text-slate-400'}`}>
                                         {hasDocumentNumber ? 'номер указан' : 'можно позже'}
@@ -412,14 +388,21 @@ export const GuestApp = () => {
                                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                                 <span>
                                     {profile.guest.verificationStatus === 'VERIFIED'
-                                        ? 'Документ уже проверен. Заселение пройдет быстрее.'
-                                        : 'Менеджер сверит документ и привяжет профиль к брони или заселению.'}
+                                        ? 'Документ проверен'
+                                        : 'Проверка на стойке'}
                                 </span>
                             </div>
-                            {expiryLabel ? <p className="mt-3 text-center text-xs text-slate-500">QR активен до {expiryLabel}</p> : null}
-                            <Button type="button" variant="secondary" className="mt-3 w-full" onClick={resetProfile}>
-                                Изменить данные
-                            </Button>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                                {expiryLabel ? <p className="text-xs text-slate-500">до {expiryLabel}</p> : <span />}
+                                <button
+                                    type="button"
+                                    className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 text-slate-600"
+                                    onClick={resetProfile}
+                                    aria-label="Изменить данные"
+                                >
+                                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                            </div>
                         </section>
                     </>
                 ) : (
@@ -429,8 +412,7 @@ export const GuestApp = () => {
                                 <UserRound className="h-5 w-5" aria-hidden="true" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold">Создать профиль</h2>
-                                <p className="mt-1 text-sm leading-5 text-slate-500">Профиль не привязан к отелю. Отель выберут при брони или на стойке.</p>
+                                <h2 className="text-lg font-semibold">Данные</h2>
                             </div>
                         </div>
 
@@ -452,7 +434,7 @@ export const GuestApp = () => {
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
                             <div className="flex gap-2 text-sm leading-5 text-slate-700">
                                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                                <p>Создайте QR один раз. На ресепшене менеджер сканирует его и больше не переписывает данные вручную.</p>
+                                <p>QR создается один раз.</p>
                             </div>
                         </div>
 
@@ -469,7 +451,7 @@ export const GuestApp = () => {
                         {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
                         <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || !consentAccepted}>
-                            {isSubmitting ? 'Создаем...' : 'Создать GuestPass'}
+                            {isSubmitting ? 'Создаем...' : 'Создать'}
                         </Button>
                     </form>
                 )}
@@ -480,7 +462,8 @@ export const GuestApp = () => {
                 <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/[0.92] px-4 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3 backdrop-blur">
                     <div className="mx-auto flex w-full max-w-md gap-3">
                         <Button type="button" className="min-h-12 flex-1" onClick={() => setIsQrOpen(true)}>
-                            Показать QR
+                            <QrCode className="mr-2 h-4 w-4" aria-hidden="true" />
+                            QR
                         </Button>
                     </div>
                 </div>
@@ -497,7 +480,7 @@ export const GuestApp = () => {
                         <div className="flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">GuestPass</p>
-                                <h2 className="mt-1 text-lg font-semibold text-slate-950">Покажите QR менеджеру</h2>
+                                <h2 className="mt-1 text-lg font-semibold text-slate-950">QR</h2>
                             </div>
                             <button
                                 type="button"
@@ -520,9 +503,6 @@ export const GuestApp = () => {
                             </div>
                             <p className="mt-3 rounded-full bg-slate-950 px-4 py-2 font-mono text-base font-semibold tracking-[0.18em] text-white">
                                 {profile.qr.code}
-                            </p>
-                            <p className="mt-3 text-center text-xs leading-5 text-slate-500">
-                                После сканирования менеджер привяжет профиль к брони или заселению.
                             </p>
                         </div>
                     </section>
