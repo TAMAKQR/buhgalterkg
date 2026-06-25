@@ -3,7 +3,7 @@
 import QRCode from 'qrcode';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound, X } from 'lucide-react';
+import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, Smartphone, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -337,174 +337,131 @@ export const GuestApp = () => {
     };
 
     return (
-        <main className="min-h-screen bg-[#f3f6fb] px-4 py-4 text-slate-950">
+        <main className="min-h-screen bg-[#f7f8fb] px-4 pb-28 pt-3 text-slate-950">
             <div className="mx-auto flex w-full max-w-md flex-col gap-4">
-                <section className="overflow-hidden rounded-[30px] bg-slate-950 text-white shadow-[0_24px_70px_-36px_rgba(15,23,42,0.7)]">
-                    <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.24),transparent_34%),linear-gradient(135deg,#0f172a,#111827)] p-5">
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="text-[11px] uppercase tracking-[0.22em] text-sky-100/70">GuestPass</p>
-                                <h1 className="mt-2 text-2xl font-semibold tracking-tight">Личный профиль гостя</h1>
-                            </div>
-                            <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/10 text-sm font-semibold">
-                                {profileInitials}
-                            </div>
-                        </div>
-                        <p className="mt-4 max-w-sm text-sm leading-6 text-slate-200/80">
-                            Один QR для заселения. Отель привяжется к брони или при сканировании на ресепшене.
-                        </p>
-                        <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
-                                <UserRound className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
-                                Профиль
-                            </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
-                                <QrCode className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
-                                QR
-                            </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
-                                <ShieldCheck className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
-                                Проверка
-                            </div>
-                        </div>
+                <header className="flex items-center justify-between gap-3 px-1 py-1">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">GuestPass</p>
+                        <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+                            {profile ? 'Профиль гостя' : 'Быстрое заселение'}
+                        </h1>
                     </div>
-                </section>
-
-                <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Статус</p>
-                            <h2 className="mt-1 text-lg font-semibold">{profile ? 'GuestPass готов' : 'Создайте профиль'}</h2>
-                        </div>
-                        <StatusPill className={profile ? profileVerification.className : 'bg-slate-100 text-slate-600'}>
-                            {profile ? profileVerification.label : 'Новый'}
-                        </StatusPill>
-                    </div>
-                    <div className="mt-4 grid gap-2">
-                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
-                            <span className="inline-flex items-center gap-2 text-sm text-slate-700">
-                                <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                                Telegram
-                            </span>
-                            <span className={`text-xs font-semibold ${isTelegramLinked ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {isTelegramLinked ? telegramLabel || 'подключен' : 'не подключен'}
-                            </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
-                            <span className="inline-flex items-center gap-2 text-sm text-slate-700">
-                                <FileText className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                                Документ
-                            </span>
-                            <span className={`text-xs font-semibold ${hasDocumentNumber ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {hasDocumentNumber ? 'номер указан' : 'можно позже'}
-                            </span>
-                        </div>
-                    </div>
-                </section>
+                    <StatusPill className={profile ? profileVerification.className : 'bg-white text-slate-600 shadow-sm ring-1 ring-slate-200'}>
+                        {profile ? profileVerification.label : 'Новый'}
+                    </StatusPill>
+                </header>
 
                 {profile ? (
-                    <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Гость</p>
-                                <h2 className="mt-1 truncate text-xl font-semibold">{profile.guest.fullName}</h2>
-                                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                                    <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                    Отель определится по брони или на ресепшене
-                                </p>
+                    <>
+                        <section className="overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-[0_24px_70px_-40px_rgba(15,23,42,0.85)]">
+                            <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.22),transparent_36%),linear-gradient(135deg,#0f172a,#111827)] p-5">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Digital pass</p>
+                                        <h2 className="mt-2 truncate text-2xl font-semibold tracking-tight">{profile.guest.fullName}</h2>
+                                        <p className="mt-2 flex items-center gap-1.5 text-sm text-white/65">
+                                            <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                            Отель привяжется на ресепшене
+                                        </p>
+                                    </div>
+                                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/10 text-sm font-semibold">
+                                        {profileInitials}
+                                    </div>
+                                </div>
+                                <div className="mt-5 rounded-[22px] border border-white/10 bg-white/[0.08] p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-xs uppercase tracking-[0.18em] text-white/45">QR код</span>
+                                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/75">скрыт</span>
+                                    </div>
+                                    <p className="mt-3 font-mono text-lg font-semibold tracking-[0.18em] text-white">{profile.qr.code}</p>
+                                </div>
                             </div>
-                            <Button type="button" size="sm" variant="secondary" onClick={resetProfile}>
-                                Изменить
-                            </Button>
-                        </div>
+                        </section>
 
-                        <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-3">
-                            <div className="flex items-center gap-3 rounded-[20px] bg-white px-3 py-3">
+                        <section className="rounded-[26px] border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.35)]">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">На ресепшене</p>
+                                    <h2 className="mt-1 text-lg font-semibold">Покажите QR менеджеру</h2>
+                                </div>
                                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
                                     <QrCode className="h-5 w-5" aria-hidden="true" />
                                 </div>
-                                <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-950">QR скрыт</p>
-                                    <p className="mt-0.5 text-xs leading-5 text-slate-500">Откройте его только на стойке регистрации.</p>
+                            </div>
+                            <div className="mt-4 grid gap-2">
+                                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                                    <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                                        Telegram
+                                    </span>
+                                    <span className={`text-xs font-semibold ${isTelegramLinked ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                        {isTelegramLinked ? telegramLabel || 'подключен' : 'не подключен'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                                    <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <FileText className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                                        Документ
+                                    </span>
+                                    <span className={`text-xs font-semibold ${hasDocumentNumber ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                        {hasDocumentNumber ? 'номер указан' : 'можно позже'}
+                                    </span>
                                 </div>
                             </div>
                             <div className={`mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm leading-5 ${profile.guest.verificationStatus === 'VERIFIED' ? 'bg-emerald-50 text-emerald-800' : 'bg-sky-50 text-sky-900'}`}>
                                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                                 <span>
                                     {profile.guest.verificationStatus === 'VERIFIED'
-                                        ? 'Документ уже проверен. Покажите QR менеджеру для быстрого заселения.'
-                                        : 'Покажите QR на стойке. Менеджер привяжет гостя к брони и сверит документ.'}
+                                        ? 'Документ уже проверен. Заселение пройдет быстрее.'
+                                        : 'Менеджер сверит документ и привяжет профиль к брони или заселению.'}
                                 </span>
                             </div>
-                            {expiryLabel ? (
-                                <p className="mt-2 text-center text-xs text-slate-500">QR активен до {expiryLabel}</p>
-                            ) : null}
-                            <Button type="button" className="mt-3 w-full py-3" onClick={() => setIsQrOpen(true)}>
-                                Показать QR
+                            {expiryLabel ? <p className="mt-3 text-center text-xs text-slate-500">QR активен до {expiryLabel}</p> : null}
+                            <Button type="button" variant="secondary" className="mt-3 w-full" onClick={resetProfile}>
+                                Изменить данные
                             </Button>
-                        </div>
-                    </section>
+                        </section>
+                    </>
                 ) : (
-                    <form className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]" onSubmit={handleSubmit}>
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-2xl bg-slate-100 p-2.5">
-                                <UserRound className="h-5 w-5 text-slate-600" aria-hidden="true" />
+                    <form className="rounded-[28px] border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.35)]" onSubmit={handleSubmit}>
+                        <div className="flex items-start gap-3">
+                            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
+                                <UserRound className="h-5 w-5" aria-hidden="true" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold">Данные гостя</h2>
-                                <p className="text-sm text-slate-500">Профиль не привязан к конкретному отелю.</p>
+                                <h2 className="text-lg font-semibold">Создать профиль</h2>
+                                <p className="mt-1 text-sm leading-5 text-slate-500">Профиль не привязан к отелю. Отель выберут при брони или на стойке.</p>
                             </div>
                         </div>
 
-                        <div className="mt-4 space-y-3">
+                        <div className="mt-5 space-y-4">
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Имя и фамилия</span>
-                                <Input
-                                    value={fullName}
-                                    onChange={(event) => setFullName(event.target.value)}
-                                    placeholder="Например, Азамат Ибраев"
-                                    autoComplete="name"
-                                />
+                                <Input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Например, Азамат Ибраев" autoComplete="name" />
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Телефон</span>
-                                <Input
-                                    value={phone}
-                                    onChange={(event) => setPhone(event.target.value)}
-                                    placeholder="+996..."
-                                    type="tel"
-                                    autoComplete="tel"
-                                />
+                                <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+996..." type="tel" autoComplete="tel" />
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Номер документа</span>
-                                <Input
-                                    value={documentNumber}
-                                    onChange={(event) => setDocumentNumber(event.target.value)}
-                                    placeholder="Паспорт или ID, можно позже"
-                                    autoComplete="off"
-                                />
+                                <Input value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="Паспорт или ID, можно позже" autoComplete="off" />
                             </label>
                         </div>
 
-                        <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-900">
-                            <div className="flex gap-2">
-                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                                <p>Создайте профиль один раз. На ресепшене менеджер сканирует QR и связывает его с заселением.</p>
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="flex gap-2 text-sm leading-5 text-slate-700">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                                <p>Создайте QR один раз. На ресепшене менеджер сканирует его и больше не переписывает данные вручную.</p>
                             </div>
                         </div>
 
-                        <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                            <input
-                                type="checkbox"
-                                checked={consentAccepted}
-                                onChange={(event) => setConsentAccepted(event.target.checked)}
-                                className="mt-1 accent-slate-900"
-                            />
+                        <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+                            <input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} className="mt-1 accent-slate-900" />
                             <span>
-                                Я согласен на обработку моих данных для создания профиля, QR-заселения и проверки документа в отеле.{' '}
+                                Я согласен на обработку данных для профиля, QR-заселения и проверки документа.{' '}
                                 <a href="/guest/privacy" className="font-semibold text-slate-950 underline underline-offset-2">
-                                    Политика конфиденциальности
+                                    Политика
                                 </a>
                             </span>
                         </label>
@@ -512,13 +469,22 @@ export const GuestApp = () => {
                         {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
                         <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || !consentAccepted}>
-                            {isSubmitting ? 'Создаем QR...' : 'Создать GuestPass'}
+                            {isSubmitting ? 'Создаем...' : 'Создать GuestPass'}
                         </Button>
                     </form>
                 )}
 
                 <HotelDirectory hotels={hotels} isLoading={isLoadingHotels} />
             </div>
+            {profile ? (
+                <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/[0.92] px-4 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3 backdrop-blur">
+                    <div className="mx-auto flex w-full max-w-md gap-3">
+                        <Button type="button" className="min-h-12 flex-1" onClick={() => setIsQrOpen(true)}>
+                            Показать QR
+                        </Button>
+                    </div>
+                </div>
+            ) : null}
             {profile && isQrOpen ? (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 pb-4 backdrop-blur-[2px]" onClick={() => setIsQrOpen(false)}>
                     <section
