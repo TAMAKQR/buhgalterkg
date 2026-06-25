@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { BadgeCheck, Building2, CheckCircle2, FileText, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
+import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
 
 type GuestHotel = {
     id: string;
@@ -14,6 +14,10 @@ type GuestHotel = {
     address: string;
     city?: string | null;
     country?: string | null;
+    guestDescription?: string | null;
+    guestAmenities?: string[];
+    guestPhotoUrls?: string[];
+    guestMapUrl?: string | null;
 };
 
 type GuestProfileResult = {
@@ -85,6 +89,81 @@ const verificationMeta: Record<GuestVerificationStatus, { label: string; classNa
 };
 
 const getVerificationMeta = (status?: GuestVerificationStatus | null) => verificationMeta[status ?? 'PENDING'];
+
+const getHotelMapUrl = (hotel: GuestHotel) => {
+    if (hotel.guestMapUrl) {
+        return hotel.guestMapUrl;
+    }
+
+    if (!hotel.address) {
+        return null;
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.name} ${hotel.address}`)}`;
+};
+
+function HotelShowcase({ hotel }: { hotel: GuestHotel | null }) {
+    if (!hotel) {
+        return null;
+    }
+
+    const photos = (hotel.guestPhotoUrls ?? []).filter(Boolean).slice(0, 4);
+    const amenities = (hotel.guestAmenities ?? []).filter(Boolean).slice(0, 8);
+    const mapUrl = getHotelMapUrl(hotel);
+
+    return (
+        <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
+            {photos[0] ? (
+                <div className="relative aspect-[16/10] bg-slate-100">
+                    <img src={photos[0]} alt={hotel.name} className="h-full w-full object-cover" />
+                    {photos.length > 1 ? (
+                        <div className="absolute bottom-3 left-3 flex gap-1.5">
+                            {photos.slice(1).map((photoUrl) => (
+                                <img key={photoUrl} src={photoUrl} alt="" className="h-10 w-10 rounded-xl border border-white/80 object-cover shadow-sm" />
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+            <div className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Выбранный объект</p>
+                        <h2 className="mt-1 truncate text-xl font-semibold">{hotel.name}</h2>
+                        {hotel.address ? (
+                            <p className="mt-1 flex items-start gap-1.5 text-sm leading-5 text-slate-500">
+                                <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                <span>{hotel.address}</span>
+                            </p>
+                        ) : null}
+                    </div>
+                    {mapUrl ? (
+                        <a
+                            href={mapUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-800"
+                        >
+                            Карта
+                        </a>
+                    ) : null}
+                </div>
+                {hotel.guestDescription ? (
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{hotel.guestDescription}</p>
+                ) : null}
+                {amenities.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {amenities.map((amenity) => (
+                            <span key={amenity} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                {amenity}
+                            </span>
+                        ))}
+                    </div>
+                ) : null}
+            </div>
+        </section>
+    );
+}
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
@@ -205,6 +284,7 @@ export const GuestApp = () => {
     const hasDocumentNumber = Boolean((profile?.guest.documentNumber ?? documentNumber).trim());
     const profileVerification = getVerificationMeta(profile?.guest.verificationStatus);
     const expiryLabel = formatExpiry(profile?.qr.expiresAt);
+    const visibleHotel = profile ? profileHotel : selectedHotel;
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -322,6 +402,8 @@ export const GuestApp = () => {
                         </div>
                     </div>
                 </section>
+
+                <HotelShowcase hotel={visibleHotel} />
 
                 {profile ? (
                     <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">

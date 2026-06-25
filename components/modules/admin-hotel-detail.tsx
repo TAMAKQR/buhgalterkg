@@ -136,6 +136,10 @@ interface HotelDetailPayload {
     hasMealPlan?: boolean | null;
     allowPostpaidStays?: boolean | null;
     guestQrEnabled?: boolean | null;
+    guestDescription?: string | null;
+    guestAmenities?: string[];
+    guestPhotoUrls?: string[];
+    guestMapUrl?: string | null;
     managerSharePct?: number | null;
     notes?: string | null;
     roomCount: number;

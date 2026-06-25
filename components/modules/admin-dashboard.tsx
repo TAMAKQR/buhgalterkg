@@ -105,6 +105,10 @@ type AdminHotelSummary = {
     hasMealPlan?: boolean | null;
     allowPostpaidStays?: boolean | null;
     guestQrEnabled?: boolean | null;
+    guestDescription?: string | null;
+    guestAmenities?: string[];
+    guestPhotoUrls?: string[];
+    guestMapUrl?: string | null;
     financialCycleStartDay?: number | null;
     managerSharePct?: number | null;
     notes?: string | null;
@@ -240,6 +244,10 @@ interface CreateHotelPayload {
     hasMealPlan?: boolean;
     allowPostpaidStays?: boolean;
     guestQrEnabled?: boolean;
+    guestDescription?: string | null;
+    guestAmenities?: string[];
+    guestPhotoUrls?: string[];
+    guestMapUrl?: string | null;
     financialCycleStartDay?: number;
     monthlyPayrollCost?: number;
     monthlyRentCost?: number;
@@ -260,6 +268,10 @@ type HotelFormState = {
     hasMealPlan: boolean;
     allowPostpaidStays: boolean;
     guestQrEnabled: boolean;
+    guestDescription: string;
+    guestAmenities: string;
+    guestPhotoUrls: string;
+    guestMapUrl: string;
     financialCycleStartDay: string;
     monthlyPayrollCost: string;
     monthlyRentCost: string;
@@ -351,6 +363,10 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     hasMealPlan: false,
     allowPostpaidStays: false,
     guestQrEnabled: false,
+    guestDescription: "",
+    guestAmenities: "",
+    guestPhotoUrls: "",
+    guestMapUrl: "",
     financialCycleStartDay: "1",
     monthlyPayrollCost: "0",
     monthlyRentCost: "0",
@@ -410,6 +426,15 @@ const parseExtranetNamesText = (value?: string | null) => {
         .filter(Boolean)
         .filter((item, index, list) => list.findIndex((candidate) => candidate.toLocaleLowerCase('ru-RU') === item.toLocaleLowerCase('ru-RU')) === index)
         .slice(0, 30);
+};
+
+const parseGuestShowcaseText = (value?: string | null, maxItems = 40) => {
+    return (value ?? '')
+        .split(/[\n,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item, index, list) => list.findIndex((candidate) => candidate.toLocaleLowerCase('ru-RU') === item.toLocaleLowerCase('ru-RU')) === index)
+        .slice(0, maxItems);
 };
 
 const fromMinorUnits = (value?: number | null) => {
@@ -1754,6 +1779,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 hasMealPlan: Boolean(target.hasMealPlan),
                 allowPostpaidStays: Boolean(target.allowPostpaidStays),
                 guestQrEnabled: Boolean(target.guestQrEnabled),
+                guestDescription: target.guestDescription ?? "",
+                guestAmenities: (target.guestAmenities ?? []).join('\n'),
+                guestPhotoUrls: (target.guestPhotoUrls ?? []).join('\n'),
+                guestMapUrl: target.guestMapUrl ?? "",
                 financialCycleStartDay: String(target.financialCycleStartDay ?? 1),
                 monthlyPayrollCost: fromMinorUnits(target.monthlyPayrollCost),
                 monthlyRentCost: fromMinorUnits(target.monthlyRentCost),
@@ -1795,6 +1824,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             payload.hasMealPlan = formData.get('hasMealPlan') === 'on';
             payload.allowPostpaidStays = formData.get('allowPostpaidStays') === 'on';
             payload.guestQrEnabled = formData.get('guestQrEnabled') === 'on';
+            payload.guestDescription = ((formData.get('guestDescription') as string | null)?.trim() || undefined);
+            payload.guestAmenities = parseGuestShowcaseText(formData.get('guestAmenities') as string | null, 40);
+            payload.guestPhotoUrls = parseGuestShowcaseText(formData.get('guestPhotoUrls') as string | null, 12);
+            payload.guestMapUrl = ((formData.get('guestMapUrl') as string | null)?.trim() || undefined);
             payload.financialCycleStartDay = toCycleDay(formData.get("financialCycleStartDay") as string | null) ?? 1;
             payload.monthlyPayrollCost = toMinorUnits(formData.get("monthlyPayrollCost") as string | null);
             payload.monthlyRentCost = toMinorUnits(formData.get("monthlyRentCost") as string | null);
@@ -1869,6 +1902,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     hasMealPlan: editForm.hasMealPlan,
                     allowPostpaidStays: editForm.allowPostpaidStays,
                     guestQrEnabled: editForm.guestQrEnabled,
+                    guestDescription: editForm.guestDescription.trim() || null,
+                    guestAmenities: parseGuestShowcaseText(editForm.guestAmenities, 40),
+                    guestPhotoUrls: parseGuestShowcaseText(editForm.guestPhotoUrls, 12),
+                    guestMapUrl: editForm.guestMapUrl.trim() || null,
                     financialCycleStartDay: toCycleDay(editForm.financialCycleStartDay) ?? 1,
                     monthlyPayrollCost: toMinorUnits(editForm.monthlyPayrollCost) ?? 0,
                     monthlyRentCost: toMinorUnits(editForm.monthlyRentCost) ?? 0,
@@ -2751,6 +2788,45 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         </p>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                                            <Field label="Описание для гостей" htmlFor="guestDescription" hint="коротко">
+                                                <TextArea
+                                                    id="guestDescription"
+                                                    name="guestDescription"
+                                                    rows={3}
+                                                    maxLength={800}
+                                                    placeholder="Тихий объект рядом с центром, удобный заезд, парковка."
+                                                />
+                                            </Field>
+                                            <Field label="Удобства" htmlFor="guestAmenities" hint="по одному в строке">
+                                                <TextArea
+                                                    id="guestAmenities"
+                                                    name="guestAmenities"
+                                                    rows={3}
+                                                    placeholder="Wi-Fi&#10;Парковка&#10;Завтрак"
+                                                />
+                                            </Field>
+                                        </div>
+                                        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                                            <Field label="Фото" htmlFor="guestPhotoUrls" hint="URL по одному в строке">
+                                                <TextArea
+                                                    id="guestPhotoUrls"
+                                                    name="guestPhotoUrls"
+                                                    rows={3}
+                                                    placeholder="https://..."
+                                                />
+                                            </Field>
+                                            <Field label="Ссылка на карту" htmlFor="guestMapUrl" hint="Google / 2GIS">
+                                                <Input
+                                                    id="guestMapUrl"
+                                                    name="guestMapUrl"
+                                                    type="url"
+                                                    placeholder="https://maps.google.com/..."
+                                                />
+                                            </Field>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
                                             <input type="checkbox" name="usesExtranets" className="accent-emerald-500" />
                                             Использовать экстранеты для этой точки
@@ -2920,6 +2996,57 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
                                                     Объект будет виден гостям в Telegram WebApp, а менеджеру откроется QR-заселение.
                                                 </p>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                                                    <Field label="Описание для гостей" htmlFor="edit-guestDescription" hint="коротко">
+                                                        <TextArea
+                                                            id="edit-guestDescription"
+                                                            name="guestDescription"
+                                                            rows={3}
+                                                            maxLength={800}
+                                                            value={editForm.guestDescription}
+                                                            onChange={handleEditFieldChange}
+                                                            placeholder="Тихий объект рядом с центром, удобный заезд, парковка."
+                                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                                        />
+                                                    </Field>
+                                                    <Field label="Удобства" htmlFor="edit-guestAmenities" hint="по одному в строке">
+                                                        <TextArea
+                                                            id="edit-guestAmenities"
+                                                            name="guestAmenities"
+                                                            rows={3}
+                                                            value={editForm.guestAmenities}
+                                                            onChange={handleEditFieldChange}
+                                                            placeholder="Wi-Fi&#10;Парковка&#10;Завтрак"
+                                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                                        />
+                                                    </Field>
+                                                </div>
+                                                <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                                                    <Field label="Фото" htmlFor="edit-guestPhotoUrls" hint="URL по одному в строке">
+                                                        <TextArea
+                                                            id="edit-guestPhotoUrls"
+                                                            name="guestPhotoUrls"
+                                                            rows={3}
+                                                            value={editForm.guestPhotoUrls}
+                                                            onChange={handleEditFieldChange}
+                                                            placeholder="https://..."
+                                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                                        />
+                                                    </Field>
+                                                    <Field label="Ссылка на карту" htmlFor="edit-guestMapUrl" hint="Google / 2GIS">
+                                                        <Input
+                                                            id="edit-guestMapUrl"
+                                                            name="guestMapUrl"
+                                                            type="url"
+                                                            value={editForm.guestMapUrl}
+                                                            onChange={handleEditFieldChange}
+                                                            placeholder="https://maps.google.com/..."
+                                                            disabled={!selectedHotelId || isUpdatingHotel}
+                                                        />
+                                                    </Field>
+                                                </div>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">

@@ -14,7 +14,11 @@ export async function GET() {
                 name: true,
                 address: true,
                 city: true,
-                country: true
+                country: true,
+                guestDescription: true,
+                guestAmenities: true,
+                guestPhotoUrls: true,
+                guestMapUrl: true
             }
         });
 
@@ -24,7 +28,11 @@ export async function GET() {
                 name: hotel.name,
                 address: hotel.address,
                 city: hotel.city,
-                country: hotel.country
+                country: hotel.country,
+                guestDescription: hotel.guestDescription,
+                guestAmenities: hotel.guestAmenities,
+                guestPhotoUrls: hotel.guestPhotoUrls,
+                guestMapUrl: hotel.guestMapUrl
             }))
         });
     } catch (error) {

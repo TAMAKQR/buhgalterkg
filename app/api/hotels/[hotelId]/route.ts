@@ -95,6 +95,10 @@ type HotelDetailRecord = {
     hasMealPlan: boolean;
     allowPostpaidStays: boolean;
     guestQrEnabled: boolean;
+    guestDescription: string | null;
+    guestAmenities: string[];
+    guestPhotoUrls: string[];
+    guestMapUrl: string | null;
     expenseCategories: ExpenseCategory[];
     assignments: Array<HotelAssignment & { user: User }>;
     shifts: Array<Shift & { manager: User }>;
@@ -156,6 +160,28 @@ const cleaningChatIdSchema = z
     .min(5)
     .max(32);
 
+const sanitizeUniqueTextList = (values: Array<string | null | undefined>, maxItemLength: number, maxItems: number) => {
+    const unique = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+        const trimmed = value?.trim();
+        if (!trimmed) {
+            continue;
+        }
+
+        const comparable = trimmed.toLocaleLowerCase('ru-RU');
+        if (unique.has(comparable)) {
+            continue;
+        }
+
+        unique.add(comparable);
+        result.push(trimmed.slice(0, maxItemLength));
+    }
+
+    return result.slice(0, maxItems);
+};
+
 const updateHotelSchema = z
     .object({
         name: z.string().min(2).optional(),
@@ -168,6 +194,10 @@ const updateHotelSchema = z
         hasMealPlan: z.boolean().optional(),
         allowPostpaidStays: z.boolean().optional(),
         guestQrEnabled: z.boolean().optional(),
+        guestDescription: z.string().trim().max(800).optional().nullable(),
+        guestAmenities: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
+        guestPhotoUrls: z.array(z.string().trim().url().max(500)).max(12).optional(),
+        guestMapUrl: z.string().trim().url().max(500).optional().nullable(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -454,6 +484,10 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             hasMealPlan: hotelRecord.hasMealPlan,
             allowPostpaidStays: hotelRecord.allowPostpaidStays,
             guestQrEnabled: hotelRecord.guestQrEnabled,
+            guestDescription: hotelRecord.guestDescription,
+            guestAmenities: hotelRecord.guestAmenities,
+            guestPhotoUrls: hotelRecord.guestPhotoUrls,
+            guestMapUrl: hotelRecord.guestMapUrl,
             financialCycleStartDay: hotelRecord.financialCycleStartDay,
             managerSharePct: hotelRecord.managerSharePct,
             cleaningChatId: hotelRecord.cleaningChatId,
@@ -691,6 +725,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         const country = getCountryFromRequest(request);
 
         const payload = updateHotelSchema.parse(body);
+        const updatePayload = {
+            ...payload,
+            ...(payload.guestDescription !== undefined ? { guestDescription: payload.guestDescription || null } : {}),
+            ...(payload.guestAmenities !== undefined ? { guestAmenities: sanitizeUniqueTextList(payload.guestAmenities, 60, 40) } : {}),
+            ...(payload.guestPhotoUrls !== undefined ? { guestPhotoUrls: sanitizeUniqueTextList(payload.guestPhotoUrls, 500, 12) } : {}),
+            ...(payload.guestMapUrl !== undefined ? { guestMapUrl: payload.guestMapUrl || null } : {})
+        };
 
         const targetHotel = await prisma.hotel.findFirst({
             where: { id: params.hotelId, country },
@@ -703,7 +744,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         const hotel = await prisma.hotel.update({
             where: { id: params.hotelId },
             data: {
-                ...payload,
+                ...updatePayload,
                 extranetNames: payload.extranetNames ? sanitizeExtranetNames(payload.extranetNames) : undefined
             } as Prisma.HotelUpdateInput
         });

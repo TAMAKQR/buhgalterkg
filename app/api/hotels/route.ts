@@ -31,6 +31,10 @@ const createHotelSchema = z.object({
     hasMealPlan: z.boolean().optional(),
     allowPostpaidStays: z.boolean().optional(),
     guestQrEnabled: z.boolean().optional(),
+    guestDescription: z.string().trim().max(800).optional().nullable(),
+    guestAmenities: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
+    guestPhotoUrls: z.array(z.string().trim().url().max(500)).max(12).optional(),
+    guestMapUrl: z.string().trim().url().max(500).optional().nullable(),
     financialCycleStartDay: z.number().int().min(1).max(31).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
     monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -41,6 +45,28 @@ const createHotelSchema = z.object({
     notes: z.string().max(500).optional(),
     cleaningChatId: cleaningChatIdSchema.optional().nullable()
 });
+
+const sanitizeUniqueTextList = (values: Array<string | null | undefined>, maxItemLength: number, maxItems: number) => {
+    const unique = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+        const trimmed = value?.trim();
+        if (!trimmed) {
+            continue;
+        }
+
+        const comparable = trimmed.toLocaleLowerCase('ru-RU');
+        if (unique.has(comparable)) {
+            continue;
+        }
+
+        unique.add(comparable);
+        result.push(trimmed.slice(0, maxItemLength));
+    }
+
+    return result.slice(0, maxItems);
+};
 
 export async function GET(request: NextRequest) {
     try {
@@ -238,6 +264,10 @@ export async function GET(request: NextRequest) {
             hasMealPlan: hotel.hasMealPlan,
             allowPostpaidStays: hotel.allowPostpaidStays,
             guestQrEnabled: hotel.guestQrEnabled,
+            guestDescription: hotel.guestDescription,
+            guestAmenities: hotel.guestAmenities,
+            guestPhotoUrls: hotel.guestPhotoUrls,
+            guestMapUrl: hotel.guestMapUrl,
             financialCycleStartDay: hotel.financialCycleStartDay,
             managerSharePct: hotel.managerSharePct,
             monthlyPayrollCost: hotel.monthlyPayrollCost,
@@ -314,6 +344,10 @@ export async function POST(request: NextRequest) {
                 hasMealPlan: payload.hasMealPlan ?? false,
                 allowPostpaidStays: payload.allowPostpaidStays ?? false,
                 guestQrEnabled: payload.guestQrEnabled ?? false,
+                guestDescription: payload.guestDescription || null,
+                guestAmenities: sanitizeUniqueTextList(payload.guestAmenities ?? [], 60, 40),
+                guestPhotoUrls: sanitizeUniqueTextList(payload.guestPhotoUrls ?? [], 500, 12),
+                guestMapUrl: payload.guestMapUrl || null,
                 country
             }
         });
