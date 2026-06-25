@@ -3,10 +3,9 @@
 import QRCode from 'qrcode';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import { BadgeCheck, Building2, CheckCircle2, FileText, MapPin, QrCode, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
 
 type GuestHotel = {
     id: string;
@@ -19,6 +18,8 @@ type GuestHotel = {
     guestPhotoUrls?: string[];
     guestMapUrl?: string | null;
 };
+
+type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
 
 type GuestProfileResult = {
     guest: {
@@ -45,8 +46,6 @@ type TelegramWebAppUser = {
     username?: string;
 };
 
-type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
-
 type TelegramWebApp = {
     initData?: string;
     initDataUnsafe?: {
@@ -71,9 +70,7 @@ const formatTelegramName = (user?: TelegramWebAppUser | null) =>
     [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
 
 const formatExpiry = (value?: string | null) => {
-    if (!value) {
-        return null;
-    }
+    if (!value) return null;
 
     try {
         return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(new Date(value));
@@ -83,53 +80,40 @@ const formatExpiry = (value?: string | null) => {
 };
 
 const verificationMeta: Record<GuestVerificationStatus, { label: string; className: string }> = {
-    PENDING: { label: 'Документ не проверен', className: 'bg-slate-100 text-slate-600' },
+    PENDING: { label: 'Ожидает проверки', className: 'bg-slate-100 text-slate-600' },
     VERIFIED: { label: 'Документ проверен', className: 'bg-emerald-50 text-emerald-700' },
-    NEEDS_REVIEW: { label: 'Нужно уточнить документ', className: 'bg-amber-50 text-amber-700' }
+    NEEDS_REVIEW: { label: 'Нужно уточнить', className: 'bg-amber-50 text-amber-700' }
 };
 
 const getVerificationMeta = (status?: GuestVerificationStatus | null) => verificationMeta[status ?? 'PENDING'];
 
 const getHotelMapUrl = (hotel: GuestHotel) => {
-    if (hotel.guestMapUrl) {
-        return hotel.guestMapUrl;
-    }
-
-    if (!hotel.address) {
-        return null;
-    }
+    if (hotel.guestMapUrl) return hotel.guestMapUrl;
+    if (!hotel.address) return null;
 
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.name} ${hotel.address}`)}`;
 };
 
-function HotelShowcase({ hotel }: { hotel: GuestHotel | null }) {
-    if (!hotel) {
-        return null;
-    }
+function StatusPill({ children, className }: { children: React.ReactNode; className: string }) {
+    return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${className}`}>{children}</span>;
+}
 
-    const photos = (hotel.guestPhotoUrls ?? []).filter(Boolean).slice(0, 4);
-    const amenities = (hotel.guestAmenities ?? []).filter(Boolean).slice(0, 8);
+function HotelCard({ hotel }: { hotel: GuestHotel }) {
+    const photoUrl = hotel.guestPhotoUrls?.find(Boolean);
+    const amenities = (hotel.guestAmenities ?? []).filter(Boolean).slice(0, 4);
     const mapUrl = getHotelMapUrl(hotel);
 
     return (
-        <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
-            {photos[0] ? (
-                <div className="relative aspect-[16/10] bg-slate-100">
-                    <img src={photos[0]} alt={hotel.name} className="h-full w-full object-cover" />
-                    {photos.length > 1 ? (
-                        <div className="absolute bottom-3 left-3 flex gap-1.5">
-                            {photos.slice(1).map((photoUrl) => (
-                                <img key={photoUrl} src={photoUrl} alt="" className="h-10 w-10 rounded-xl border border-white/80 object-cover shadow-sm" />
-                            ))}
-                        </div>
-                    ) : null}
+        <article className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-[0_14px_38px_-32px_rgba(15,23,42,0.5)]">
+            {photoUrl ? (
+                <div className="aspect-[16/9] bg-slate-100">
+                    <img src={photoUrl} alt={hotel.name} className="h-full w-full object-cover" />
                 </div>
             ) : null}
             <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Выбранный объект</p>
-                        <h2 className="mt-1 truncate text-xl font-semibold">{hotel.name}</h2>
+                        <h3 className="truncate text-base font-semibold text-slate-950">{hotel.name}</h3>
                         {hotel.address ? (
                             <p className="mt-1 flex items-start gap-1.5 text-sm leading-5 text-slate-500">
                                 <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -149,7 +133,7 @@ function HotelShowcase({ hotel }: { hotel: GuestHotel | null }) {
                     ) : null}
                 </div>
                 {hotel.guestDescription ? (
-                    <p className="mt-3 text-sm leading-6 text-slate-600">{hotel.guestDescription}</p>
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{hotel.guestDescription}</p>
                 ) : null}
                 {amenities.length ? (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -161,13 +145,39 @@ function HotelShowcase({ hotel }: { hotel: GuestHotel | null }) {
                     </div>
                 ) : null}
             </div>
+        </article>
+    );
+}
+
+function HotelDirectory({ hotels, isLoading }: { hotels: GuestHotel[]; isLoading: boolean }) {
+    if (isLoading) {
+        return (
+            <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
+                <div className="h-4 w-24 rounded-full bg-slate-100" />
+                <div className="mt-3 h-24 rounded-3xl bg-slate-100" />
+            </section>
+        );
+    }
+
+    if (!hotels.length) return null;
+
+    return (
+        <section className="space-y-3">
+            <div className="px-1">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Объекты</p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-950">Выберите отель при брони или на ресепшене</h2>
+            </div>
+            <div className="grid gap-3">
+                {hotels.map((hotel) => (
+                    <HotelCard key={hotel.id} hotel={hotel} />
+                ))}
+            </div>
         </section>
     );
 }
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
-    const [hotelId, setHotelId] = useState('');
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
     const [documentNumber, setDocumentNumber] = useState('');
@@ -189,7 +199,6 @@ export const GuestApp = () => {
                 setFullName(parsed.guest.fullName ?? '');
                 setPhone(parsed.guest.phone ?? '');
                 setDocumentNumber(parsed.guest.documentNumber ?? '');
-                setHotelId(parsed.guest.hotelId ?? '');
             } catch {
                 localStorage.removeItem(storedGuestKey);
             }
@@ -197,15 +206,10 @@ export const GuestApp = () => {
 
         fetch('/api/guest/hotels', { cache: 'no-store' })
             .then((response) => {
-                if (!response.ok) {
-                    throw new Error('Не удалось загрузить отели');
-                }
+                if (!response.ok) throw new Error('Не удалось загрузить объекты');
                 return response.json() as Promise<{ hotels: GuestHotel[] }>;
             })
-            .then((result) => {
-                setHotels(result.hotels);
-                setHotelId((current) => current || result.hotels[0]?.id || '');
-            })
+            .then((result) => setHotels(result.hotels))
             .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Ошибка загрузки'))
             .finally(() => setIsLoadingHotels(false));
     }, []);
@@ -216,16 +220,12 @@ export const GuestApp = () => {
         let attempt = 0;
 
         const readTelegramWebApp = () => {
-            if (isCancelled) {
-                return;
-            }
+            if (isCancelled) return;
 
             const webApp = window.Telegram?.WebApp;
             if (!webApp) {
                 attempt += 1;
-                if (attempt < 20) {
-                    timerId = setTimeout(readTelegramWebApp, 150);
-                }
+                if (attempt < 20) timerId = setTimeout(readTelegramWebApp, 150);
                 return;
             }
 
@@ -247,9 +247,7 @@ export const GuestApp = () => {
 
         return () => {
             isCancelled = true;
-            if (timerId) {
-                clearTimeout(timerId);
-            }
+            if (timerId) clearTimeout(timerId);
         };
     }, []);
 
@@ -271,20 +269,22 @@ export const GuestApp = () => {
             .catch(() => setQrDataUrl(null));
     }, [profile?.qr.code]);
 
-    const selectedHotel = useMemo(
-        () => hotels.find((hotel) => hotel.id === hotelId) ?? null,
-        [hotelId, hotels]
-    );
-    const profileHotel = useMemo(
-        () => hotels.find((hotel) => hotel.id === profile?.guest.hotelId) ?? selectedHotel,
-        [hotels, profile?.guest.hotelId, selectedHotel]
-    );
     const telegramLabel = telegramUser ? formatTelegramName(telegramUser) || telegramUser.username || String(telegramUser.id) : '';
     const isTelegramLinked = Boolean(telegramInitData && telegramUser);
     const hasDocumentNumber = Boolean((profile?.guest.documentNumber ?? documentNumber).trim());
     const profileVerification = getVerificationMeta(profile?.guest.verificationStatus);
     const expiryLabel = formatExpiry(profile?.qr.expiresAt);
-    const visibleHotel = profile ? profileHotel : selectedHotel;
+    const profileInitials = useMemo(() => {
+        const source = profile?.guest.fullName ?? fullName;
+        const initials = source
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join('')
+            .toUpperCase();
+        return initials || 'GP';
+    }, [fullName, profile?.guest.fullName]);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -306,7 +306,6 @@ export const GuestApp = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    hotelId: hotelId || undefined,
                     fullName: fullName.trim(),
                     phone: phone.trim() || undefined,
                     telegramInitData: telegramInitData || undefined,
@@ -316,9 +315,7 @@ export const GuestApp = () => {
                 })
             });
 
-            if (!response.ok) {
-                throw new Error(await response.text());
-            }
+            if (!response.ok) throw new Error(await response.text());
 
             const result = await response.json() as GuestProfileResult;
             setProfile(result);
@@ -340,28 +337,28 @@ export const GuestApp = () => {
     return (
         <main className="min-h-screen bg-[#f3f6fb] px-4 py-4 text-slate-950">
             <div className="mx-auto flex w-full max-w-md flex-col gap-4">
-                <section className="overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-[0_24px_70px_-36px_rgba(15,23,42,0.7)]">
-                    <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.28),transparent_32%),linear-gradient(135deg,#0f172a,#111827)] p-5">
+                <section className="overflow-hidden rounded-[30px] bg-slate-950 text-white shadow-[0_24px_70px_-36px_rgba(15,23,42,0.7)]">
+                    <div className="bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.24),transparent_34%),linear-gradient(135deg,#0f172a,#111827)] p-5">
                         <div className="flex items-start justify-between gap-4">
                             <div>
                                 <p className="text-[11px] uppercase tracking-[0.22em] text-sky-100/70">GuestPass</p>
-                                <h1 className="mt-2 text-2xl font-semibold tracking-tight">Быстрое заселение</h1>
+                                <h1 className="mt-2 text-2xl font-semibold tracking-tight">Личный профиль гостя</h1>
                             </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/10 p-2.5">
-                                <QrCode className="h-5 w-5" aria-hidden="true" />
+                            <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/10 text-sm font-semibold">
+                                {profileInitials}
                             </div>
                         </div>
                         <p className="mt-4 max-w-sm text-sm leading-6 text-slate-200/80">
-                            Заполните профиль один раз. Менеджер сканирует QR, сверяет документ на стойке и заселяет без повторного ручного ввода.
+                            Один QR для заселения. Отель привяжется к брони или при сканировании на ресепшене.
                         </p>
                         <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
                             <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
-                                <Smartphone className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
-                                Telegram
+                                <UserRound className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
+                                Профиль
                             </div>
                             <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
-                                <FileText className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
-                                Документ
+                                <QrCode className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
+                                QR
                             </div>
                             <div className="rounded-2xl border border-white/10 bg-white/10 p-2">
                                 <ShieldCheck className="mb-1 h-4 w-4 text-sky-200" aria-hidden="true" />
@@ -374,12 +371,12 @@ export const GuestApp = () => {
                 <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
                     <div className="flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Статус профиля</p>
-                            <h2 className="mt-1 text-lg font-semibold">{profile ? 'QR готов' : 'Нужно заполнить данные'}</h2>
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Статус</p>
+                            <h2 className="mt-1 text-lg font-semibold">{profile ? 'GuestPass готов' : 'Создайте профиль'}</h2>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${profile ? profileVerification.className : 'bg-slate-100 text-slate-600'}`}>
+                        <StatusPill className={profile ? profileVerification.className : 'bg-slate-100 text-slate-600'}>
                             {profile ? profileVerification.label : 'Новый'}
-                        </span>
+                        </StatusPill>
                     </div>
                     <div className="mt-4 grid gap-2">
                         <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
@@ -403,17 +400,15 @@ export const GuestApp = () => {
                     </div>
                 </section>
 
-                <HotelShowcase hotel={visibleHotel} />
-
                 {profile ? (
                     <section className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.45)]">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Гость</p>
                                 <h2 className="mt-1 truncate text-xl font-semibold">{profile.guest.fullName}</h2>
-                                <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-slate-500">
+                                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
                                     <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                    {profileHotel?.name ?? 'Отель выбран'}
+                                    Отель определится по брони или на ресепшене
                                 </p>
                             </div>
                             <Button type="button" size="sm" variant="secondary" onClick={resetProfile}>
@@ -438,8 +433,8 @@ export const GuestApp = () => {
                                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                                 <span>
                                     {profile.guest.verificationStatus === 'VERIFIED'
-                                        ? 'Ваш документ уже проверен. Покажите QR менеджеру для быстрого заселения.'
-                                        : 'Покажите QR менеджеру. Документ сверяется глазами на стойке; фото паспорта в чат отправлять не нужно.'}
+                                        ? 'Документ уже проверен. Покажите QR менеджеру для быстрого заселения.'
+                                        : 'Покажите QR на стойке. Менеджер привяжет гостя к брони и сверит документ.'}
                                 </span>
                             </div>
                             {expiryLabel ? (
@@ -454,31 +449,12 @@ export const GuestApp = () => {
                                 <UserRound className="h-5 w-5 text-slate-600" aria-hidden="true" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold">Профиль гостя</h2>
-                                <p className="text-sm text-slate-500">Эти данные подтянутся при сканировании QR.</p>
+                                <h2 className="text-lg font-semibold">Данные гостя</h2>
+                                <p className="text-sm text-slate-500">Профиль не привязан к конкретному отелю.</p>
                             </div>
                         </div>
 
                         <div className="mt-4 space-y-3">
-                            <label className="block">
-                                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Отель</span>
-                                <Select
-                                    value={hotelId}
-                                    onChange={(event) => setHotelId(event.target.value)}
-                                    disabled={isLoadingHotels || hotels.length === 0}
-                                >
-                                    {hotels.length ? hotels.map((hotel) => (
-                                        <option key={hotel.id} value={hotel.id}>
-                                            {hotel.name}
-                                        </option>
-                                    )) : (
-                                        <option value="">Нет доступных объектов</option>
-                                    )}
-                                </Select>
-                                {selectedHotel?.address ? (
-                                    <p className="mt-1.5 truncate text-xs text-slate-500">{selectedHotel.address}</p>
-                                ) : null}
-                            </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Имя и фамилия</span>
                                 <Input
@@ -512,9 +488,7 @@ export const GuestApp = () => {
                         <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-900">
                             <div className="flex gap-2">
                                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                                <p>
-                                    Лучший сценарий: гость заполняет профиль сам, а менеджер один раз сверяет документ при заселении и больше не переносит данные вручную.
-                                </p>
+                                <p>Создайте профиль один раз. На ресепшене менеджер сканирует QR и связывает его с заселением.</p>
                             </div>
                         </div>
 
@@ -535,11 +509,13 @@ export const GuestApp = () => {
 
                         {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
-                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || isLoadingHotels || hotels.length === 0 || !consentAccepted}>
-                            {isSubmitting ? 'Создаем QR...' : 'Получить QR'}
+                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || !consentAccepted}>
+                            {isSubmitting ? 'Создаем QR...' : 'Создать GuestPass'}
                         </Button>
                     </form>
                 )}
+
+                <HotelDirectory hotels={hotels} isLoading={isLoadingHotels} />
             </div>
         </main>
     );
