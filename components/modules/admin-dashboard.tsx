@@ -2207,7 +2207,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 </aside>
 
                 <div className="min-w-0">
-                    <header className="flex flex-col gap-4 border-b border-slate-200 bg-white px-3 py-4 shadow-[0_14px_34px_-32px_rgba(15,23,42,0.38)] dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none sm:px-5 lg:hidden">
+                    <header className="flex flex-col gap-4 border-b border-slate-200 bg-white px-4 py-4 shadow-[0_14px_34px_-32px_rgba(15,23,42,0.38)] dark:border-white/[0.06] dark:bg-white/[0.04] dark:shadow-none sm:px-5 lg:hidden">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <p className="text-[11px] uppercase tracking-[0.24em] text-slate-600 dark:text-white/30">Администрирование</p>
@@ -2222,7 +2222,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </div>
                         </div>
                     </header>
-                    <div className="sticky top-0 z-10 bg-[#f4f6f8]/94 px-3 py-2 backdrop-blur-md dark:bg-[#0f1218]/94 sm:px-5 lg:hidden">
+                    <div className="sticky top-0 z-10 bg-[#f4f6f8]/94 px-4 py-2 backdrop-blur-md dark:bg-[#0f1218]/94 sm:px-5 lg:hidden">
                         <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.045]">
                             <div className="flex gap-1 text-sm font-medium text-slate-700 dark:text-white/50">
                                 {adminTabs.map((tab) => {
@@ -2249,7 +2249,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                     </div>
 
-                    <main className="px-3 pb-16 pt-3 sm:px-5 lg:px-6 lg:py-6 xl:px-8">
+                    <main className="px-4 pb-16 pt-3 sm:px-5 lg:px-6 lg:py-6 xl:px-8">
                         <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
                             <div className="flex min-w-0 items-center gap-3">
                                 <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-800 dark:border-white/[0.06] dark:bg-white/[0.045] dark:text-white">
@@ -2379,7 +2379,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         </Field>
                                 </div>
                             </SectionCard>
-                            <section className="grid grid-cols-1 gap-2 lg:grid-cols-4 lg:gap-3 xl:gap-4">
+                            <section className="grid grid-cols-1 gap-3 lg:grid-cols-4 xl:gap-4">
                                 {overview ? (
                                     <>
                                         <BusinessTargetCard
@@ -2416,36 +2416,29 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
                                             </p>
                                         </Card>
-                                        <CollapsibleSection
-                                            title="Графики"
-                                            subtitle="Динамика и структура"
-                                            summary={overview.dailySeries?.length ? `${overview.dailySeries.length} дней` : "структура"}
-                                            className="col-span-1 lg:col-span-4"
-                                        >
-                                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                                                {overview.dailySeries && overview.dailySeries.length > 0 ? (
-                                                    <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
-                                                ) : null}
-                                                <AnalyticsFlowChart
-                                                    inflow={overview.totals.cashIn}
-                                                    outflow={overview.totals.cashOut + overview.totals.collections}
-                                                    net={overview.totals.netCash}
-                                                    currency={overviewCurrency}
-                                                />
-                                                <PaymentMethodChart
-                                                    cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash + overview.totals.collectionsBreakdown.cash}
-                                                    cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card + overview.totals.collectionsBreakdown.card}
-                                                    currency={overviewCurrency}
-                                                />
-                                                <ExpenseStructureChart
-                                                    cashOut={overview.totals.cashOut}
-                                                    collections={overview.totals.collections}
-                                                    payouts={overview.totals.payouts}
-                                                    adjustments={overview.totals.adjustments}
-                                                    currency={overviewCurrency}
-                                                />
-                                            </div>
-                                        </CollapsibleSection>
+                                        <div className="col-span-1 grid grid-cols-1 gap-3 lg:col-span-4 lg:grid-cols-4">
+                                            {overview.dailySeries && overview.dailySeries.length > 0 ? (
+                                                <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
+                                            ) : null}
+                                            <AnalyticsFlowChart
+                                                inflow={overview.totals.cashIn}
+                                                outflow={overview.totals.cashOut + overview.totals.collections}
+                                                net={overview.totals.netCash}
+                                                currency={overviewCurrency}
+                                            />
+                                            <PaymentMethodChart
+                                                cashTotal={overview.totals.cashInBreakdown.cash + overview.totals.cashOutBreakdown.cash + overview.totals.collectionsBreakdown.cash}
+                                                cardTotal={overview.totals.cashInBreakdown.card + overview.totals.cashOutBreakdown.card + overview.totals.collectionsBreakdown.card}
+                                                currency={overviewCurrency}
+                                            />
+                                            <ExpenseStructureChart
+                                                cashOut={overview.totals.cashOut}
+                                                collections={overview.totals.collections}
+                                                payouts={overview.totals.payouts}
+                                                adjustments={overview.totals.adjustments}
+                                                currency={overviewCurrency}
+                                            />
+                                        </div>
                                         <CollapsibleSection
                                             title="Рейтинг"
                                             subtitle="Отели и менеджеры"
