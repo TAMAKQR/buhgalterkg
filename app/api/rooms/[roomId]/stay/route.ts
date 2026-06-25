@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic';
 const staySchema = z.object({
     shiftId: z.string().cuid().optional(),
     stayId: z.string().cuid().optional(),
+    guestProfileId: z.string().cuid().optional(),
     intent: z.enum(['book', 'checkin', 'checkout', 'extend', 'transfer', 'cancel-booking', 'adjust-payments', 'edit-stay']),
     guestName: z.string().optional(),
     guestPhone: z.string().max(40).optional().nullable(),
@@ -89,6 +90,26 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
 
         if ((payload.intent === 'checkin' || payload.intent === 'extend' || payload.intent === 'transfer') && (!shift || shift.status !== ShiftStatus.OPEN || shift.hotelId !== room.hotelId)) {
             return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
+        }
+
+        const guestProfile = payload.guestProfileId
+            ? await prisma.guestProfile.findUnique({
+                where: { id: payload.guestProfileId },
+                select: {
+                    id: true,
+                    hotelId: true,
+                    fullName: true,
+                    phone: true
+                }
+            })
+            : null;
+
+        if (payload.guestProfileId && !guestProfile) {
+            return new NextResponse('Guest profile not found', { status: 404 });
+        }
+
+        if (guestProfile?.hotelId && guestProfile.hotelId !== room.hotelId) {
+            return new NextResponse('Guest profile belongs to another hotel', { status: 403 });
         }
 
         const resolveCashPayment = (fallbackAmount: number) => (
@@ -177,13 +198,14 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         roomId: room.id,
                         hotelId: room.hotelId,
                         shiftId: cashAmount > 0 || cardAmount > 0 ? shift?.id : null,
+                        guestProfileId: guestProfile?.id ?? null,
                         bookingSource: resolvedBookingSource,
                         bookingNumber,
                         scheduledCheckIn,
                         scheduledCheckOut,
                         status: StayStatus.SCHEDULED,
-                        guestName: normalizeOptionalText(payload.guestName),
-                        guestPhone: normalizeOptionalText(payload.guestPhone),
+                        guestName: normalizeOptionalText(payload.guestName) ?? guestProfile?.fullName ?? null,
+                        guestPhone: normalizeOptionalText(payload.guestPhone) ?? guestProfile?.phone ?? null,
                         companyName: normalizeOptionalText(payload.companyName),
                         mealPlan: room.hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: normalizeOptionalText(payload.notes),
@@ -343,8 +365,9 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
             const updatedStay = await prisma.roomStay.update({
                 where: { id: targetStay.id },
                 data: {
-                    guestName: normalizeOptionalText(payload.guestName),
-                    guestPhone: normalizeOptionalText(payload.guestPhone),
+                    ...(payload.guestProfileId ? { guestProfileId: guestProfile?.id ?? null } : {}),
+                    guestName: normalizeOptionalText(payload.guestName) ?? guestProfile?.fullName ?? null,
+                    guestPhone: normalizeOptionalText(payload.guestPhone) ?? guestProfile?.phone ?? null,
                     companyName: normalizeOptionalText(payload.companyName),
                     bookingSource: resolvedBookingSource,
                     bookingNumber,
@@ -590,14 +613,15 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                     where: { id: scheduledStay.id },
                     data: {
                         shiftId: payload.shiftId,
+                        guestProfileId: guestProfile?.id ?? scheduledStay.guestProfileId,
                         bookingSource: resolvedBookingSource ?? scheduledStay.bookingSource,
                         bookingNumber: nextBookingNumber,
                         scheduledCheckIn: payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : scheduledStay.scheduledCheckIn,
                         scheduledCheckOut: payload.scheduledCheckOut ? new Date(payload.scheduledCheckOut) : scheduledStay.scheduledCheckOut,
                         status: StayStatus.CHECKED_IN,
                         actualCheckIn: new Date(),
-                        guestName: normalizeOptionalText(payload.guestName) ?? scheduledStay.guestName,
-                        guestPhone: normalizeOptionalText(payload.guestPhone) ?? scheduledStay.guestPhone,
+                        guestName: normalizeOptionalText(payload.guestName) ?? guestProfile?.fullName ?? scheduledStay.guestName,
+                        guestPhone: normalizeOptionalText(payload.guestPhone) ?? guestProfile?.phone ?? scheduledStay.guestPhone,
                         companyName: normalizeOptionalText(payload.companyName) ?? scheduledStay.companyName,
                         mealPlan: room.hotel.hasMealPlan
                             ? payload.mealPlan !== undefined ? normalizeMealPlan(payload.mealPlan) : scheduledStay.mealPlan
@@ -616,6 +640,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         roomId: room.id,
                         shiftId: payload.shiftId,
                         hotelId: room.hotelId,
+                        guestProfileId: guestProfile?.id ?? null,
                         bookingSource: resolvedBookingSource,
                         bookingNumber: nextBookingNumber,
                         scheduledCheckIn: payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : new Date(),
@@ -624,8 +649,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                             : new Date(Date.now() + 12 * 60 * 60 * 1000),
                         status: StayStatus.CHECKED_IN,
                         actualCheckIn: new Date(),
-                        guestName: normalizeOptionalText(payload.guestName),
-                        guestPhone: normalizeOptionalText(payload.guestPhone),
+                        guestName: normalizeOptionalText(payload.guestName) ?? guestProfile?.fullName ?? null,
+                        guestPhone: normalizeOptionalText(payload.guestPhone) ?? guestProfile?.phone ?? null,
                         companyName: normalizeOptionalText(payload.companyName),
                         mealPlan: room.hotel.hasMealPlan ? normalizeMealPlan(payload.mealPlan) : [],
                         notes: normalizeOptionalText(payload.notes),

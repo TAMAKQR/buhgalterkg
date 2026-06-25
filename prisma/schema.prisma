@@ -49,11 +49,49 @@ model Hotel {
   updatedAt       DateTime          @updatedAt
   ledger          CashEntry[]
   assignments     HotelAssignment[]
+  guestProfiles   GuestProfile[]
+  guestQrTokens   GuestQrToken[]
   rooms           Room[]
   stays           RoomStay[]
   shifts          Shift[]
   bonusTiers      BonusTier[]
   expenseCategories ExpenseCategory[]
+}
+
+model GuestProfile {
+  id             String         @id @default(cuid())
+  hotelId        String?        @map("hotel_id")
+  fullName       String         @map("full_name")
+  phone          String?
+  telegramId     String?        @map("telegram_id")
+  documentNumber String?        @map("document_number")
+  notes          String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  hotel          Hotel?         @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  qrTokens       GuestQrToken[]
+  stays          RoomStay[]
+
+  @@index([hotelId])
+  @@index([phone])
+  @@index([telegramId])
+}
+
+model GuestQrToken {
+  id             String       @id @default(cuid())
+  guestProfileId String       @map("guest_profile_id")
+  hotelId        String?      @map("hotel_id")
+  code           String       @unique
+  expiresAt      DateTime?    @map("expires_at")
+  lastScannedAt  DateTime?    @map("last_scanned_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  guestProfile   GuestProfile @relation(fields: [guestProfileId], references: [id], onDelete: Cascade)
+  hotel          Hotel?       @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+
+  @@index([guestProfileId])
+  @@index([hotelId])
+  @@index([code])
 }
 
 model HotelAssignment {
@@ -101,6 +139,7 @@ model RoomStay {
   roomId            String
   hotelId           String
   shiftId           String?
+  guestProfileId    String?        @map("guest_profile_id")
   guestName         String?
   guestPhone        String?        @map("guest_phone")
   companyName       String?        @map("company_name")
@@ -125,12 +164,14 @@ model RoomStay {
   groupRef          String?        @map("group_ref")
   ledgerEntries     CashEntry[]
   currentRoom       Room?          @relation("RoomCurrentStay")
+  guestProfile      GuestProfile?  @relation(fields: [guestProfileId], references: [id], onDelete: SetNull)
   hotel             Hotel          @relation(fields: [hotelId], references: [id])
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
   shift             Shift?         @relation(fields: [shiftId], references: [id])
   transfers         StayTransfer[]
 
   @@index([hotelId, groupRef])
+  @@index([guestProfileId])
 }
 
 model StayTransfer {

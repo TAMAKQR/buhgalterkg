@@ -25,7 +25,7 @@ import {
     readManagerOfflineQueue,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, CalendarPlus, LogIn, LogOut, Pencil, Sparkles, Users } from 'lucide-react';
+import { ArrowRightLeft, Banknote, CalendarPlus, Camera, LogIn, LogOut, Pencil, QrCode, Sparkles, Users } from 'lucide-react';
 
 type ManagerRoomStay = {
     id: string;
@@ -47,6 +47,13 @@ type ManagerRoomStay = {
     bookingNumber?: string | null;
     mealPlan?: string[] | null;
     notes?: string | null;
+    guestProfile?: {
+        id: string;
+        fullName: string;
+        phone?: string | null;
+        telegramId?: string | null;
+        documentNumber?: string | null;
+    } | null;
 };
 
 interface ManagerStateResponse {
@@ -185,6 +192,7 @@ interface ShiftHandoverForm {
 interface CheckInModalState {
     mode: 'book' | 'checkin' | 'extend' | 'transfer' | 'edit';
     stayId?: string;
+    guestProfileId?: string;
     roomId: string;
     label: string;
     guestName: string;
@@ -236,6 +244,46 @@ interface PaymentAdjustState {
     cashExchangeRate: string;
     cardAmount: string;
     onlineAmount: string;
+}
+
+type GuestQrLookupResult = {
+    guest: {
+        id: string;
+        fullName: string;
+        phone?: string | null;
+        telegramId?: string | null;
+        documentNumber?: string | null;
+        notes?: string | null;
+        hotelId?: string | null;
+        hotelName?: string | null;
+    };
+    recentStays: Array<{
+        id: string;
+        hotelName: string;
+        roomLabel: string;
+        status: string;
+        scheduledCheckIn: string;
+        scheduledCheckOut: string;
+    }>;
+};
+
+interface GuestQrModalState {
+    code: string;
+    result: GuestQrLookupResult | null;
+    selectedRoomId: string;
+    isLookingUp: boolean;
+    isScanning: boolean;
+    error: string | null;
+}
+
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
+    detect(source: CanvasImageSource): Promise<Array<{ rawValue?: string }>>;
+};
+
+declare global {
+    interface Window {
+        BarcodeDetector?: BarcodeDetectorConstructor;
+    }
 }
 
 type PanelKey = 'rooms' | 'shift' | 'cash' | 'history';
@@ -397,6 +445,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [paymentAdjust, setPaymentAdjust] = useState<PaymentAdjustState | null>(null);
     const [isSubmittingPaymentAdjust, setIsSubmittingPaymentAdjust] = useState(false);
     const [paymentAdjustError, setPaymentAdjustError] = useState<string | null>(null);
+    const [guestQrModal, setGuestQrModal] = useState<GuestQrModalState | null>(null);
+    const qrVideoRef = useRef<HTMLVideoElement | null>(null);
+    const qrStreamRef = useRef<MediaStream | null>(null);
     const [bookingDetails, setBookingDetails] = useState<{
         roomId: string;
         roomLabel: string;
@@ -1413,6 +1464,182 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         setCheckInError(null);
     };
 
+    const stopGuestQrScanner = useCallback(() => {
+        qrStreamRef.current?.getTracks().forEach((track) => track.stop());
+        qrStreamRef.current = null;
+        setGuestQrModal((prev) => (prev ? { ...prev, isScanning: false } : prev));
+    }, []);
+
+    useEffect(() => () => {
+        qrStreamRef.current?.getTracks().forEach((track) => track.stop());
+        qrStreamRef.current = null;
+    }, []);
+
+    const openGuestQrModal = () => {
+        if (!data?.shift) {
+            toast('Сначала откройте смену, чтобы заселить гостя по QR', 'error');
+            return;
+        }
+
+        const firstAvailableRoom = sortedRooms.find((room) => room.status === 'AVAILABLE');
+        setGuestQrModal({
+            code: '',
+            result: null,
+            selectedRoomId: firstAvailableRoom?.id ?? '',
+            isLookingUp: false,
+            isScanning: false,
+            error: null
+        });
+    };
+
+    const closeGuestQrModal = () => {
+        stopGuestQrScanner();
+        setGuestQrModal(null);
+    };
+
+    const lookupGuestQrCode = useCallback(async (rawCode?: string) => {
+        const code = (rawCode ?? guestQrModal?.code ?? '').trim();
+        if (!code) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Введите код гостя' } : prev));
+            return;
+        }
+
+        setGuestQrModal((prev) => (prev ? { ...prev, code, isLookingUp: true, error: null } : prev));
+        try {
+            const result = await request<GuestQrLookupResult>('/api/manager/guest-qr', {
+                method: 'POST',
+                body: { code }
+            });
+            const firstAvailableRoom = sortedRooms.find((room) => room.status === 'AVAILABLE');
+            setGuestQrModal((prev) => (prev
+                ? {
+                    ...prev,
+                    code,
+                    result,
+                    selectedRoomId: prev.selectedRoomId || firstAvailableRoom?.id || '',
+                    isLookingUp: false,
+                    error: null
+                }
+                : prev));
+        } catch (lookupError) {
+            setGuestQrModal((prev) => (prev
+                ? {
+                    ...prev,
+                    isLookingUp: false,
+                    error: lookupError instanceof Error ? lookupError.message : 'Гость не найден'
+                }
+                : prev));
+        }
+    }, [guestQrModal?.code, request, sortedRooms]);
+
+    const startGuestQrScanner = async () => {
+        if (!window.BarcodeDetector) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'На этом устройстве камера не умеет читать QR. Введите код вручную.' } : prev));
+            return;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Браузер не дал доступ к камере. Введите код вручную.' } : prev));
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: 'environment' } },
+                audio: false
+            });
+            qrStreamRef.current = stream;
+            setGuestQrModal((prev) => (prev ? { ...prev, isScanning: true, error: null } : prev));
+
+            const video = qrVideoRef.current;
+            if (!video) {
+                stopGuestQrScanner();
+                return;
+            }
+
+            video.srcObject = stream;
+            await video.play();
+
+            const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+            const scanFrame = async () => {
+                if (!qrStreamRef.current || !qrVideoRef.current) {
+                    return;
+                }
+
+                try {
+                    if (qrVideoRef.current.readyState >= 2) {
+                        const codes = await detector.detect(qrVideoRef.current);
+                        const value = codes[0]?.rawValue?.trim();
+                        if (value) {
+                            stopGuestQrScanner();
+                            void lookupGuestQrCode(value);
+                            return;
+                        }
+                    }
+                } catch {
+                    setGuestQrModal((prev) => (prev ? { ...prev, error: 'Не удалось прочитать QR. Попробуйте вручную.' } : prev));
+                }
+
+                window.requestAnimationFrame(scanFrame);
+            };
+
+            window.requestAnimationFrame(scanFrame);
+        } catch {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Камера недоступна. Введите код вручную.' } : prev));
+            stopGuestQrScanner();
+        }
+    };
+
+    const handleUseGuestQr = () => {
+        if (!guestQrModal?.result) {
+            return;
+        }
+
+        const room = sortedRooms.find((candidate) => candidate.id === guestQrModal.selectedRoomId);
+        if (!room) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Выберите свободный номер' } : prev));
+            return;
+        }
+
+        if (room.status !== 'AVAILABLE') {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Этот номер уже недоступен' } : prev));
+            return;
+        }
+
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const guest = guestQrModal.result.guest;
+
+        stopGuestQrScanner();
+        setGuestQrModal(null);
+        setCheckInModal({
+            mode: 'checkin',
+            guestProfileId: guest.id,
+            roomId: room.id,
+            label: room.label,
+            guestName: guest.fullName,
+            guestPhone: guest.phone ?? '',
+            companyName: '',
+            bookingSource: '',
+            bookingNumber: '',
+            totalAmount: '',
+            mealPlan: [],
+            notes: guest.documentNumber ? `Документ: ${guest.documentNumber}` : '',
+            targetRoomId: '',
+            transferNote: '',
+            checkIn: formatDateInputValue(startDate),
+            currentCheckOut: undefined,
+            checkOut: formatDateInputValue(endDate),
+            cashAmount: '',
+            cashCurrency: localCashCurrency,
+            cashExchangeRate: '',
+            cardAmount: '',
+            onlineAmount: '',
+            existingPaid: 0
+        });
+        setCheckInError(null);
+    };
+
     const showBookingModal = (room: ManagerStateResponse['rooms'][number], selectedDay?: Date) => {
         const now = new Date();
         const startDate = selectedDay ? new Date(selectedDay) : new Date();
@@ -2042,6 +2269,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 body: {
                     shiftId: checkInModal.mode === 'book' ? (cashMinor > 0 || cardMinor > 0 ? activeShiftId : undefined) : activeShiftId,
                     stayId: checkInModal.stayId,
+                    guestProfileId: checkInModal.guestProfileId,
                     intent: checkInModal.mode,
                     guestName: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestName.trim() || undefined : undefined,
                     guestPhone: checkInModal.mode === 'checkin' || checkInModal.mode === 'book' ? checkInModal.guestPhone.trim() || undefined : undefined,
@@ -2252,6 +2480,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 size="icon"
                                 variant="ghost"
                                 className="h-9 w-9"
+                                onClick={openGuestQrModal}
+                                disabled={!hasOpenShift}
+                                aria-label="QR гостя"
+                                title="QR гостя"
+                            >
+                                <QrCode className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-9 w-9"
                                 onClick={handleCopyState}
                                 disabled={!shareMessage}
                                 aria-label="Скопировать состояние"
@@ -2289,6 +2529,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                                 <ThemeToggle />
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-9 w-9"
+                                    onClick={openGuestQrModal}
+                                    disabled={!hasOpenShift}
+                                    aria-label="QR гостя"
+                                    title="QR гостя"
+                                >
+                                    <QrCode className="h-4 w-4" aria-hidden="true" />
+                                </Button>
                                 <Button
                                     type="button"
                                     size="icon"
@@ -2351,6 +2603,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             <h1 className="mt-1 truncate text-2xl font-semibold tracking-normal text-slate-800 dark:text-slate-100">{activePanelConfig.label}</h1>
                         </div>
                         <div className="flex items-center gap-2">
+                            <Button type="button" size="sm" variant="secondary" className="gap-2" disabled={!hasOpenShift} onClick={openGuestQrModal}>
+                                <QrCode className="h-4 w-4" aria-hidden="true" />
+                                QR гость
+                            </Button>
                             <Button type="button" size="sm" variant="secondary" onClick={() => setActivePanel('shift')}>
                                 Закрыть смену
                             </Button>
@@ -3527,6 +3783,112 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <Button type="button" className="w-full py-3" disabled={isSubmittingGroupCheckIn} onClick={handleGroupCheckIn}>
                                         {isSubmittingGroupCheckIn ? 'Сохраняем...' : groupCheckIn.mode === 'edit' ? 'Сохранить группу' : groupCheckIn.mode === 'booking' ? 'Создать групповую бронь' : 'Создать групповой заезд'}
                                     </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {guestQrModal && (
+                        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
+                            <div className="mx-auto w-full max-w-lg rounded-xl bg-ink p-3 text-white shadow-2xl sm:rounded-2xl sm:p-5">
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Сканирование гостя</p>
+                                        <h3 className="text-base font-semibold">QR гость</h3>
+                                    </div>
+                                    <Button type="button" variant="ghost" size="sm" onClick={closeGuestQrModal}>
+                                        ×
+                                    </Button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                                        <Input
+                                            value={guestQrModal.code}
+                                            onChange={(event) => setGuestQrModal((prev) => (prev ? { ...prev, code: event.target.value.toUpperCase(), error: null } : prev))}
+                                            placeholder="KG-XXXX-XXXX"
+                                            className="font-mono uppercase tracking-[0.12em] text-white"
+                                        />
+                                        <Button type="button" variant="secondary" disabled={guestQrModal.isLookingUp} onClick={() => void lookupGuestQrCode()}>
+                                            Найти
+                                        </Button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <Button type="button" variant="secondary" className="gap-2" disabled={guestQrModal.isScanning} onClick={() => void startGuestQrScanner()}>
+                                            <Camera className="h-4 w-4" aria-hidden="true" />
+                                            {guestQrModal.isScanning ? 'Сканируем...' : 'Сканировать камерой'}
+                                        </Button>
+                                        {guestQrModal.isScanning ? (
+                                            <Button type="button" variant="ghost" onClick={stopGuestQrScanner}>
+                                                Остановить камеру
+                                            </Button>
+                                        ) : null}
+                                    </div>
+
+                                    <video
+                                        ref={qrVideoRef}
+                                        muted
+                                        playsInline
+                                        className={`h-56 w-full rounded-xl border border-white/10 bg-black object-cover ${guestQrModal.isScanning ? 'block' : 'hidden'}`}
+                                    />
+
+                                    {guestQrModal.error ? (
+                                        <p className="rounded-lg border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+                                            {guestQrModal.error}
+                                        </p>
+                                    ) : null}
+
+                                    {guestQrModal.result ? (
+                                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Найден гость</p>
+                                                    <h4 className="mt-1 break-words text-lg font-semibold">{guestQrModal.result.guest.fullName}</h4>
+                                                    <p className="text-sm text-white/55">{guestQrModal.result.guest.phone || 'телефон не указан'}</p>
+                                                    {guestQrModal.result.guest.documentNumber ? (
+                                                        <p className="text-xs text-white/40">Документ: {guestQrModal.result.guest.documentNumber}</p>
+                                                    ) : null}
+                                                </div>
+                                                <Badge tone="success" label="QR" />
+                                            </div>
+
+                                            {guestQrModal.result.recentStays.length ? (
+                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/12 p-2">
+                                                    <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/35">Последние визиты</p>
+                                                    <div className="space-y-1 text-xs text-white/55">
+                                                        {guestQrModal.result.recentStays.slice(0, 3).map((stay) => (
+                                                            <p key={stay.id} className="truncate">
+                                                                {stay.hotelName} · №{stay.roomLabel} · {formatDateTime(stay.scheduledCheckIn, hotelTz)}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            <label className="mt-3 block">
+                                                <span className="mb-1 block text-[11px] uppercase tracking-[0.16em] text-white/40">Свободный номер</span>
+                                                <Select
+                                                    value={guestQrModal.selectedRoomId}
+                                                    onChange={(event) => setGuestQrModal((prev) => (prev ? { ...prev, selectedRoomId: event.target.value, error: null } : prev))}
+                                                    className="text-white"
+                                                >
+                                                    <option value="">Выберите номер</option>
+                                                    {sortedRooms
+                                                        .filter((room) => room.status === 'AVAILABLE')
+                                                        .map((room) => (
+                                                            <option key={`guest-qr-room-${room.id}`} value={room.id}>
+                                                                № {room.label}
+                                                            </option>
+                                                        ))}
+                                                </Select>
+                                            </label>
+
+                                            <Button type="button" className="mt-3 w-full py-3" onClick={handleUseGuestQr}>
+                                                Заселить этого гостя
+                                            </Button>
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
                         </div>

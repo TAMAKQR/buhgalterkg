@@ -43,7 +43,18 @@ export async function GET(request: NextRequest) {
                                 ]
                             },
                             orderBy: { scheduledCheckIn: 'asc' },
-                            take: 40
+                            take: 40,
+                            include: {
+                                guestProfile: {
+                                    select: {
+                                        id: true,
+                                        fullName: true,
+                                        phone: true,
+                                        telegramId: true,
+                                        documentNumber: true
+                                    }
+                                }
+                            }
                         }
                     },
                     orderBy: { label: 'asc' }
@@ -330,7 +341,16 @@ export async function GET(request: NextRequest) {
                     bookingSource: stay.bookingSource,
                     bookingNumber: stay.bookingNumber,
                     mealPlan: stay.mealPlan,
-                    notes: stay.notes
+                    notes: stay.notes,
+                    guestProfile: stay.guestProfile
+                        ? {
+                            id: stay.guestProfile.id,
+                            fullName: stay.guestProfile.fullName,
+                            phone: stay.guestProfile.phone,
+                            telegramId: stay.guestProfile.telegramId,
+                            documentNumber: stay.guestProfile.documentNumber
+                        }
+                        : null
                 });
 
                 return {
