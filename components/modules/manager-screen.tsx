@@ -54,6 +54,8 @@ type ManagerRoomStay = {
         phone?: string | null;
         telegramId?: string | null;
         documentNumber?: string | null;
+        verificationStatus?: GuestVerificationStatus | null;
+        verifiedAt?: string | null;
     } | null;
 };
 
@@ -248,6 +250,8 @@ interface PaymentAdjustState {
     onlineAmount: string;
 }
 
+type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
+
 type GuestQrLookupResult = {
     guest: {
         id: string;
@@ -255,6 +259,10 @@ type GuestQrLookupResult = {
         phone?: string | null;
         telegramId?: string | null;
         documentNumber?: string | null;
+        verificationStatus?: GuestVerificationStatus | null;
+        verifiedAt?: string | null;
+        verifiedByName?: string | null;
+        verifiedHotelName?: string | null;
         notes?: string | null;
         hotelId?: string | null;
         hotelName?: string | null;
@@ -282,10 +290,19 @@ interface GuestQrModalState {
     selectedRoomId: string;
     profileEdit: GuestProfileEditState | null;
     isSavingProfile: boolean;
+    isVerifyingProfile: boolean;
     isLookingUp: boolean;
     isScanning: boolean;
     error: string | null;
 }
+
+const guestVerificationMeta: Record<GuestVerificationStatus, { label: string; tone: 'success' | 'warning' | 'default' }> = {
+    PENDING: { label: 'Не проверен', tone: 'default' },
+    VERIFIED: { label: 'Проверен', tone: 'success' },
+    NEEDS_REVIEW: { label: 'Уточнить', tone: 'warning' }
+};
+
+const getGuestVerificationMeta = (status?: GuestVerificationStatus | null) => guestVerificationMeta[status ?? 'PENDING'];
 
 type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
     detect(source: CanvasImageSource): Promise<Array<{ rawValue?: string }>>;
@@ -1506,6 +1523,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             selectedRoomId: firstAvailableRoom?.id ?? '',
             profileEdit: null,
             isSavingProfile: false,
+            isVerifyingProfile: false,
             isLookingUp: false,
             isScanning: false,
             error: null
@@ -1539,6 +1557,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     selectedRoomId: prev.selectedRoomId || firstAvailableRoom?.id || '',
                     profileEdit: null,
                     isSavingProfile: false,
+                    isVerifyingProfile: false,
                     isLookingUp: false,
                     error: null
                 }
@@ -1627,6 +1646,46 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     ...prev,
                     isSavingProfile: false,
                     error: profileError instanceof Error ? profileError.message : 'Не удалось сохранить профиль'
+                }
+                : prev));
+        }
+    };
+
+    const verifyGuestProfile = async () => {
+        const guest = guestQrModal?.result?.guest;
+        if (!guest) {
+            return;
+        }
+
+        if (!guest.documentNumber?.trim()) {
+            setGuestQrModal((prev) => (prev ? { ...prev, error: 'Сначала укажите номер документа' } : prev));
+            return;
+        }
+
+        setGuestQrModal((prev) => (prev ? { ...prev, isVerifyingProfile: true, error: null } : prev));
+        try {
+            const updated = await request<{ guest: GuestQrLookupResult['guest'] }>(`/api/manager/guest-profiles/${guest.id}/verify`, {
+                method: 'POST'
+            });
+
+            setGuestQrModal((prev) => (prev?.result
+                ? {
+                    ...prev,
+                    result: {
+                        ...prev.result,
+                        guest: updated.guest
+                    },
+                    isVerifyingProfile: false,
+                    error: null
+                }
+                : prev));
+            toast('Документ гостя подтвержден', 'success');
+        } catch (verifyError) {
+            setGuestQrModal((prev) => (prev
+                ? {
+                    ...prev,
+                    isVerifyingProfile: false,
+                    error: verifyError instanceof Error ? verifyError.message : 'Не удалось подтвердить документ'
                 }
                 : prev));
         }
@@ -4017,12 +4076,35 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         {guestQrModal.result.guest.documentNumber ? (
                                                             <p className="text-xs text-white/40">Документ: {guestQrModal.result.guest.documentNumber}</p>
                                                         ) : null}
+                                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                            <Badge
+                                                                tone={getGuestVerificationMeta(guestQrModal.result.guest.verificationStatus).tone}
+                                                                label={getGuestVerificationMeta(guestQrModal.result.guest.verificationStatus).label}
+                                                            />
+                                                            {guestQrModal.result.guest.verifiedAt ? (
+                                                                <span className="text-[11px] text-white/35">
+                                                                    {formatDateTime(guestQrModal.result.guest.verifiedAt, hotelTz)}
+                                                                    {guestQrModal.result.guest.verifiedByName ? ` · ${guestQrModal.result.guest.verifiedByName}` : ''}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
                                                         {guestQrModal.result.guest.notes ? (
                                                             <p className="mt-1 text-xs text-white/35">{guestQrModal.result.guest.notes}</p>
                                                         ) : null}
                                                     </div>
                                                     <div className="flex shrink-0 flex-col items-end gap-2">
                                                         <Badge tone="success" label="QR" />
+                                                        {guestQrModal.result.guest.verificationStatus !== 'VERIFIED' ? (
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="secondary"
+                                                                disabled={guestQrModal.isVerifyingProfile || guestQrModal.isSavingProfile}
+                                                                onClick={() => void verifyGuestProfile()}
+                                                            >
+                                                                {guestQrModal.isVerifyingProfile ? 'Проверяем...' : 'Подтвердить'}
+                                                            </Button>
+                                                        ) : null}
                                                         <Button type="button" size="sm" variant="secondary" onClick={startGuestProfileEdit}>
                                                             Изменить
                                                         </Button>
@@ -4061,7 +4143,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </Select>
                                             </label>
 
-                                            <Button type="button" className="mt-3 w-full py-3" disabled={Boolean(guestQrModal.profileEdit) || guestQrModal.isSavingProfile} onClick={handleUseGuestQr}>
+                                            <Button type="button" className="mt-3 w-full py-3" disabled={Boolean(guestQrModal.profileEdit) || guestQrModal.isSavingProfile || guestQrModal.isVerifyingProfile} onClick={handleUseGuestQr}>
                                                 Заселить этого гостя
                                             </Button>
                                         </div>

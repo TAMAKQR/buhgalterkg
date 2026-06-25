@@ -150,6 +150,8 @@ export async function POST(request: NextRequest) {
                 phone: result.profile.phone,
                 telegramId: result.profile.telegramId,
                 documentNumber: result.profile.documentNumber,
+                verificationStatus: result.profile.verificationStatus,
+                verifiedAt: result.profile.verifiedAt?.toISOString() ?? null,
                 notes: result.profile.notes,
                 hotelId: result.profile.hotelId
             },

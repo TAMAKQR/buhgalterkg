@@ -38,7 +38,15 @@ export async function POST(request: NextRequest) {
                         phone: true,
                         telegramId: true,
                         documentNumber: true,
+                        verificationStatus: true,
+                        verifiedAt: true,
                         notes: true,
+                        verifiedBy: {
+                            select: { displayName: true }
+                        },
+                        verifiedHotel: {
+                            select: { name: true }
+                        },
                         stays: {
                             orderBy: { scheduledCheckIn: 'desc' },
                             take: 5,
@@ -88,6 +96,10 @@ export async function POST(request: NextRequest) {
                 phone: token.guestProfile.phone,
                 telegramId: token.guestProfile.telegramId,
                 documentNumber: token.guestProfile.documentNumber,
+                verificationStatus: token.guestProfile.verificationStatus,
+                verifiedAt: token.guestProfile.verifiedAt?.toISOString() ?? null,
+                verifiedByName: token.guestProfile.verifiedBy?.displayName ?? null,
+                verifiedHotelName: token.guestProfile.verifiedHotel?.name ?? null,
                 notes: token.guestProfile.notes,
                 hotelId: token.guestProfile.hotelId,
                 hotelName: token.hotel?.name ?? null

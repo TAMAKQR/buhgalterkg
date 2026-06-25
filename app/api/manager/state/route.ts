@@ -51,7 +51,9 @@ export async function GET(request: NextRequest) {
                                         fullName: true,
                                         phone: true,
                                         telegramId: true,
-                                        documentNumber: true
+                                        documentNumber: true,
+                                        verificationStatus: true,
+                                        verifiedAt: true
                                     }
                                 }
                             }
@@ -349,7 +351,9 @@ export async function GET(request: NextRequest) {
                             fullName: stay.guestProfile.fullName,
                             phone: stay.guestProfile.phone,
                             telegramId: stay.guestProfile.telegramId,
-                            documentNumber: stay.guestProfile.documentNumber
+                            documentNumber: stay.guestProfile.documentNumber,
+                            verificationStatus: stay.guestProfile.verificationStatus,
+                            verifiedAt: stay.guestProfile.verifiedAt?.toISOString() ?? null
                         }
                         : null
                 });

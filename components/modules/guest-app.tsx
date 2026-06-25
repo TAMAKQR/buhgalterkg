@@ -22,6 +22,8 @@ type GuestProfileResult = {
         fullName: string;
         phone?: string | null;
         documentNumber?: string | null;
+        verificationStatus?: GuestVerificationStatus | null;
+        verifiedAt?: string | null;
         hotelId?: string | null;
     };
     qr: {
@@ -36,6 +38,8 @@ type TelegramWebAppUser = {
     last_name?: string;
     username?: string;
 };
+
+type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
 
 type TelegramWebApp = {
     initData?: string;
@@ -70,6 +74,14 @@ const formatExpiry = (value?: string | null) => {
         return null;
     }
 };
+
+const verificationMeta: Record<GuestVerificationStatus, { label: string; className: string }> = {
+    PENDING: { label: 'Документ не проверен', className: 'bg-slate-100 text-slate-600' },
+    VERIFIED: { label: 'Документ проверен', className: 'bg-emerald-50 text-emerald-700' },
+    NEEDS_REVIEW: { label: 'Нужно уточнить документ', className: 'bg-amber-50 text-amber-700' }
+};
+
+const getVerificationMeta = (status?: GuestVerificationStatus | null) => verificationMeta[status ?? 'PENDING'];
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
@@ -187,6 +199,7 @@ export const GuestApp = () => {
     const telegramLabel = telegramUser ? formatTelegramName(telegramUser) || telegramUser.username || String(telegramUser.id) : '';
     const isTelegramLinked = Boolean(telegramInitData && telegramUser);
     const hasDocumentNumber = Boolean((profile?.guest.documentNumber ?? documentNumber).trim());
+    const profileVerification = getVerificationMeta(profile?.guest.verificationStatus);
     const expiryLabel = formatExpiry(profile?.qr.expiresAt);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -272,8 +285,8 @@ export const GuestApp = () => {
                             <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Статус профиля</p>
                             <h2 className="mt-1 text-lg font-semibold">{profile ? 'QR готов' : 'Нужно заполнить данные'}</h2>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${profile ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                            {profile ? 'Активен' : 'Новый'}
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${profile ? profileVerification.className : 'bg-slate-100 text-slate-600'}`}>
+                            {profile ? profileVerification.label : 'Новый'}
                         </span>
                     </div>
                     <div className="mt-4 grid gap-2">
@@ -327,10 +340,12 @@ export const GuestApp = () => {
                                     {profile.qr.code}
                                 </p>
                             </div>
-                            <div className="mt-3 flex items-start gap-2 rounded-2xl bg-emerald-50 px-3 py-2.5 text-sm leading-5 text-emerald-800">
+                            <div className={`mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm leading-5 ${profile.guest.verificationStatus === 'VERIFIED' ? 'bg-emerald-50 text-emerald-800' : 'bg-sky-50 text-sky-900'}`}>
                                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                                 <span>
-                                    Покажите QR менеджеру. Документ сверяется глазами на стойке; фото паспорта в чат отправлять не нужно.
+                                    {profile.guest.verificationStatus === 'VERIFIED'
+                                        ? 'Ваш документ уже проверен. Покажите QR менеджеру для быстрого заселения.'
+                                        : 'Покажите QR менеджеру. Документ сверяется глазами на стойке; фото паспорта в чат отправлять не нужно.'}
                                 </span>
                             </div>
                             {expiryLabel ? (

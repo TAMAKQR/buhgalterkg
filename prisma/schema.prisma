@@ -22,6 +22,7 @@ model User {
   assignments HotelAssignment[]
   shifts      Shift[]           @relation("ShiftManager")
   receivedHandovers Shift[]     @relation("ShiftHandoverRecipient")
+  verifiedGuestProfiles GuestProfile[] @relation("GuestProfileVerifiedBy")
 }
 
 model Hotel {
@@ -51,6 +52,7 @@ model Hotel {
   ledger          CashEntry[]
   assignments     HotelAssignment[]
   guestProfiles   GuestProfile[]
+  verifiedGuestProfiles GuestProfile[] @relation("GuestProfileVerifiedHotel")
   guestQrTokens   GuestQrToken[]
   rooms           Room[]
   stays           RoomStay[]
@@ -66,16 +68,25 @@ model GuestProfile {
   phone          String?
   telegramId     String?        @map("telegram_id")
   documentNumber String?        @map("document_number")
+  verificationStatus GuestVerificationStatus @default(PENDING) @map("verification_status")
+  verifiedAt     DateTime?      @map("verified_at")
+  verifiedById   String?        @map("verified_by_id")
+  verifiedHotelId String?       @map("verified_hotel_id")
   notes          String?
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
   hotel          Hotel?         @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  verifiedBy     User?          @relation("GuestProfileVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedHotel  Hotel?         @relation("GuestProfileVerifiedHotel", fields: [verifiedHotelId], references: [id], onDelete: SetNull)
   qrTokens       GuestQrToken[]
   stays          RoomStay[]
 
   @@index([hotelId])
   @@index([phone])
   @@index([telegramId])
+  @@index([verificationStatus])
+  @@index([verifiedById])
+  @@index([verifiedHotelId])
 }
 
 model GuestQrToken {
@@ -298,6 +309,12 @@ enum RoomStatus {
   OCCUPIED
   DIRTY
   HOLD
+}
+
+enum GuestVerificationStatus {
+  PENDING
+  VERIFIED
+  NEEDS_REVIEW
 }
 
 model BonusTier {
