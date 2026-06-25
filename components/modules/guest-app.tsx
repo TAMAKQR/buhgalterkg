@@ -116,23 +116,46 @@ export const GuestApp = () => {
     }, []);
 
     useEffect(() => {
-        const webApp = window.Telegram?.WebApp;
-        if (!webApp) {
-            return;
-        }
+        let isCancelled = false;
+        let timerId: ReturnType<typeof setTimeout> | null = null;
+        let attempt = 0;
 
-        webApp.ready?.();
-        webApp.expand?.();
+        const readTelegramWebApp = () => {
+            if (isCancelled) {
+                return;
+            }
 
-        const user = webApp.initDataUnsafe?.user ?? null;
-        const telegramName = formatTelegramName(user);
+            const webApp = window.Telegram?.WebApp;
+            if (!webApp) {
+                attempt += 1;
+                if (attempt < 20) {
+                    timerId = setTimeout(readTelegramWebApp, 150);
+                }
+                return;
+            }
 
-        setTelegramInitData(webApp.initData ?? '');
-        setTelegramUser(user);
+            webApp.ready?.();
+            webApp.expand?.();
 
-        if (telegramName) {
-            setFullName((current) => current.trim() ? current : telegramName);
-        }
+            const user = webApp.initDataUnsafe?.user ?? null;
+            const telegramName = formatTelegramName(user);
+
+            setTelegramInitData(webApp.initData ?? '');
+            setTelegramUser(user);
+
+            if (telegramName) {
+                setFullName((current) => current.trim() ? current : telegramName);
+            }
+        };
+
+        readTelegramWebApp();
+
+        return () => {
+            isCancelled = true;
+            if (timerId) {
+                clearTimeout(timerId);
+            }
+        };
     }, []);
 
     useEffect(() => {
