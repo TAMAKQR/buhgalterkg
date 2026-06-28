@@ -1,7 +1,9 @@
 'use client';
 
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useApi } from '@/hooks/useApi';
 
 export type AiInsightTone = 'success' | 'warning' | 'danger' | 'default';
 
@@ -57,6 +59,19 @@ interface AiAnalysisModalProps {
     isRefreshing?: boolean;
 }
 
+type AiChatMessage = {
+    role: 'user' | 'assistant';
+    content: string;
+};
+
+type AiChatResponse = {
+    answer: string;
+    source: 'openai' | 'rules';
+    configured: boolean;
+    model?: string;
+    generatedAt: string;
+};
+
 const aiToneClass: Record<AiInsightTone, string> = {
     success: 'border-emerald-400/30 bg-emerald-950/55 text-emerald-50',
     warning: 'border-amber-400/35 bg-amber-950/55 text-amber-50',
@@ -100,6 +115,26 @@ const formatGeneratedAt = (value?: string | null) => {
     }).format(date);
 };
 
+const compactAnalysisForChat = (analysis: AiShiftAnalysisResponse) => ({
+    summary: analysis.summary,
+    highlights: analysis.highlights,
+    risks: analysis.risks,
+    nextActions: analysis.nextActions,
+    dashboard: analysis.dashboard
+        ? {
+            period: analysis.dashboard.period,
+            riskScore: analysis.dashboard.riskScore,
+            kpis: analysis.dashboard.kpis,
+            moneyFlow: analysis.dashboard.moneyFlow,
+            bookingSources: analysis.dashboard.bookingSources,
+            expenseBreakdown: analysis.dashboard.expenseBreakdown,
+            extranet: analysis.dashboard.extranet,
+            riskChecks: analysis.dashboard.riskChecks,
+            dailySeries: analysis.dashboard.dailySeries.slice(-14)
+        }
+        : null
+});
+
 export const AiAnalysisModal = ({
     analysis,
     isOpen,
@@ -109,6 +144,20 @@ export const AiAnalysisModal = ({
     onRefresh,
     isRefreshing = false
 }: AiAnalysisModalProps) => {
+    const { request } = useApi();
+    const [chatMessages, setChatMessages] = useState<AiChatMessage[]>([]);
+    const [chatDraft, setChatDraft] = useState('');
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    const [chatError, setChatError] = useState<string | null>(null);
+
+    const chatContext = useMemo(() => analysis ? compactAnalysisForChat(analysis) : null, [analysis]);
+
+    useEffect(() => {
+        setChatMessages([]);
+        setChatDraft('');
+        setChatError(null);
+    }, [analysis?.generatedAt, title]);
+
     if (!isOpen || !analysis) {
         return null;
     }
@@ -117,6 +166,47 @@ export const AiAnalysisModal = ({
     const dashboard = analysis.dashboard;
     const maxMoneyFlow = Math.max(...(dashboard?.moneyFlow.map((item) => Math.abs(item.value)) ?? [0]), 1);
     const maxDaily = Math.max(...(dashboard?.dailySeries.flatMap((item) => [item.revenue, item.expenses]) ?? [0]), 1);
+    const suggestedQuestions = dashboard
+        ? ['Почему такой риск?', 'Куда уходят деньги?', 'Что сделать первым?']
+        : ['Объясни простыми словами', 'Какие риски главные?', 'Что проверить сейчас?'];
+
+    const askAi = async (question: string) => {
+        const trimmedQuestion = question.trim();
+        if (!trimmedQuestion || !chatContext) {
+            return;
+        }
+
+        const history = chatMessages.slice(-8);
+        setChatMessages((current) => [...current, { role: 'user', content: trimmedQuestion }]);
+        setChatDraft('');
+        setChatError(null);
+        setIsChatLoading(true);
+        try {
+            const response = await request<AiChatResponse>('/api/ai-analysis/chat', {
+                body: {
+                    question: trimmedQuestion,
+                    title,
+                    subtitle,
+                    analysis: chatContext,
+                    history
+                }
+            });
+            setChatMessages((current) => [...current, { role: 'assistant', content: response.answer }]);
+        } catch (error) {
+            setChatError(error instanceof Error ? error.message : 'Не удалось получить ответ');
+            setChatMessages((current) => [...current, {
+                role: 'assistant',
+                content: 'Не удалось получить ответ модели. Попробуйте переформулировать вопрос или обновить отчет.'
+            }]);
+        } finally {
+            setIsChatLoading(false);
+        }
+    };
+
+    const handleChatSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        void askAi(chatDraft);
+    };
 
     return (
         <div className="fixed inset-0 z-[80] bg-[#0b111d] text-slate-100">
@@ -329,6 +419,66 @@ export const AiAnalysisModal = ({
                             ) : (
                                 <p className="mt-3 text-sm text-slate-400">Нет отдельных действий.</p>
                             )}
+                        </section>
+
+                        <section className="rounded-2xl border border-slate-700 bg-[#111827] p-4 sm:p-5 lg:col-span-2">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Чат по отчету</p>
+                                    <h3 className="mt-1 text-base font-semibold text-slate-100">Спросить AI, что к чему</h3>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {suggestedQuestions.map((question) => (
+                                        <button
+                                            key={question}
+                                            type="button"
+                                            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-cyan-300/45 hover:text-cyan-100 disabled:opacity-45"
+                                            onClick={() => void askAi(question)}
+                                            disabled={isChatLoading}
+                                        >
+                                            {question}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="mt-4 max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950/60 p-3">
+                                {chatMessages.length ? chatMessages.map((message, index) => (
+                                    <div
+                                        key={`${message.role}-${index}-${message.content.slice(0, 24)}`}
+                                        className={`max-w-[92%] rounded-2xl border px-3 py-2 text-sm leading-6 ${message.role === 'user'
+                                            ? 'ml-auto border-cyan-400/25 bg-cyan-950/45 text-cyan-50'
+                                            : 'border-slate-700 bg-slate-900 text-slate-100'}`}
+                                    >
+                                        <p className="mb-1 text-[10px] uppercase tracking-[0.18em] opacity-55">{message.role === 'user' ? 'Вопрос' : 'AI'}</p>
+                                        <p className="whitespace-pre-wrap">{message.content}</p>
+                                    </div>
+                                )) : (
+                                    <p className="py-4 text-center text-sm text-slate-400">
+                                        Задайте вопрос по этому отчету: про риски, деньги, источники, расходы или первые действия.
+                                    </p>
+                                )}
+                                {isChatLoading ? (
+                                    <div className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+                                        AI разбирает отчет...
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={handleChatSubmit}>
+                                <textarea
+                                    value={chatDraft}
+                                    onChange={(event) => setChatDraft(event.target.value)}
+                                    placeholder="Например: почему расходы такие большие?"
+                                    rows={2}
+                                    className="min-h-11 flex-1 resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55"
+                                    disabled={isChatLoading}
+                                />
+                                <Button type="submit" variant="secondary" disabled={isChatLoading || !chatDraft.trim()}>
+                                    Спросить
+                                </Button>
+                            </form>
+                            {chatError ? <p className="mt-2 text-xs text-rose-300">{chatError}</p> : null}
                         </section>
 
                         {analysis.highlights.length ? (
