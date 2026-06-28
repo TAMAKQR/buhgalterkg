@@ -24,9 +24,17 @@ const requestSchema = z.object({
 const getOpenAiModel = () => process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 
 const clampText = (value: string, maxLength: number) => value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+const summarizeOpenAiError = (status: number, body: string) => {
+    const message = body
+        .replace(/\s+/g, ' ')
+        .replace(/sk-[A-Za-z0-9_-]+/g, 'sk-***')
+        .trim()
+        .slice(0, 220);
+    return message ? `OpenAI ${status}: ${message}` : `OpenAI ${status}`;
+};
 
-const fallbackAnswer = (question: string) => (
-    `ИИ сейчас недоступен, но отчет уже рассчитан по базе. По вопросу "${question}" ориентируйтесь на блоки "Индекс риска", "Контрольные точки", "Куда уходят деньги" и "Что сделать": там показаны причины риска, суммы и первые действия.`
+const fallbackAnswer = (question: string, diagnostic?: string) => (
+    `${diagnostic ? `${diagnostic}. ` : ''}ИИ сейчас недоступен, но отчет уже рассчитан по базе. По вопросу "${question}" ориентируйтесь на блоки "Индекс риска", "Контрольные точки", "Куда уходят деньги" и "Что сделать": там показаны причины риска, суммы и первые действия.`
 );
 
 export async function POST(request: NextRequest) {
@@ -37,9 +45,10 @@ export async function POST(request: NextRequest) {
 
         if (!apiKey) {
             return NextResponse.json({
-                answer: fallbackAnswer(payload.question),
+                answer: fallbackAnswer(payload.question, 'OPENAI_API_KEY не найден в окружении сервера'),
                 source: 'rules',
                 configured: false,
+                diagnostic: 'OPENAI_API_KEY не найден в окружении сервера',
                 generatedAt: new Date().toISOString()
             });
         }
@@ -76,10 +85,14 @@ export async function POST(request: NextRequest) {
         });
 
         if (!response.ok) {
+            const diagnostic = summarizeOpenAiError(response.status, await response.text());
+            console.error('[OpenAI] analysis chat failed', { model, diagnostic });
             return NextResponse.json({
-                answer: fallbackAnswer(payload.question),
+                answer: fallbackAnswer(payload.question, diagnostic),
                 source: 'rules',
                 configured: false,
+                model,
+                diagnostic,
                 generatedAt: new Date().toISOString()
             });
         }

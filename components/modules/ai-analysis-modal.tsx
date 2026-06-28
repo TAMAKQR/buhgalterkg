@@ -11,6 +11,7 @@ export interface AiShiftAnalysisResponse {
     configured: boolean;
     source: 'openai' | 'rules';
     model?: string;
+    diagnostic?: string;
     generatedAt: string;
     summary: string;
     highlights: string[];
@@ -69,6 +70,7 @@ type AiChatResponse = {
     source: 'openai' | 'rules';
     configured: boolean;
     model?: string;
+    diagnostic?: string;
     generatedAt: string;
 };
 
@@ -221,6 +223,11 @@ export const AiAnalysisModal = ({
                                 <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1">
                                     {analysis.configured ? 'Ответ модели' : 'Локальная проверка'}
                                 </span>
+                                <span className={`rounded-full border px-2 py-1 ${analysis.source === 'openai'
+                                    ? 'border-emerald-400/30 bg-emerald-950/45 text-emerald-100'
+                                    : 'border-amber-400/30 bg-amber-950/45 text-amber-100'}`}>
+                                    {analysis.source === 'openai' ? 'OpenAI подключен' : 'OpenAI не ответил'}
+                                </span>
                                 {analysis.model ? (
                                     <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1">{analysis.model}</span>
                                 ) : null}
@@ -244,6 +251,13 @@ export const AiAnalysisModal = ({
 
                 <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
                     <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+                        {analysis.diagnostic && analysis.source !== 'openai' ? (
+                            <section className="rounded-2xl border border-amber-400/30 bg-amber-950/35 p-4 text-sm text-amber-50 lg:col-span-2">
+                                <p className="font-semibold">Диагностика OpenAI</p>
+                                <p className="mt-1 text-amber-100/85">{analysis.diagnostic}</p>
+                            </section>
+                        ) : null}
+
                         {dashboard ? (
                             <section className="grid gap-3 lg:col-span-2">
                                 <div className="grid gap-3 md:grid-cols-[260px_minmax(0,1fr)]">

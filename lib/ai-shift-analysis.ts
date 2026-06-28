@@ -17,6 +17,7 @@ export type AiShiftAnalysis = {
     configured: boolean;
     source: 'openai' | 'rules';
     model?: string;
+    diagnostic?: string;
     generatedAt: string;
     summary: string;
     highlights: string[];
@@ -32,6 +33,14 @@ const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 const getOpenAiModel = () => process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 
 const clampText = (value: string, maxLength: number) => value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+const summarizeOpenAiError = (status: number, body: string) => {
+    const message = body
+        .replace(/\s+/g, ' ')
+        .replace(/sk-[A-Za-z0-9_-]+/g, 'sk-***')
+        .trim()
+        .slice(0, 220);
+    return message ? `OpenAI ${status}: ${message}` : `OpenAI ${status}`;
+};
 
 const asNumber = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
@@ -123,7 +132,10 @@ const normalizeAiResult = (
 const fetchOpenAiAnalysis = async (mode: ShiftAnalysisMode, context: unknown, fallback: AiShiftAnalysis) => {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {
-        return fallback;
+        return {
+            ...fallback,
+            diagnostic: 'OPENAI_API_KEY не найден в окружении сервера'
+        };
     }
 
     const model = getOpenAiModel();
@@ -193,12 +205,15 @@ const fetchOpenAiAnalysis = async (mode: ShiftAnalysisMode, context: unknown, fa
         });
 
         if (!response.ok) {
+            const diagnostic = summarizeOpenAiError(response.status, await response.text());
+            console.error('[OpenAI] shift analysis failed', { mode, model, diagnostic });
             return {
                 ...fallback,
+                diagnostic,
                 risks: [
                     {
                         title: 'ИИ временно недоступен',
-                        detail: `OpenAI вернул ошибку ${response.status}. Показана локальная проверка по правилам.`,
+                        detail: `${diagnostic}. Показана локальная проверка по правилам.`,
                         tone: 'warning'
                     },
                     ...fallback.risks
@@ -215,13 +230,16 @@ const fetchOpenAiAnalysis = async (mode: ShiftAnalysisMode, context: unknown, fa
             ?? '';
 
         return normalizeAiResult(parseAiJson(outputText), fallback, model);
-    } catch {
+    } catch (error) {
+        const diagnostic = error instanceof Error ? error.message : 'Неизвестная ошибка запроса OpenAI';
+        console.error('[OpenAI] shift analysis request failed', { mode, model, diagnostic });
         return {
             ...fallback,
+            diagnostic,
             risks: [
                 {
                     title: 'ИИ временно недоступен',
-                    detail: 'Не удалось получить ответ модели. Показана локальная проверка по правилам.',
+                    detail: `${diagnostic}. Показана локальная проверка по правилам.`,
                     tone: 'warning'
                 },
                 ...fallback.risks
@@ -448,6 +466,7 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
         configured: false,
         source: 'rules',
         model: getOpenAiModel(),
+        diagnostic: 'Локальная проверка: OpenAI не использовался',
         generatedAt: new Date().toISOString(),
         summary: mode === 'admin'
             ? `Смена №${shift.number}: ${formatMoney(ledgerTotals.CASH_IN, shift.hotel.currency)} поступлений, ${formatMoney(realExpenses, shift.hotel.currency)} расходов, ожидаемая касса ${formatMoney(expectedCash, shift.hotel.currency)}.`

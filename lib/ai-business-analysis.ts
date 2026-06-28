@@ -12,6 +12,7 @@ export type AiBusinessAnalysis = {
     configured: boolean;
     source: 'openai' | 'rules';
     model?: string;
+    diagnostic?: string;
     generatedAt: string;
     summary: string;
     highlights: string[];
@@ -54,6 +55,14 @@ const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 const getOpenAiModel = () => process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 const asNumber = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 const clampText = (value: string, maxLength: number) => value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+const summarizeOpenAiError = (status: number, body: string) => {
+    const message = body
+        .replace(/\s+/g, ' ')
+        .replace(/sk-[A-Za-z0-9_-]+/g, 'sk-***')
+        .trim()
+        .slice(0, 220);
+    return message ? `OpenAI ${status}: ${message}` : `OpenAI ${status}`;
+};
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const normalizeKey = (value: string) => value.trim().toLocaleLowerCase('ru-RU');
 
@@ -136,7 +145,10 @@ const normalizeAiResult = (
 const fetchOpenAiAnalysis = async (context: unknown, fallback: AiBusinessAnalysis) => {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {
-        return fallback;
+        return {
+            ...fallback,
+            diagnostic: 'OPENAI_API_KEY не найден в окружении сервера',
+        };
     }
 
     const model = getOpenAiModel();
@@ -194,12 +206,15 @@ const fetchOpenAiAnalysis = async (context: unknown, fallback: AiBusinessAnalysi
         });
 
         if (!response.ok) {
+            const diagnostic = summarizeOpenAiError(response.status, await response.text());
+            console.error('[OpenAI] business analysis failed', { model, diagnostic });
             return {
                 ...fallback,
+                diagnostic,
                 risks: [
                     {
                         title: 'ИИ временно недоступен',
-                        detail: `OpenAI вернул ошибку ${response.status}. Ниже показан расчетный аудит по данным базы.`,
+                        detail: `${diagnostic}. Ниже показан расчетный аудит по данным базы.`,
                         tone: 'warning',
                     },
                     ...fallback.risks,
@@ -216,13 +231,16 @@ const fetchOpenAiAnalysis = async (context: unknown, fallback: AiBusinessAnalysi
             ?? '';
 
         return normalizeAiResult(parseAiJson(outputText), fallback, model);
-    } catch {
+    } catch (error) {
+        const diagnostic = error instanceof Error ? error.message : 'Неизвестная ошибка запроса OpenAI';
+        console.error('[OpenAI] business analysis request failed', { model, diagnostic });
         return {
             ...fallback,
+            diagnostic,
             risks: [
                 {
                     title: 'ИИ временно недоступен',
-                    detail: 'Не удалось получить ответ модели. Ниже показан расчетный аудит по данным базы.',
+                    detail: `${diagnostic}. Ниже показан расчетный аудит по данным базы.`,
                     tone: 'warning',
                 },
                 ...fallback.risks,
@@ -492,6 +510,7 @@ export const buildBusinessAnalysis = async (
         configured: false,
         source: 'rules',
         model: getOpenAiModel(),
+        diagnostic: 'Локальная проверка: OpenAI не использовался',
         generatedAt: new Date().toISOString(),
         summary: `${hotel.name}: за период ${period.label.toLowerCase()} выручка ${formatMoney(revenue, hotel.currency)}, расходы и выплаты ${formatMoney(expenses + payouts, hotel.currency)}, чистый результат ${formatMoney(net, hotel.currency)}. Основной риск: ${riskChecks.find((item) => item.status !== 'ok')?.label.toLowerCase() ?? 'критичных замечаний нет'}.`,
         highlights: [
