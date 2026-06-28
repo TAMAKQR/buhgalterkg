@@ -27,6 +27,7 @@ import {
 } from '@/lib/offline';
 import { ArrowRightLeft, Banknote, CalendarPlus, Camera, LogIn, LogOut, Pencil, QrCode, Sparkles, Users } from 'lucide-react';
 import jsQR from 'jsqr';
+import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
 type ManagerRoomStay = {
     id: string;
@@ -510,6 +511,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [paymentAdjust, setPaymentAdjust] = useState<PaymentAdjustState | null>(null);
     const [isSubmittingPaymentAdjust, setIsSubmittingPaymentAdjust] = useState(false);
     const [paymentAdjustError, setPaymentAdjustError] = useState<string | null>(null);
+    const [managerAiAnalysis, setManagerAiAnalysis] = useState<AiShiftAnalysisResponse | null>(null);
+    const [isManagerAiLoading, setIsManagerAiLoading] = useState(false);
+    const [managerAiError, setManagerAiError] = useState<string | null>(null);
+    const [isManagerAiModalOpen, setIsManagerAiModalOpen] = useState(false);
     const [guestQrModal, setGuestQrModal] = useState<GuestQrModalState | null>(null);
     const qrVideoRef = useRef<HTMLVideoElement | null>(null);
     const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -745,6 +750,25 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const isAutoManagerPayout = selectedExpenseEntryType === 'MANAGER_PAYOUT';
     const handleOpenProfile = () => setIsProfileOpen(true);
     const handleCloseProfile = () => setIsProfileOpen(false);
+    const handleLoadManagerAiAnalysis = async () => {
+        if (!hotelId || !data?.shift) {
+            return;
+        }
+
+        setIsManagerAiLoading(true);
+        setManagerAiError(null);
+        try {
+            const analysis = await request<AiShiftAnalysisResponse>('/api/manager/ai-assistant', {
+                body: { hotelId }
+            });
+            setManagerAiAnalysis(analysis);
+            setIsManagerAiModalOpen(true);
+        } catch (error) {
+            setManagerAiError(error instanceof Error ? error.message : 'Не удалось получить AI подсказки');
+        } finally {
+            setIsManagerAiLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (selectedExpenseEntryType !== 'CASH_OUT') {
@@ -3299,6 +3323,40 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 USD в кассе: {formatCurrencyAmount(item.amount, item.currency)}
                                             </div>
                                         ))}
+                                        <div className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-3 text-sm text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold">AI подсказки</p>
+                                                    <p className="mt-0.5 text-xs opacity-75">
+                                                        {managerAiAnalysis ? 'Отчет готов к просмотру' : 'Проверка смены перед закрытием'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {managerAiAnalysis ? (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => setIsManagerAiModalOpen(true)}
+                                                        >
+                                                            Открыть отчет
+                                                        </Button>
+                                                    ) : null}
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        className="gap-2"
+                                                        onClick={() => void handleLoadManagerAiAnalysis()}
+                                                        disabled={isManagerAiLoading}
+                                                    >
+                                                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                                                        {isManagerAiLoading ? 'Анализ...' : 'Подсказать'}
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            {managerAiError ? <p className="mt-3 text-xs text-rose-600 dark:text-rose-200">{managerAiError}</p> : null}
+                                        </div>
                                         <div className="flex justify-end">
                                             <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={handlePrintShiftReceipt}>
                                                 Печать
@@ -5013,6 +5071,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             </Card>
                         </div>
                     )}
+
+                    <AiAnalysisModal
+                        analysis={managerAiAnalysis}
+                        isOpen={isManagerAiModalOpen && Boolean(managerAiAnalysis)}
+                        title={data?.shift ? `AI подсказки по смене №${data.shift.number}` : 'AI подсказки'}
+                        subtitle={data?.hotel.name}
+                        onClose={() => setIsManagerAiModalOpen(false)}
+                        onRefresh={() => void handleLoadManagerAiAnalysis()}
+                        isRefreshing={isManagerAiLoading}
+                    />
 
                     {/* Checkout confirmation modal */}
                     {checkoutConfirm && (

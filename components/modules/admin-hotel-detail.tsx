@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/select';
 import { useApi } from '@/hooks/useApi';
 import { formatDateTime, formatMoney } from '@/lib/timezone';
 import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
+import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -24,6 +25,7 @@ type LedgerEntryTypeValue = 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTM
 type LedgerPaymentMethodValue = 'CASH' | 'CARD';
 type RoomOverviewMode = 'board' | 'history';
 type BoardListPopupKind = 'scheduled' | 'checkedIn' | 'overdue' | 'freeDates';
+type AdminAiPeriod = 'week' | 'month' | 'custom';
 
 type PendingOnlineStayDetail = RoomStayDetail & {
     roomId: string;
@@ -338,6 +340,8 @@ const createBookingDefaults = (): BookingCreateForm => ({
     notes: ''
 });
 
+const dateInputFromDate = (date: Date) => date.toISOString().slice(0, 10);
+
 const stayStatusOptions: Array<{ value: StayStatusValue; label: string }> = [
     { value: 'SCHEDULED', label: 'Запланирован' },
     { value: 'CHECKED_IN', label: 'Заселён' },
@@ -635,6 +639,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
     const [editingLedgerEntry, setEditingLedgerEntry] = useState<LedgerEntryDetail | null>(null);
     const [isCreatingShift, setIsCreatingShift] = useState(false);
+    const [adminAiAnalysis, setAdminAiAnalysis] = useState<AiShiftAnalysisResponse | null>(null);
+    const [adminAiShiftId, setAdminAiShiftId] = useState<string | null>(null);
+    const [isAdminAiLoading, setIsAdminAiLoading] = useState(false);
+    const [adminAiError, setAdminAiError] = useState<string | null>(null);
+    const [isAdminAiModalOpen, setIsAdminAiModalOpen] = useState(false);
+    const [adminBusinessAiAnalysis, setAdminBusinessAiAnalysis] = useState<AiShiftAnalysisResponse | null>(null);
+    const [adminBusinessAiPeriod, setAdminBusinessAiPeriod] = useState<AdminAiPeriod>('month');
+    const [adminBusinessAiStartDate, setAdminBusinessAiStartDate] = useState(() => dateInputFromDate(new Date(Date.now() - 29 * 86_400_000)));
+    const [adminBusinessAiEndDate, setAdminBusinessAiEndDate] = useState(() => dateInputFromDate(new Date()));
+    const [isAdminBusinessAiLoading, setIsAdminBusinessAiLoading] = useState(false);
+    const [adminBusinessAiError, setAdminBusinessAiError] = useState<string | null>(null);
+    const [isAdminBusinessAiModalOpen, setIsAdminBusinessAiModalOpen] = useState(false);
     const [isClearingHistory, setIsClearingHistory] = useState(false);
     const [isDeletingShift, setIsDeletingShift] = useState(false);
     const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
@@ -2096,6 +2112,43 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             selectedShift.closingNote ? `Закрытие: ${selectedShift.closingNote}` : null
         ].filter((item): item is string => Boolean(item))
         : [];
+    const handleAnalyzeSelectedShift = async () => {
+        if (!selectedShift) {
+            return;
+        }
+
+        setIsAdminAiLoading(true);
+        setAdminAiError(null);
+        try {
+            const analysis = await request<AiShiftAnalysisResponse>(`/api/admin/shifts/${selectedShift.id}/ai-analysis`);
+            setAdminAiAnalysis(analysis);
+            setAdminAiShiftId(selectedShift.id);
+            setIsAdminAiModalOpen(true);
+        } catch (error) {
+            setAdminAiError(error instanceof Error ? error.message : 'Не удалось получить AI анализ');
+        } finally {
+            setIsAdminAiLoading(false);
+        }
+    };
+    const handleAnalyzeBusiness = async () => {
+        setIsAdminBusinessAiLoading(true);
+        setAdminBusinessAiError(null);
+        try {
+            const analysis = await request<AiShiftAnalysisResponse>(`/api/admin/hotels/${data.id}/ai-analysis`, {
+                body: {
+                    period: adminBusinessAiPeriod,
+                    startDate: adminBusinessAiPeriod === 'custom' ? adminBusinessAiStartDate : null,
+                    endDate: adminBusinessAiPeriod === 'custom' ? adminBusinessAiEndDate : null
+                }
+            });
+            setAdminBusinessAiAnalysis(analysis);
+            setIsAdminBusinessAiModalOpen(true);
+        } catch (error) {
+            setAdminBusinessAiError(error instanceof Error ? error.message : 'Не удалось получить AI аудит объекта');
+        } finally {
+            setIsAdminBusinessAiLoading(false);
+        }
+    };
     const formLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/40';
     const formPanelClass = 'mt-4 rounded-2xl border p-3.5 sm:mt-5 sm:rounded-[26px] sm:p-5';
     const modalLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/35';
@@ -2174,6 +2227,63 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </p>
                                 </div>
                             ))}
+                        </div>
+                        <div className="rounded-[24px] border border-slate-200 bg-white/86 p-3.5 shadow-[0_18px_42px_-36px_rgba(15,23,42,0.5)] sm:p-4 dark:border-cyan-300/15 dark:bg-cyan-400/[0.07] dark:text-cyan-50">
+                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-950 dark:text-cyan-50">AI аудит объекта</p>
+                                    <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-cyan-50/65">
+                                        Финансы, риски, источники заселений, extranet, расходы и контроль качества данных.
+                                    </p>
+                                </div>
+                                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                                    <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-black/15">
+                                        {([
+                                            ['week', '7 дней'],
+                                            ['month', '30 дней'],
+                                            ['custom', 'Период']
+                                        ] as Array<[AdminAiPeriod, string]>).map(([value, label]) => (
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${adminBusinessAiPeriod === value
+                                                    ? 'bg-slate-900 text-white dark:bg-cyan-200 dark:text-slate-950'
+                                                    : 'text-slate-500 hover:bg-white dark:text-white/55 dark:hover:bg-white/[0.06]'}`}
+                                                onClick={() => setAdminBusinessAiPeriod(value)}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {adminBusinessAiPeriod === 'custom' ? (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Input
+                                                type="date"
+                                                value={adminBusinessAiStartDate}
+                                                onChange={(event) => setAdminBusinessAiStartDate(event.target.value)}
+                                                className="h-9 text-xs"
+                                            />
+                                            <Input
+                                                type="date"
+                                                value={adminBusinessAiEndDate}
+                                                onChange={(event) => setAdminBusinessAiEndDate(event.target.value)}
+                                                className="h-9 text-xs"
+                                            />
+                                        </div>
+                                    ) : null}
+                                    <div className="flex gap-2">
+                                        {adminBusinessAiAnalysis ? (
+                                            <Button type="button" size="sm" variant="ghost" onClick={() => setIsAdminBusinessAiModalOpen(true)}>
+                                                Открыть аудит
+                                            </Button>
+                                        ) : null}
+                                        <Button type="button" size="sm" variant="secondary" onClick={() => void handleAnalyzeBusiness()} disabled={isAdminBusinessAiLoading}>
+                                            {isAdminBusinessAiLoading ? 'Анализ...' : 'Провести аудит'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                            {adminBusinessAiError ? <p className="mt-3 text-xs text-rose-600 dark:text-rose-200">{adminBusinessAiError}</p> : null}
                         </div>
                         {isPendingOnlineHistoryOpen ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-amber-800 sm:rounded-[24px] sm:p-4 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
@@ -2443,6 +2553,41 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         ))}
                                                     </div>
                                                 ) : null}
+
+                                                <div className="rounded-[24px] border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-semibold">AI анализ смены</p>
+                                                            <p className="mt-1 text-xs opacity-75">
+                                                                {adminAiAnalysis && adminAiShiftId === selectedShift.id
+                                                                    ? 'Отчет готов к просмотру'
+                                                                    : 'Финансы, оплаты и операционные риски'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {adminAiAnalysis && adminAiShiftId === selectedShift.id ? (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    onClick={() => setIsAdminAiModalOpen(true)}
+                                                                >
+                                                                    Открыть отчет
+                                                                </Button>
+                                                            ) : null}
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="secondary"
+                                                                onClick={() => void handleAnalyzeSelectedShift()}
+                                                                disabled={isAdminAiLoading}
+                                                            >
+                                                                {isAdminAiLoading ? 'Анализ...' : 'Анализировать'}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                    {adminAiError ? <p className="mt-3 text-xs text-rose-600 dark:text-rose-200">{adminAiError}</p> : null}
+                                                </div>
 
                                                 <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Движение средств</p>
@@ -4518,6 +4663,26 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         </div>
                     </div>
                 )}
+                <AiAnalysisModal
+                    analysis={adminAiAnalysis && adminAiShiftId === selectedShift?.id ? adminAiAnalysis : null}
+                    isOpen={isAdminAiModalOpen && Boolean(adminAiAnalysis && adminAiShiftId === selectedShift?.id)}
+                    title={selectedShift ? `AI анализ смены №${selectedShift.number}` : 'AI анализ смены'}
+                    subtitle={data?.name}
+                    onClose={() => setIsAdminAiModalOpen(false)}
+                    onRefresh={() => void handleAnalyzeSelectedShift()}
+                    isRefreshing={isAdminAiLoading}
+                />
+                <AiAnalysisModal
+                    analysis={adminBusinessAiAnalysis}
+                    isOpen={isAdminBusinessAiModalOpen && Boolean(adminBusinessAiAnalysis)}
+                    title={`AI аудит объекта: ${data.name}`}
+                    subtitle={adminBusinessAiAnalysis?.dashboard
+                        ? `${adminBusinessAiAnalysis.dashboard.period.label} · ${adminBusinessAiAnalysis.dashboard.period.startDate} - ${adminBusinessAiAnalysis.dashboard.period.endDate}`
+                        : data.address}
+                    onClose={() => setIsAdminBusinessAiModalOpen(false)}
+                    onRefresh={() => void handleAnalyzeBusiness()}
+                    isRefreshing={isAdminBusinessAiLoading}
+                />
             </div>
         </>
     );

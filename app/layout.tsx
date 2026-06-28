@@ -38,7 +38,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="ru" className={`${grotesk.variable} dark`} suppressHydrationWarning>
-            <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
+            <head>
+                <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
+            </head>
             <body className="min-h-screen bg-night dark:bg-night bg-light-bg text-light-text dark:text-mist antialiased font-sans">
                 <ThemeProvider>
                     <ToastProvider>
