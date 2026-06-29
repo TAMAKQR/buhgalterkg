@@ -3130,6 +3130,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const tariffPending = Boolean(room.stay?.tariffPending);
                                         const contactLabel = [room.stay?.companyName?.trim(), room.stay?.guestPhone?.trim()].filter(Boolean).join(' · ');
                                         const roomMealLabels = canUseMealPlan ? mealPlanLabels(room.stay?.mealPlan) : [];
+                                        const scheduledBooking = room.stay?.status === 'SCHEDULED' ? room.stay : null;
+                                        const hasScheduledBooking = Boolean(scheduledBooking);
+                                        const canCheckInBooking = scheduledBooking ? canCheckInScheduledStay(scheduledBooking) : false;
 
                                         return (
                                             <article key={room.id} className={`min-w-0 rounded-xl border bg-[#f9fafb] px-3 py-2.5 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]' : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}>
@@ -3151,8 +3154,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </button>
                                                         ) : (
                                                             <Badge
-                                                                label={isOverdue ? 'Просрочено' : isOccupied ? 'Занят' : 'Свободен'}
-                                                                tone={isOverdue ? 'danger' : isOccupied ? 'warning' : 'success'}
+                                                                label={isOverdue ? 'Просрочено' : isOccupied ? 'Занят' : hasScheduledBooking ? 'Бронь' : 'Свободен'}
+                                                                tone={isOverdue ? 'danger' : isOccupied || hasScheduledBooking ? 'warning' : 'success'}
                                                             />
                                                         )}
                                                         </div>
@@ -3228,10 +3231,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 size="icon"
                                                                 variant="secondary"
                                                                 className="h-8 w-8 rounded-lg"
-                                                                disabled={!hasOpenShift || room.status !== 'AVAILABLE'}
-                                                                onClick={() => showCheckInModal(room)}
-                                                                title={room.status === 'DIRTY' ? 'Сначала отметьте номер убранным' : 'Заселить'}
-                                                                aria-label={`Заселить номер ${room.label}`}
+                                                                disabled={!hasOpenShift || room.status !== 'AVAILABLE' || (hasScheduledBooking && !canCheckInBooking)}
+                                                                onClick={() => {
+                                                                    if (scheduledBooking) {
+                                                                        showScheduledCheckInModal({ roomId: room.id, roomLabel: room.label, stay: scheduledBooking });
+                                                                        return;
+                                                                    }
+                                                                    showCheckInModal(room);
+                                                                }}
+                                                                title={room.status === 'DIRTY' ? 'Сначала отметьте номер убранным' : hasScheduledBooking ? canCheckInBooking ? 'Заселить по брони' : 'Бронь на будущую дату' : 'Заселить'}
+                                                                aria-label={hasScheduledBooking ? `Заселить по брони номер ${room.label}` : `Заселить номер ${room.label}`}
                                                             >
                                                                 <LogIn className="h-4 w-4" aria-hidden="true" />
                                                             </Button>

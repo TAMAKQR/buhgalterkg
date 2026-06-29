@@ -559,11 +559,48 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                 return new NextResponse('Бронь не найдена или уже изменена', { status: 404 });
             }
 
+            const requestedCheckIn = payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : new Date();
+            const requestedCheckOut = payload.scheduledCheckOut
+                ? new Date(payload.scheduledCheckOut)
+                : new Date(Date.now() + 12 * 60 * 60 * 1000);
+
+            if (Number.isNaN(requestedCheckIn.getTime()) || Number.isNaN(requestedCheckOut.getTime())) {
+                return new NextResponse('Некорректные даты заезда', { status: 400 });
+            }
+
+            if (requestedCheckOut <= requestedCheckIn) {
+                return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });
+            }
+
             if (scheduledStay) {
                 const todayKey = formatDateKey(new Date(), room.hotel.timezone);
                 const checkInKey = formatDateKey(scheduledStay.scheduledCheckIn, room.hotel.timezone);
                 if (checkInKey && todayKey && checkInKey > todayKey) {
                     return new NextResponse('Заселение по брони доступно только в день заезда', { status: 400 });
+                }
+            }
+
+            if (!scheduledStay) {
+                const conflictingStay = await prisma.roomStay.findFirst({
+                    where: {
+                        roomId: room.id,
+                        hotelId: room.hotelId,
+                        status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                        scheduledCheckIn: { lt: requestedCheckOut },
+                        scheduledCheckOut: { gt: requestedCheckIn }
+                    },
+                    select: {
+                        status: true
+                    }
+                });
+
+                if (conflictingStay) {
+                    return new NextResponse(
+                        conflictingStay.status === StayStatus.SCHEDULED
+                            ? 'На эти даты у номера уже есть бронь. Откройте бронь и заселите гостя по ней или отмените бронь.'
+                            : 'На эти даты у номера уже есть проживание',
+                        { status: 409 }
+                    );
                 }
             }
 
@@ -643,10 +680,8 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
                         guestProfileId: guestProfile?.id ?? null,
                         bookingSource: resolvedBookingSource,
                         bookingNumber: nextBookingNumber,
-                        scheduledCheckIn: payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : new Date(),
-                        scheduledCheckOut: payload.scheduledCheckOut
-                            ? new Date(payload.scheduledCheckOut)
-                            : new Date(Date.now() + 12 * 60 * 60 * 1000),
+                        scheduledCheckIn: requestedCheckIn,
+                        scheduledCheckOut: requestedCheckOut,
                         status: StayStatus.CHECKED_IN,
                         actualCheckIn: new Date(),
                         guestName: normalizeOptionalText(payload.guestName) ?? guestProfile?.fullName ?? null,
