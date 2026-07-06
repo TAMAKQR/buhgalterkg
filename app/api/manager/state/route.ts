@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
-import { addToCurrencyMap } from '@/lib/currency';
+import { addToCurrencyMap, normalizeCurrencyCode } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
@@ -209,55 +209,42 @@ export async function GET(request: NextRequest) {
             );
             managerPayoutTotals = ledgerTotals;
 
-            const balances = ledgerEntries.reduce(
-                (acc, entry) => {
-                    const signedAmount = (() => {
-                        switch (entry.entryType) {
-                            case LedgerEntryType.CASH_IN:
-                                return entry.amount;
-                            case LedgerEntryType.ADJUSTMENT:
-                                return entry.amount;
-                            case LedgerEntryType.CASH_OUT:
-                            case LedgerEntryType.MANAGER_PAYOUT:
-                                return -entry.amount;
-                            default:
-                                return 0;
-                        }
-                    })();
-
-                    if (entry.method === PaymentMethod.CASH) {
-                        acc.cash += signedAmount;
-                    } else if (entry.method === PaymentMethod.CARD) {
-                        acc.card += signedAmount;
-                    }
-
-                    return acc;
-                },
-                { cash: shift.openingCash, card: 0 }
-            );
-
-            shiftCash = balances.cash;
-            shiftBalances = {
-                cash: balances.cash,
-                card: balances.card,
-                total: balances.cash + balances.card
-            };
+            const hotelCurrency = normalizeCurrencyCode(hotel.currency, 'KGS');
             const physicalCashBalances: Record<string, number> = {
-                [hotel.currency]: shift.openingCash,
+                [hotelCurrency]: shift.openingCash,
                 USD: shift.openingCashUsd ?? 0
             };
+            let cardBalance = 0;
             for (const entry of ledgerEntries) {
-                if (entry.method !== PaymentMethod.CASH) {
+                const signedAmount = (() => {
+                    switch (entry.entryType) {
+                        case LedgerEntryType.CASH_IN:
+                        case LedgerEntryType.ADJUSTMENT:
+                            return entry.amount;
+                        case LedgerEntryType.CASH_OUT:
+                        case LedgerEntryType.MANAGER_PAYOUT:
+                            return -entry.amount;
+                        default:
+                            return 0;
+                    }
+                })();
+
+                if (entry.method === PaymentMethod.CARD) {
+                    cardBalance += signedAmount;
                     continue;
                 }
+
                 const originalAmount = entry.originalAmount ?? entry.amount;
-                const signedOriginalAmount = (
-                    entry.entryType === LedgerEntryType.CASH_IN || entry.entryType === LedgerEntryType.ADJUSTMENT
-                )
-                    ? originalAmount
-                    : -originalAmount;
+                const signedOriginalAmount = signedAmount >= 0 ? originalAmount : -originalAmount;
                 addToCurrencyMap(physicalCashBalances, entry.originalCurrency, signedOriginalAmount);
             }
+            const cashBalance = physicalCashBalances[hotelCurrency] ?? 0;
+            shiftCash = cashBalance;
+            shiftBalances = {
+                cash: cashBalance,
+                card: cardBalance,
+                total: cashBalance + cardBalance
+            };
             shiftCashByCurrency = Object.entries(physicalCashBalances)
                 .filter(([, amount]) => amount !== 0)
                 .map(([currency, amount]) => ({ currency, amount }));
