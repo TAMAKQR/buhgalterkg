@@ -862,13 +862,39 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return map;
     }, [data]);
 
+    const selectedShiftTransactions = useMemo(() => {
+        if (!selectedShift) {
+            return [];
+        }
+        return shiftTransactions.get(selectedShift.number) ?? [];
+    }, [selectedShift, shiftTransactions]);
+
     const selectedShiftCash = useMemo(() => {
         if (!selectedShift) {
             return null;
         }
         const ledger = shiftLedgerTotals.get(selectedShift.number) ?? { cashIn: 0, cashOut: 0, payouts: 0, adjustments: 0 };
-        const movement = ledger.cashIn - ledger.cashOut - ledger.payouts + ledger.adjustments;
-        const fallbackClosing = selectedShift.openingCash + movement;
+        const selectedHotelCurrency = (hotelCur || 'KGS').toUpperCase();
+        const cashMovement = selectedShiftTransactions.reduce((total, entry) => {
+            if (entry.method !== 'CASH') {
+                return total;
+            }
+            const entryCurrency = (entry.originalCurrency || selectedHotelCurrency).toUpperCase();
+            if (entryCurrency !== selectedHotelCurrency) {
+                return total;
+            }
+            switch (entry.entryType) {
+                case 'CASH_IN':
+                case 'ADJUSTMENT':
+                    return total + (entry.originalAmount ?? entry.amount);
+                case 'CASH_OUT':
+                case 'MANAGER_PAYOUT':
+                    return total - (entry.originalAmount ?? entry.amount);
+                default:
+                    return total;
+            }
+        }, 0);
+        const fallbackClosing = selectedShift.openingCash + cashMovement;
         const currentCash = selectedShift.status === 'CLOSED'
             ? typeof selectedShift.closingCash === 'number'
                 ? selectedShift.closingCash
@@ -879,14 +905,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             currentCash,
             ...ledger
         };
-    }, [selectedShift, shiftLedgerTotals]);
-
-    const selectedShiftTransactions = useMemo(() => {
-        if (!selectedShift) {
-            return [];
-        }
-        return shiftTransactions.get(selectedShift.number) ?? [];
-    }, [selectedShift, shiftTransactions]);
+    }, [hotelCur, selectedShift, selectedShiftTransactions, shiftLedgerTotals]);
 
     const selectedShiftIncomeBreakdown = useMemo(() => {
         if (!selectedShift) {
