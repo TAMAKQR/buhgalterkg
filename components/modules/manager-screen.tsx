@@ -618,7 +618,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             if (!isOnline) {
                 enqueueManagerOfflineOperation({ path, options, label });
                 refreshOfflineQueueCount();
-                toast(`${label}: сохранено локально`, 'success');
+                toast(`${label}: нет интернета, сохранено локально`, 'error');
                 return null as T | null;
             }
 
@@ -629,7 +629,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     setIsOnline(false);
                     enqueueManagerOfflineOperation({ path, options, label });
                     refreshOfflineQueueCount();
-                    toast(`${label}: сохранено локально`, 'success');
+                    toast(`${label}: нет связи, сохранено локально`, 'error');
                     return null as T | null;
                 }
                 throw requestError;
@@ -699,19 +699,22 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         : null;
     const cachedAtLabel = cachedAt ? formatDateTime(cachedAt, hotelTz) : null;
     const showOfflineStatus = !isOnline || isUsingCachedState || pendingOfflineCount > 0 || Boolean(offlineSyncError) || isSyncingOffline;
-    const offlineStatusTitle = !isOnline
-        ? 'Офлайн-режим'
-        : isSyncingOffline
-            ? 'Синхронизация'
-            : pendingOfflineCount > 0
-                ? 'Ожидает синхронизации'
-                : isUsingCachedState
-                    ? 'Локальный снимок'
-                    : 'Синхронизировано';
+    const offlineStatusTitle = offlineSyncError
+        ? 'Синхронизация не прошла'
+        : !isOnline
+            ? 'Нет интернета'
+            : isSyncingOffline
+                ? 'Синхронизация'
+                : pendingOfflineCount > 0
+                    ? 'Ожидает синхронизации'
+                    : isUsingCachedState
+                        ? 'Локальный снимок'
+                        : 'Синхронизировано';
     const offlineStatusDetail = [
+        offlineSyncError || !isOnline ? 'Проверьте интернет: операция не дошла до сервера' : null,
         isUsingCachedState && cachedAtLabel ? `данные от ${cachedAtLabel}` : null,
         pendingOfflineCount > 0 ? `${pendingOfflineCount} операций в очереди` : null,
-        offlineSyncError ? `ошибка: ${offlineSyncError}` : null,
+        offlineSyncError ? `детали: ${offlineSyncError}` : null,
     ].filter(Boolean).join(' · ');
     const OfflineStatusBanner = () => {
         if (!showOfflineStatus) {
@@ -719,9 +722,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
 
         return (
-            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError
+            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError || !isOnline
                 ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
-                : !isOnline || isUsingCachedState
+                : isUsingCachedState
                     ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
                     : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-100'
                 }`}>
@@ -1365,6 +1368,21 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }, 'Выселение');
         toast('Гость выселен', 'success');
         void refreshManagerState();
+    };
+
+    const showCheckoutConfirm = (room: ManagerStateResponse['rooms'][number], guestName: string) => {
+        setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName });
+    };
+
+    const closeCheckoutConfirm = () => {
+        setCheckoutConfirm(null);
+    };
+
+    const confirmCheckout = () => {
+        if (!checkoutConfirm) return;
+        const id = checkoutConfirm.roomId;
+        closeCheckoutConfirm();
+        void handleCheckout(id);
     };
 
     const showGroupCheckInModal = () => {
@@ -3206,7 +3224,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 variant="ghost"
                                                                 className="h-8 w-8 rounded-lg text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                                 disabled={!hasOpenShift}
-                                                                onClick={() => setCheckoutConfirm({ roomId: room.id, roomLabel: room.label, guestName: guestLabel })}
+                                                                onClick={() => showCheckoutConfirm(room, guestLabel)}
                                                                 title="Выселить"
                                                                 aria-label={`Выселить номер ${room.label}`}
                                                             >
@@ -5094,20 +5112,23 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     {/* Checkout confirmation modal */}
                     {checkoutConfirm && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-sm space-y-4 p-5 text-center text-light-text dark:text-white">
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-light-text dark:text-white">
                                 <p className="text-base font-semibold">Выселить гостя?</p>
                                 <p className="text-sm text-slate-500 dark:text-white/50">
                                     № {checkoutConfirm.roomLabel} · {checkoutConfirm.guestName}
                                 </p>
+                                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:border-rose-400/25 dark:bg-rose-500/10 dark:text-rose-200">
+                                    После подтверждения номер уйдет в уборку.
+                                </p>
                                 <div className="flex gap-2">
-                                    <Button type="button" variant="secondary" className="flex-1" onClick={() => setCheckoutConfirm(null)}>
+                                    <Button type="button" variant="secondary" className="flex-1" onClick={closeCheckoutConfirm}>
                                         Отмена
                                     </Button>
                                     <Button
                                         type="button"
                                         variant="danger"
                                         className="flex-1"
-                                        onClick={() => { const id = checkoutConfirm.roomId; setCheckoutConfirm(null); handleCheckout(id); }}
+                                        onClick={confirmCheckout}
                                     >
                                         Выселить
                                     </Button>
