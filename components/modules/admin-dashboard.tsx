@@ -2580,7 +2580,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-start"
                                                 type="date"
-                                                className="mobile-date-input block h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
+                                                className="mobile-date-input h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
                                                 value={filters.startDate}
                                                 onChange={(event) => handleFilterInput("startDate", event.target.value)}
                                                 placeholder="С даты"
@@ -2590,7 +2590,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-end"
                                                 type="date"
-                                                className="mobile-date-input block h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
+                                                className="mobile-date-input h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
                                                 value={filters.endDate}
                                                 min={filters.startDate || undefined}
                                                 onChange={(event) => handleFilterInput("endDate", event.target.value)}
