@@ -30,7 +30,7 @@ import {
     type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Sparkles, Users, WalletCards } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -538,6 +538,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
     const [checkInError, setCheckInError] = useState<string | null>(null);
+    const [isCheckInConfirmationOpen, setIsCheckInConfirmationOpen] = useState(false);
+    const checkInSubmissionRef = useRef(false);
     const [activePanel, setActivePanel] = useState<PanelKey>('rooms');
     const [roomViewMode, setRoomViewMode] = useState<RoomViewMode>('cards');
     const [collapsedBoardSections, setCollapsedBoardSections] = useState<Record<string, boolean>>({});
@@ -556,6 +558,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [groupCheckIn, setGroupCheckIn] = useState<GroupCheckInState | null>(null);
     const [isSubmittingGroupCheckIn, setIsSubmittingGroupCheckIn] = useState(false);
     const [groupCheckInError, setGroupCheckInError] = useState<string | null>(null);
+    const [isGroupCheckInConfirmationOpen, setIsGroupCheckInConfirmationOpen] = useState(false);
+    const groupCheckInSubmissionRef = useRef(false);
     const [paymentAdjust, setPaymentAdjust] = useState<PaymentAdjustState | null>(null);
     const [isSubmittingPaymentAdjust, setIsSubmittingPaymentAdjust] = useState(false);
     const [paymentAdjustError, setPaymentAdjustError] = useState<string | null>(null);
@@ -1262,8 +1266,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             : availableGroupRooms;
 
     const selectedGroupRooms = useMemo(
-        () => groupCheckIn ? groupSelectableRooms.filter((room) => groupCheckIn.roomIds.includes(room.id)) : [],
-        [groupSelectableRooms, groupCheckIn]
+        () => groupCheckIn ? sortedRooms.filter((room) => groupCheckIn.roomIds.includes(room.id)) : [],
+        [sortedRooms, groupCheckIn]
     );
 
     const groupTotalMinor = useMemo(() => {
@@ -1595,6 +1599,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const startDate = new Date();
         const endDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
 
+        setIsGroupCheckInConfirmationOpen(false);
         setGroupCheckIn({
             mode: 'checkin',
             guestName: '',
@@ -1644,7 +1649,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         });
     };
 
-    const handleGroupCheckIn = async () => {
+    const handleGroupCheckIn = async (confirmed = false) => {
         if (!groupCheckIn || !data?.shift || !data.hotel.id) return;
 
         const scheduledCheckIn = parseInputValue(groupCheckIn.checkIn, hotelTz);
@@ -1665,6 +1670,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         if (!groupCheckIn.roomIds.length) {
             setGroupCheckInError('Выберите номера для группы');
             return;
+        }
+        if (groupCheckIn.mode === 'checkin') {
+            const availableRoomIds = new Set(availableGroupRooms.map((room) => room.id));
+            if (groupCheckIn.roomIds.some((roomId) => !availableRoomIds.has(roomId))) {
+                setGroupCheckInError('Один из выбранных номеров уже недоступен. Обновите выбор');
+                return;
+            }
         }
         if (!scheduledCheckIn || !scheduledCheckOut || scheduledCheckOut <= scheduledCheckIn) {
             setGroupCheckInError('Проверьте даты заезда и выезда');
@@ -1695,6 +1707,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
+        if (groupCheckIn.mode === 'checkin' && !confirmed) {
+            setGroupCheckInError(null);
+            setIsGroupCheckInConfirmationOpen(true);
+            return;
+        }
+
+        if (groupCheckInSubmissionRef.current) return;
+        groupCheckInSubmissionRef.current = true;
         setIsSubmittingGroupCheckIn(true);
         try {
             await sendManagerRequest('/api/rooms/group-stay', {
@@ -1718,13 +1738,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 },
             }, groupCheckIn.mode === 'edit' ? 'Редактирование группы' : groupCheckIn.mode === 'booking' ? 'Групповая бронь' : 'Групповой заезд');
             toast(groupCheckIn.mode === 'edit' ? 'Групповая бронь сохранена' : groupCheckIn.mode === 'booking' ? 'Групповая бронь создана' : 'Групповой заезд создан', 'success');
+            setIsGroupCheckInConfirmationOpen(false);
             setGroupCheckIn(null);
             setGroupCheckInError(null);
             void refreshManagerState();
         } catch (error) {
             console.error(error);
+            setIsGroupCheckInConfirmationOpen(false);
             setGroupCheckInError(error instanceof Error ? error.message : 'Не удалось создать групповой заезд');
         } finally {
+            groupCheckInSubmissionRef.current = false;
             setIsSubmittingGroupCheckIn(false);
         }
     };
@@ -1747,6 +1770,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const nextBookingDate = nextScheduledBooking ? new Date(nextScheduledBooking.scheduledCheckIn) : null;
         const endDate = nextBookingDate && nextBookingDate < defaultEndDate ? nextBookingDate : defaultEndDate;
 
+        setIsCheckInConfirmationOpen(false);
         setCheckInModal({
             mode: 'checkin',
             roomId: room.id,
@@ -2085,6 +2109,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
         stopGuestQrScanner();
         setGuestQrModal(null);
+        setIsCheckInConfirmationOpen(false);
         setCheckInModal({
             mode: 'checkin',
             guestProfileId: guest.id,
@@ -2192,6 +2217,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
+        setIsCheckInConfirmationOpen(false);
         setCheckInModal({
             mode: 'checkin',
             stayId: details.stay.id,
@@ -2588,7 +2614,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
     };
 
-    const handleConfirmCheckIn = async () => {
+    const handleConfirmCheckIn = async (confirmed = false) => {
         if (!checkInModal) {
             return;
         }
@@ -2604,6 +2630,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 return;
             }
 
+            if (checkInSubmissionRef.current) return;
+            checkInSubmissionRef.current = true;
             setIsSubmittingCheckIn(true);
             try {
                 await sendManagerRequest(`/api/rooms/${checkInModal.roomId}/stay`, {
@@ -2622,6 +2650,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 console.error(modalError);
                 setCheckInError('Не удалось переселить гостя');
             } finally {
+                checkInSubmissionRef.current = false;
                 setIsSubmittingCheckIn(false);
             }
 
@@ -2724,6 +2753,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 return;
             }
 
+            if (checkInSubmissionRef.current) return;
+            checkInSubmissionRef.current = true;
             setIsSubmittingCheckIn(true);
             try {
                 await sendManagerRequest(`/api/rooms/${checkInModal.roomId}/stay`, {
@@ -2750,6 +2781,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 console.error(modalError);
                 setCheckInError(modalError instanceof Error ? modalError.message : 'Не удалось сохранить данные');
             } finally {
+                checkInSubmissionRef.current = false;
                 setIsSubmittingCheckIn(false);
             }
 
@@ -2761,6 +2793,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             return;
         }
 
+        if (checkInModal.mode === 'checkin' && !confirmed) {
+            setCheckInError(null);
+            setIsCheckInConfirmationOpen(true);
+            return;
+        }
+
+        if (checkInSubmissionRef.current) return;
+        checkInSubmissionRef.current = true;
         setIsSubmittingCheckIn(true);
         try {
             await sendManagerRequest(`/api/rooms/${checkInModal.roomId}/stay`, {
@@ -2785,20 +2825,30 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     onlineAmount: onlineMinor
                 }
             }, checkInModal.mode === 'book' ? `Бронь № ${checkInModal.label}` : checkInModal.mode === 'extend' ? `Продление № ${checkInModal.label}` : `Заселение № ${checkInModal.label}`);
+            setIsCheckInConfirmationOpen(false);
             setCheckInModal(null);
             setCheckInError(null);
             toast(checkInModal.mode === 'book' ? 'Бронь создана' : checkInModal.mode === 'extend' ? 'Проживание продлено' : 'Гость заселён', 'success');
             void refreshManagerState();
         } catch (modalError) {
             console.error(modalError);
-            setCheckInError(checkInModal.mode === 'book' ? 'Не удалось создать бронь' : checkInModal.mode === 'extend' ? 'Не удалось продлить проживание' : 'Не удалось заселить гостя');
+            setIsCheckInConfirmationOpen(false);
+            setCheckInError(modalError instanceof Error
+                ? modalError.message
+                : checkInModal.mode === 'book'
+                    ? 'Не удалось создать бронь'
+                    : checkInModal.mode === 'extend'
+                        ? 'Не удалось продлить проживание'
+                        : 'Не удалось заселить гостя');
         } finally {
+            checkInSubmissionRef.current = false;
             setIsSubmittingCheckIn(false);
         }
     };
 
     const handleCloseModal = () => {
         if (isSubmittingCheckIn) return;
+        setIsCheckInConfirmationOpen(false);
         setCheckInModal(null);
         setCheckInError(null);
     };
@@ -4086,7 +4136,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">Группа</p>
                                         <h3 className="mt-1 text-base font-semibold">{groupCheckIn.mode === 'edit' ? 'Редактировать группу' : 'Групповой заезд'}</h3>
                                     </div>
-                                    <Button type="button" variant="ghost" size="sm" disabled={isSubmittingGroupCheckIn} onClick={() => setGroupCheckIn(null)}>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={isSubmittingGroupCheckIn}
+                                        onClick={() => {
+                                            setIsGroupCheckInConfirmationOpen(false);
+                                            setGroupCheckIn(null);
+                                        }}
+                                    >
                                         ×
                                     </Button>
                                 </div>
@@ -4353,11 +4412,95 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                                     {groupCheckInError && <p className="text-xs text-rose-300">{groupCheckInError}</p>}
 
-                                    <Button type="button" className="w-full py-3" disabled={isSubmittingGroupCheckIn} onClick={handleGroupCheckIn}>
-                                        {isSubmittingGroupCheckIn ? 'Сохраняем...' : groupCheckIn.mode === 'edit' ? 'Сохранить группу' : groupCheckIn.mode === 'booking' ? 'Создать групповую бронь' : 'Создать групповой заезд'}
+                                    <Button type="button" className="w-full py-3" disabled={isSubmittingGroupCheckIn} onClick={() => void handleGroupCheckIn()}>
+                                        {isSubmittingGroupCheckIn ? 'Сохраняем...' : groupCheckIn.mode === 'edit' ? 'Сохранить группу' : groupCheckIn.mode === 'booking' ? 'Создать групповую бронь' : 'Проверить групповой заезд'}
                                     </Button>
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {isGroupCheckInConfirmationOpen && groupCheckIn?.mode === 'checkin' && (
+                        <div
+                            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 px-3 py-5 backdrop-blur-sm"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="group-checkin-confirmation-title"
+                            onKeyDown={(event) => {
+                                if (event.key === 'Escape' && !isSubmittingGroupCheckIn) {
+                                    setIsGroupCheckInConfirmationOpen(false);
+                                }
+                            }}
+                        >
+                            <Card className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain p-4 text-light-text shadow-2xl dark:text-white sm:p-5">
+                                <div className="flex items-start gap-3">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                                        <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-white/40">Последняя проверка</p>
+                                        <h3 id="group-checkin-confirmation-title" className="mt-1 text-lg font-semibold">Подтвердите групповой заезд</h3>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/50">Проверьте номера и оплату перед заселением.</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-white/[0.08] dark:bg-white/[0.035]">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">Группа</span>
+                                        <span className="max-w-[70%] text-right text-sm font-semibold">{groupCheckIn.guestName.trim() || 'Без названия'}</span>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">Номера</span>
+                                        <span className="max-h-20 max-w-[70%] overflow-y-auto break-words text-right text-sm font-semibold">
+                                            {selectedGroupRooms.map((room) => `№ ${room.label}`).join(', ')}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3 dark:border-white/[0.08]">
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/35">Заезд</p>
+                                            <p className="mt-1 text-xs font-medium">{formatDateTime(parseInputValue(groupCheckIn.checkIn, hotelTz)!, hotelTz)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/35">Выезд</p>
+                                            <p className="mt-1 text-xs font-medium">{formatDateTime(parseInputValue(groupCheckIn.checkOut, hotelTz)!, hotelTz)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-3 border-t border-slate-200 pt-3 dark:border-white/[0.08]">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">{isGroupPostpaidMode ? 'Тариф' : 'Оплата'}</span>
+                                        <div className="text-right">
+                                            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                                                {isGroupTariffPendingMode ? 'Тариф уточняется' : formatKgs(groupDisplayTotalMinor)}
+                                            </p>
+                                            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-white/35">
+                                                {{ CASH: 'Наличные', CARD: 'Безналичные', SITE: 'На сайте', PENDING_TRANSFER: 'Перевод ожидается', POSTPAY: 'Постоплата · сейчас без оплаты', POSTPAY_UNKNOWN: 'Постоплата · сейчас без оплаты' }[groupCheckIn.paymentMode]}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <p className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+                                    После подтверждения {selectedGroupRooms.length} {selectedGroupRooms.length === 1 ? 'номер станет занятым' : 'номера станут занятыми'} и операция попадёт в текущую смену.
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        autoFocus
+                                        disabled={isSubmittingGroupCheckIn}
+                                        onClick={() => setIsGroupCheckInConfirmationOpen(false)}
+                                    >
+                                        Вернуться
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        disabled={isSubmittingGroupCheckIn}
+                                        onClick={() => void handleGroupCheckIn(true)}
+                                    >
+                                        {isSubmittingGroupCheckIn ? 'Заселяем…' : `Заселить ${selectedGroupRooms.length}`}
+                                    </Button>
+                                </div>
+                            </Card>
                         </div>
                     )}
 
@@ -4941,15 +5084,109 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         type="button"
                                         className="w-full py-3 mt-1"
                                         disabled={isSubmittingCheckIn}
-                                        onClick={handleConfirmCheckIn}
+                                        onClick={() => void handleConfirmCheckIn()}
                                     >
-                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'book' ? 'Поставить бронь' : checkInModal.mode === 'extend' ? 'Продлить' : checkInModal.mode === 'transfer' ? 'Переселить' : checkInModal.mode === 'edit' ? 'Сохранить' : 'Заселить'}
+                                        {isSubmittingCheckIn ? 'Сохраняем...' : checkInModal.mode === 'book' ? 'Поставить бронь' : checkInModal.mode === 'extend' ? 'Продлить' : checkInModal.mode === 'transfer' ? 'Переселить' : checkInModal.mode === 'edit' ? 'Сохранить' : 'Проверить и заселить'}
                                     </Button>
                                 </div>
                             </div>
                         </div>
                     )
                     }
+
+                    {isCheckInConfirmationOpen && checkInModal?.mode === 'checkin' && (
+                        <div
+                            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 px-3 py-5 backdrop-blur-sm"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="checkin-confirmation-title"
+                            onKeyDown={(event) => {
+                                if (event.key === 'Escape' && !isSubmittingCheckIn) {
+                                    setIsCheckInConfirmationOpen(false);
+                                }
+                            }}
+                        >
+                            <Card className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain p-4 text-light-text shadow-2xl dark:text-white sm:p-5">
+                                <div className="flex items-start gap-3">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                                        <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-white/40">Последняя проверка</p>
+                                            {checkInModal.stayId ? (
+                                                <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-300">По брони</span>
+                                            ) : null}
+                                        </div>
+                                        <h3 id="checkin-confirmation-title" className="mt-1 text-lg font-semibold">Подтвердите заселение</h3>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/50">Операция выполнится только после повторного подтверждения.</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-white/[0.08] dark:bg-white/[0.035]">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">Номер</span>
+                                        <span className="text-right text-base font-semibold">№ {checkInModal.label}</span>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">Гость</span>
+                                        <div className="max-w-[70%] text-right">
+                                            <p className="text-sm font-semibold">{checkInModal.guestName.trim() || 'Имя не указано'}</p>
+                                            {checkInModal.guestPhone.trim() ? <p className="mt-0.5 text-[11px] text-slate-500 dark:text-white/40">{checkInModal.guestPhone}</p> : null}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3 dark:border-white/[0.08]">
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/35">Заезд</p>
+                                            <p className="mt-1 text-xs font-medium">{formatDateTime(parseInputValue(checkInModal.checkIn, hotelTz)!, hotelTz)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/35">Выезд</p>
+                                            <p className="mt-1 text-xs font-medium">{formatDateTime(parseInputValue(checkInModal.checkOut, hotelTz)!, hotelTz)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-3 border-t border-slate-200 pt-3 dark:border-white/[0.08]">
+                                        <span className="text-xs text-slate-500 dark:text-white/45">Оплата</span>
+                                        <span className="text-right text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                                            {formatKgs(
+                                                checkInModal.existingPaid
+                                                + toMinor(convertCashMajorToAccountingMajor(
+                                                    Number(checkInModal.cashAmount || 0),
+                                                    checkInModal.cashCurrency,
+                                                    Number(checkInModal.cashExchangeRate || 0)
+                                                ))
+                                                + toMinor(Number(checkInModal.cardAmount || 0))
+                                                + toMinor(Number(checkInModal.onlineAmount || 0))
+                                            )}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <p className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+                                    После подтверждения номер № {checkInModal.label} станет занятым. Новые наличные и безналичные суммы, если указаны, будут записаны в текущую смену.
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        autoFocus
+                                        disabled={isSubmittingCheckIn}
+                                        onClick={() => setIsCheckInConfirmationOpen(false)}
+                                    >
+                                        Вернуться
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        disabled={isSubmittingCheckIn}
+                                        onClick={() => void handleConfirmCheckIn(true)}
+                                    >
+                                        {isSubmittingCheckIn ? 'Заселяем…' : 'Да, заселить'}
+                                    </Button>
+                                </div>
+                            </Card>
+                        </div>
+                    )}
 
                     {boardListPopup && (() => {
                         const isFreeDatesPopup = boardListPopup === 'freeDates';
