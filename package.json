@@ -5,7 +5,8 @@
     "scripts": {
         "dev": "next dev",
         "build": "prisma generate && next build",
-        "render:build": "prisma migrate deploy && prisma generate && next build",
+        "postbuild": "node scripts/render_migrate_if_needed.mjs",
+        "render:build": "npm run build",
         "start": "next start",
         "lint": "eslint . --max-warnings 0",
         "typecheck": "tsc --noEmit",

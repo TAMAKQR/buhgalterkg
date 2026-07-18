@@ -141,8 +141,8 @@ npm run build
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Start the dev server |
-| `npm run build` | Production build |
-| `npm run render:build` | Apply production migrations, generate Prisma Client, and build for Render |
+| `npm run build` | Create the production build; on Render, apply pending migrations only after a successful build |
+| `npm run render:build` | Run the same Render-safe production build explicitly |
 | `npm start` | Start Next.js in production mode |
 | `npm run lint` | ESLint checks |
 | `npm run typecheck` | TypeScript checks without emitting files |
