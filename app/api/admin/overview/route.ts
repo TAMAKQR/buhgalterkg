@@ -128,6 +128,64 @@ const overlapNights = (start: Date, end: Date, rangeStart: Date, rangeEnd: Date)
     return Math.max(1, Math.ceil((to - from) / 86_400_000));
 };
 
+const EXPENSE_PAGE_SIZE = 50;
+const EXPENSE_PAGE_SIZE_MAX = 100;
+const expenseEntryTypes = [
+    LedgerEntryType.CASH_OUT,
+    LedgerEntryType.MANAGER_PAYOUT,
+    LedgerEntryType.ADJUSTMENT,
+] as const;
+const expenseEntrySelect = {
+    id: true,
+    hotelId: true,
+    amount: true,
+    method: true,
+    note: true,
+    recordedAt: true,
+    entryType: true,
+    expenseCategory: {
+        select: {
+            name: true,
+        },
+    },
+    hotel: {
+        select: {
+            name: true,
+            currency: true,
+            timezone: true,
+        },
+    },
+    manager: {
+        select: {
+            displayName: true,
+        },
+    },
+} satisfies Prisma.CashEntrySelect;
+
+type ExpenseEntryRecord = Prisma.CashEntryGetPayload<{ select: typeof expenseEntrySelect }>;
+
+const serializeExpenseEntry = (entry: ExpenseEntryRecord) => ({
+    id: entry.id,
+    hotelId: entry.hotelId,
+    hotelName: entry.hotel.name,
+    amount: entry.amount,
+    method: entry.method,
+    note: entry.note,
+    categoryName: entry.expenseCategory?.name ?? null,
+    recordedAt: entry.recordedAt,
+    entryType: entry.entryType,
+    managerName: entry.manager?.displayName ?? null,
+    currency: entry.hotel.currency,
+    timezone: entry.hotel.timezone,
+});
+
+const parseBoundedInteger = (value: string | null, fallback: number, max: number) => {
+    if (value == null || value.trim() === "") return fallback;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) return fallback;
+    return Math.min(parsed, max);
+};
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
@@ -147,6 +205,7 @@ export async function GET(request: NextRequest) {
 
         const hotelIds = parseIds("hotelId");
         const managerIds = parseIds("managerId");
+        const shiftIds = parseIds("shiftId");
 
         const startDate = parseInputValue(searchParams.get("startAt"), countryConfig.timezone)
             ?? parseDateOnly(searchParams.get("startDate"), false, countryConfig.timezone);
@@ -171,6 +230,9 @@ export async function GET(request: NextRequest) {
         if (managerIds.length) {
             shiftScopeWhere.managerId = { in: managerIds };
         }
+        if (shiftIds.length) {
+            shiftScopeWhere.id = { in: shiftIds };
+        }
 
         const ledgerWhere: Prisma.CashEntryWhereInput = {
             hotel: { country },
@@ -181,11 +243,47 @@ export async function GET(request: NextRequest) {
         if (managerIds.length) {
             ledgerWhere.managerId = { in: managerIds };
         }
+        if (shiftIds.length) {
+            ledgerWhere.shiftId = { in: shiftIds };
+        }
         if (startDate || endDate) {
             ledgerWhere.recordedAt = {
                 ...(startDate ? { gte: startDate } : {}),
                 ...(endDate ? { lte: endDate } : {}),
             };
+        }
+
+        const expenseWhere: Prisma.CashEntryWhereInput = {
+            ...ledgerWhere,
+            entryType: { in: [...expenseEntryTypes] },
+        };
+
+        if (searchParams.get("view") === "expenses") {
+            const offset = parseBoundedInteger(searchParams.get("expenseOffset"), 0, 1_000_000);
+            const limit = Math.max(1, parseBoundedInteger(searchParams.get("expenseLimit"), EXPENSE_PAGE_SIZE, EXPENSE_PAGE_SIZE_MAX));
+            const [entries, total] = await prisma.$transaction([
+                prisma.cashEntry.findMany({
+                    where: expenseWhere,
+                    orderBy: [{ recordedAt: "desc" }, { id: "desc" }],
+                    skip: offset,
+                    take: limit,
+                    select: expenseEntrySelect,
+                }),
+                prisma.cashEntry.count({ where: expenseWhere }),
+            ]);
+            const loadedThrough = offset + entries.length;
+
+            return NextResponse.json({
+                recentExpenses: entries.map(serializeExpenseEntry),
+                recentExpensesMeta: {
+                    total,
+                    offset,
+                    returned: entries.length,
+                    limit,
+                    hasMore: loadedThrough < total,
+                    truncated: loadedThrough < total,
+                },
+            });
         }
 
         const [hotelCount, totalRooms, occupiedRooms, activeShifts, lastShift, ledgerGroups, collectionEntries, targetHotels] = await prisma.$transaction([
@@ -287,6 +385,9 @@ export async function GET(request: NextRequest) {
         if (managerIds.length) {
             stayRankingWhere.shift = { managerId: { in: managerIds } };
         }
+        if (shiftIds.length) {
+            stayRankingWhere.shiftId = { in: shiftIds };
+        }
 
         const shiftRankingWhere: Prisma.ShiftWhereInput = {
             ...shiftScopeWhere,
@@ -296,52 +397,23 @@ export async function GET(request: NextRequest) {
             },
         };
 
-        const [recentExpenses, rankingLedgerEntries, rankingStays, rankingShifts] = await prisma.$transaction([
+        const [recentExpenses, recentExpensesTotal, rankingLedgerEntries, rankingStays, rankingShifts] = await prisma.$transaction([
             prisma.cashEntry.findMany({
-                where: {
-                    ...ledgerWhere,
-                    entryType: { in: [LedgerEntryType.CASH_OUT, LedgerEntryType.MANAGER_PAYOUT, LedgerEntryType.ADJUSTMENT] },
-                },
-                orderBy: { recordedAt: "desc" },
-                take: 200,
-                select: {
-                    id: true,
-                    hotelId: true,
-                    amount: true,
-                    method: true,
-                    note: true,
-                    recordedAt: true,
-                    entryType: true,
-                    expenseCategory: {
-                        select: {
-                            name: true,
-                        },
-                    },
-                    hotel: {
-                        select: {
-                            name: true,
-                            currency: true,
-                            timezone: true,
-                        },
-                    },
-                    manager: {
-                        select: {
-                            displayName: true,
-                        },
-                    },
-                },
+                where: expenseWhere,
+                orderBy: [{ recordedAt: "desc" }, { id: "desc" }],
+                take: EXPENSE_PAGE_SIZE,
+                select: expenseEntrySelect,
             }),
+            prisma.cashEntry.count({ where: expenseWhere }),
             prisma.cashEntry.findMany({
                 where: ledgerWhere,
                 select: {
-                    id: true,
                     hotelId: true,
                     managerId: true,
+                    shiftId: true,
                     entryType: true,
                     amount: true,
-                    method: true,
                     note: true,
-                    meta: true,
                     expenseCategory: {
                         select: { name: true },
                     },
@@ -356,6 +428,14 @@ export async function GET(request: NextRequest) {
                         select: {
                             id: true,
                             displayName: true,
+                        },
+                    },
+                    shift: {
+                        select: {
+                            id: true,
+                            number: true,
+                            openedAt: true,
+                            status: true,
                         },
                     },
                 },
@@ -376,6 +456,8 @@ export async function GET(request: NextRequest) {
                     },
                     shift: {
                         select: {
+                            id: true,
+                            number: true,
                             managerId: true,
                             manager: {
                                 select: {
@@ -391,6 +473,9 @@ export async function GET(request: NextRequest) {
                 where: shiftRankingWhere,
                 select: {
                     id: true,
+                    number: true,
+                    openedAt: true,
+                    status: true,
                     hotelId: true,
                     managerId: true,
                     hotel: {
@@ -929,6 +1014,74 @@ export async function GET(request: NextRequest) {
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, values]) => ({ date, ...values }));
 
+        const shiftBreakdownMap = new Map<string, {
+            id: string;
+            number: number;
+            openedAt: Date;
+            status: ShiftStatus;
+            hotelId: string;
+            hotelName: string;
+            managerName: string;
+            cashIn: number;
+            cashOut: number;
+            collections: number;
+            payouts: number;
+            adjustments: number;
+            stays: number;
+        }>();
+
+        if (shiftIds.length > 0) {
+            for (const shift of rankingShifts) {
+                shiftBreakdownMap.set(shift.id, {
+                    id: shift.id,
+                    number: shift.number,
+                    openedAt: shift.openedAt,
+                    status: shift.status,
+                    hotelId: shift.hotelId,
+                    hotelName: shift.hotel.name,
+                    managerName: shift.manager.displayName,
+                    cashIn: 0,
+                    cashOut: 0,
+                    collections: 0,
+                    payouts: 0,
+                    adjustments: 0,
+                    stays: 0,
+                });
+            }
+            for (const entry of rankingLedgerEntries) {
+                if (!entry.shiftId || !entry.shift) continue;
+                const bucket = shiftBreakdownMap.get(entry.shiftId) ?? {
+                    id: entry.shiftId,
+                    number: entry.shift.number,
+                    openedAt: entry.shift.openedAt,
+                    status: entry.shift.status,
+                    hotelId: entry.hotelId,
+                    hotelName: entry.hotel.name,
+                    managerName: entry.manager?.displayName ?? "Менеджер",
+                    cashIn: 0,
+                    cashOut: 0,
+                    collections: 0,
+                    payouts: 0,
+                    adjustments: 0,
+                    stays: 0,
+                };
+                if (entry.entryType === LedgerEntryType.CASH_IN) bucket.cashIn += entry.amount;
+                else if (isCollectionLedgerEntry(entry)) bucket.collections += entry.amount;
+                else if (entry.entryType === LedgerEntryType.CASH_OUT) bucket.cashOut += entry.amount;
+                else if (entry.entryType === LedgerEntryType.MANAGER_PAYOUT) bucket.payouts += entry.amount;
+                else if (entry.entryType === LedgerEntryType.ADJUSTMENT) bucket.adjustments += entry.amount;
+                shiftBreakdownMap.set(entry.shiftId, bucket);
+            }
+            for (const stay of rankingStays) {
+                if (!stay.shift?.id) continue;
+                const bucket = shiftBreakdownMap.get(stay.shift.id);
+                if (bucket) bucket.stays += 1;
+            }
+        }
+        const shiftBreakdowns = Array.from(shiftBreakdownMap.values())
+            .map((item) => ({ ...item, net: item.cashIn - item.cashOut - item.collections - item.payouts + item.adjustments }))
+            .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
+
         return NextResponse.json({
             display: {
                 country,
@@ -968,6 +1121,7 @@ export async function GET(request: NextRequest) {
                 onTrack: monthlyRequiredRevenue > 0 ? projectedRevenue >= monthlyRequiredRevenue : false,
             },
             dailySeries,
+            breakdowns: shiftIds.length > 0 ? { shifts: shiftBreakdowns } : undefined,
             rankings: {
                 period: {
                     startAt: rankingRangeStart,
@@ -978,21 +1132,15 @@ export async function GET(request: NextRequest) {
                 managers: managerLeaders,
                 managersByHotel: managerHotelGroups,
             },
-            recentExpenses: recentExpenses
-                .map((entry) => ({
-                    id: entry.id,
-                    hotelId: entry.hotelId,
-                    hotelName: entry.hotel.name,
-                    amount: entry.amount,
-                    method: entry.method,
-                    note: entry.note,
-                    categoryName: entry.expenseCategory?.name ?? null,
-                    recordedAt: entry.recordedAt,
-                    entryType: entry.entryType,
-                    managerName: entry.manager?.displayName ?? null,
-                    currency: entry.hotel.currency,
-                    timezone: entry.hotel.timezone,
-                })),
+            recentExpenses: recentExpenses.map(serializeExpenseEntry),
+            recentExpensesMeta: {
+                total: recentExpensesTotal,
+                offset: 0,
+                returned: recentExpenses.length,
+                limit: EXPENSE_PAGE_SIZE,
+                hasMore: recentExpenses.length < recentExpensesTotal,
+                truncated: recentExpenses.length < recentExpensesTotal,
+            },
         });
     } catch (error) {
         return handleApiError(error, "Failed to load overview");

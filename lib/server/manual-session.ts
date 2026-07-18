@@ -1,9 +1,17 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
+import { prisma } from '@/lib/db';
 import type { SessionUser } from '@/lib/types';
 
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
 const SESSION_TTL_MINUTES = Number(process.env.ADMIN_SESSION_TTL_MINUTES ?? '720');
+const MIN_SESSION_SECRET_BYTES = 32;
+const unsafeSessionSecrets = new Set([
+    'set-a-strong-secret',
+    'change-me',
+    'replace-me',
+    'your-secret',
+]);
 
 type TokenPayload = {
     exp: number;
@@ -16,11 +24,15 @@ const cloneSessionUser = (user: SessionUser): SessionUser => ({
 });
 
 const manualSecretReady = () => {
-    const hasSecret = Boolean(SESSION_SECRET);
-    if (!hasSecret) {
-        console.error('[manual-session] ADMIN_SESSION_SECRET is not configured');
+    const normalizedSecret = SESSION_SECRET?.trim() ?? '';
+    const isPlaceholder = unsafeSessionSecrets.has(normalizedSecret.toLowerCase())
+        || /(?:change|replace|generate|example|placeholder|secret[-_ ]?here)/i.test(normalizedSecret);
+    const isReady = Buffer.byteLength(normalizedSecret, 'utf8') >= MIN_SESSION_SECRET_BYTES && !isPlaceholder;
+
+    if (!isReady) {
+        console.error('[manual-session] ADMIN_SESSION_SECRET must be a non-placeholder secret of at least 32 bytes');
     }
-    return hasSecret;
+    return isReady;
 };
 
 const sign = (payload: string) => {
@@ -93,6 +105,65 @@ export const resolveManualSession = (token?: string): SessionUser | null => {
     }
 };
 
+const refreshManualSessionUser = async (snapshot: SessionUser): Promise<SessionUser | null> => {
+    // The web administrator is configured through environment variables and
+    // intentionally has no User row to revalidate against.
+    if (snapshot.role === 'ADMIN' && snapshot.id === 'manual-admin') {
+        return cloneSessionUser(snapshot);
+    }
+
+    const scopedHotelIds = snapshot.hotels.map((hotel) => hotel.id);
+    const user = await prisma.user.findUnique({
+        where: { id: snapshot.id },
+        select: {
+            id: true,
+            telegramId: true,
+            displayName: true,
+            username: true,
+            avatarUrl: true,
+            role: true,
+            assignments: {
+                where: {
+                    isActive: true,
+                    role: snapshot.role,
+                    ...(scopedHotelIds.length > 0 ? { hotelId: { in: scopedHotelIds } } : {})
+                },
+                select: {
+                    hotel: {
+                        select: { id: true, name: true, address: true }
+                    }
+                }
+            }
+        }
+    });
+
+    // A role change invalidates the old signed snapshot instead of silently
+    // granting the permissions of either the old or the new role.
+    if (!user || user.role !== snapshot.role) {
+        return null;
+    }
+
+    const hotels = user.role === 'ADMIN'
+        ? snapshot.hotels
+        : user.assignments.map((assignment) => assignment.hotel);
+
+    // Managers and observers without an active assignment are revoked
+    // immediately, even if their signed cookie has not expired yet.
+    if (user.role !== 'ADMIN' && hotels.length === 0) {
+        return null;
+    }
+
+    return {
+        id: user.id,
+        telegramId: user.telegramId,
+        displayName: user.displayName,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+        hotels
+    };
+};
+
 export const getManualSessionUser = async (req: Request): Promise<SessionUser | null> => {
     const cookieHeader = req.headers.get('cookie');
     if (!cookieHeader) {
@@ -107,5 +178,6 @@ export const getManualSessionUser = async (req: Request): Promise<SessionUser | 
     );
 
     const token = cookies['manualSession'];
-    return resolveManualSession(token);
+    const snapshot = resolveManualSession(token);
+    return snapshot ? refreshManualSessionUser(snapshot) : null;
 };

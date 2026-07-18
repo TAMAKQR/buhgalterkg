@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { assertHotelAccess } from '@/lib/permissions';
-import { handleApiError } from '@/lib/server/errors';
+import { assertHotelAccess, assertOperationalRole } from '@/lib/permissions';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { getSessionUser } from '@/lib/server/session';
+import { getDatabaseActorUserId } from '@/lib/server/audit-actor';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,14 +39,16 @@ const changedProfileFields = (
     after: ReturnType<typeof guestProfileSnapshot>
 ) => Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
 
-export async function PATCH(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ guestProfileId: string }> }) {
     try {
+        const { guestProfileId } = await params;
         const session = await getSessionUser(request);
+        assertOperationalRole(session);
         const body = await request.json();
         const payload = updateGuestProfileSchema.parse(body);
 
         const profile = await prisma.guestProfile.findUnique({
-            where: { id: params.guestProfileId },
+            where: { id: guestProfileId },
             select: {
                 id: true,
                 hotelId: true,
@@ -55,12 +58,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                 documentNumber: true,
                 verificationStatus: true,
                 notes: true,
-                qrTokens: {
-                    where: { revokedAt: null },
-                    orderBy: { createdAt: 'desc' },
-                    take: 5,
-                    select: { hotelId: true }
-                }
+                updatedAt: true
             }
         });
 
@@ -68,40 +66,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
             return new NextResponse('Guest profile not found', { status: 404 });
         }
 
-        const accessibleHotelIds = new Set<string>();
-        if (profile.hotelId) {
-            accessibleHotelIds.add(profile.hotelId);
-        }
-        for (const token of profile.qrTokens) {
-            if (token.hotelId) {
-                accessibleHotelIds.add(token.hotelId);
-            }
-        }
-
-        if (!accessibleHotelIds.size) {
+        if (!profile.hotelId) {
             return new NextResponse('Guest profile is not assigned to a hotel', { status: 403 });
         }
-
-        if (session.role !== 'ADMIN') {
-            const sessionHotelIds = new Set(session.hotels.map((hotel) => hotel.id));
-            const hasAccess = [...accessibleHotelIds].some((hotelId) => sessionHotelIds.has(hotelId));
-
-            if (!hasAccess) {
-                return new NextResponse('You are not assigned to this hotel', { status: 403 });
-            }
-        } else {
-            for (const hotelId of accessibleHotelIds) {
-                assertHotelAccess(session, hotelId);
-            }
-        }
+        assertHotelAccess(session, profile.hotelId);
 
         const nextDocumentNumber = normalizeOptionalText(payload.documentNumber);
         const documentChanged = (profile.documentNumber ?? null) !== nextDocumentNumber;
         const beforeSnapshot = guestProfileSnapshot(profile);
+        const actorUserId = getDatabaseActorUserId(session);
 
         const result = await prisma.$transaction(async (tx) => {
-            const nextProfile = await tx.guestProfile.update({
-                where: { id: profile.id },
+            const updateResult = await tx.guestProfile.updateMany({
+                where: {
+                    id: profile.id,
+                    hotelId: profile.hotelId,
+                    updatedAt: profile.updatedAt
+                },
                 data: {
                     fullName: payload.fullName,
                     phone: normalizeOptionalText(payload.phone),
@@ -115,7 +96,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                             verifiedHotelId: null
                         }
                         : {})
-                },
+                }
+            });
+
+            if (updateResult.count !== 1) {
+                throw new SessionError('Профиль уже изменён. Обновите данные и повторите', 409);
+            }
+
+            const nextProfile = await tx.guestProfile.findUniqueOrThrow({
+                where: { id: profile.id },
                 select: {
                     id: true,
                     fullName: true,
@@ -154,8 +143,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                 auditLog = await tx.guestProfileAuditLog.create({
                     data: {
                         guestProfileId: nextProfile.id,
-                        hotelId: nextProfile.hotelId ?? [...accessibleHotelIds][0] ?? null,
-                        actorUserId: session.id,
+                        hotelId: nextProfile.hotelId,
+                        actorUserId,
                         actorType: session.role === 'ADMIN' ? 'ADMIN' : 'MANAGER',
                         actorLabel: session.displayName,
                         action: 'PROFILE_UPDATED',

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { buildShiftAnalysis } from '@/lib/ai-shift-analysis';
 import { prisma } from '@/lib/db';
-import { assertHotelAccess } from '@/lib/permissions';
+import { assertHotelOperatorAccess } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
             return new NextResponse('Manager is not assigned to a hotel', { status: 400 });
         }
 
-        assertHotelAccess(session, hotelId);
+        assertHotelOperatorAccess(session, hotelId);
 
         const shift = await prisma.shift.findFirst({
             where: {

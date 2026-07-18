@@ -4,9 +4,10 @@ import { FormEvent, useState } from 'react';
 
 import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
+import { AuthShell } from '@/components/ui/auth-shell';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Eye } from 'lucide-react';
 
 interface ObserverLoginProps {
     onBack?: () => void;
@@ -50,39 +51,39 @@ export function ObserverLogin({ onBack }: ObserverLoginProps) {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-night px-4">
-            <Card className="w-full max-w-sm space-y-5 p-5 text-white">
-                <div className="space-y-1">
-                    {onBack && (
-                        <button type="button" className="text-xs text-white/40 hover:text-white/70 transition-colors" onClick={onBack}>
-                            ← Назад
-                        </button>
-                    )}
-                    <h1 className="text-xl font-semibold">Наблюдатель</h1>
-                    <p className="text-xs text-white/40">Только просмотр</p>
-                </div>
-                <form className="space-y-3" onSubmit={handleSubmit}>
+        <AuthShell
+            title="Вход наблюдателя"
+            description="Просмотр сводок без редактирования"
+            icon={<Eye className="h-5 w-5" aria-hidden="true" />}
+            onBack={onBack}
+        >
+            <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+                <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Логин</span>
                     <Input
-                        placeholder="Логин"
+                        placeholder="Введите логин"
                         value={login}
                         onChange={(e) => setLogin(e.target.value)}
                         disabled={pending}
                         autoComplete="username"
                     />
+                </label>
+                <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Пароль</span>
                     <Input
                         type="password"
-                        placeholder="Пароль"
+                        placeholder="Введите пароль"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         disabled={pending}
                         autoComplete="current-password"
                     />
-                    {error && <p className="text-xs text-rose-400">{error}</p>}
-                    <Button type="submit" className="w-full" disabled={pending || !login || !password}>
-                        {pending ? 'Вход…' : 'Войти'}
-                    </Button>
-                </form>
-            </Card>
-        </div>
+                </label>
+                {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</p>}
+                <Button type="submit" className="w-full" disabled={pending || !login || !password}>
+                    {pending ? 'Вход…' : 'Войти'}
+                </Button>
+            </form>
+        </AuthShell>
     );
 }

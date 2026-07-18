@@ -14,7 +14,7 @@ const config: Config = {
         },
         extend: {
             fontFamily: {
-                sans: ['var(--font-sans)', 'Space Grotesk', 'sans-serif']
+                sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Arial', 'sans-serif']
             },
             colors: {
                 night: '#1a1a24',

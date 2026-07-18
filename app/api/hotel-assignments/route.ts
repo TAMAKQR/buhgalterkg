@@ -6,7 +6,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { Prisma, UserRole } from '@prisma/client';
-import { hashPin, verifyPin } from '@/lib/pin';
+import { hasConfiguredPin, hashPin, verifyPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
 const MANUAL_TELEGRAM_PREFIX = 'manual-';
@@ -28,7 +28,9 @@ const assignmentSchema = z.object({
     telegramId: z.string().min(3).max(32).optional(),
     shiftPayAmount: z.number().int().nonnegative().optional(),
     revenueSharePct: z.number().int().min(0).max(100).optional(),
-    canEditStayPayments: z.boolean().optional()
+    canEditBookings: z.boolean().optional(),
+    canEditStayPayments: z.boolean().optional(),
+    canCancelBookings: z.boolean().optional()
 });
 
 const updateAssignmentSchema = z
@@ -40,7 +42,9 @@ const updateAssignmentSchema = z
         pinCode: z.string().regex(/^[\d]{6}$/).optional(),
         shiftPayAmount: z.number().int().nonnegative().optional(),
         revenueSharePct: z.number().int().min(0).max(100).optional(),
-        canEditStayPayments: z.boolean().optional()
+        canEditBookings: z.boolean().optional(),
+        canEditStayPayments: z.boolean().optional(),
+        canCancelBookings: z.boolean().optional()
     })
     .refine(
         (values) =>
@@ -50,7 +54,9 @@ const updateAssignmentSchema = z
             values.pinCode !== undefined ||
             values.shiftPayAmount !== undefined ||
             values.revenueSharePct !== undefined ||
-            values.canEditStayPayments !== undefined,
+            values.canEditBookings !== undefined ||
+            values.canEditStayPayments !== undefined ||
+            values.canCancelBookings !== undefined,
         {
             message: 'Нет данных для обновления'
         }
@@ -165,6 +171,7 @@ export async function POST(request: NextRequest) {
             return new NextResponse(PIN_CONFLICT_MESSAGE, { status: 409 });
         }
 
+        const newPinHash = hashPin(payload.pinCode);
         const assignment = await prisma.hotelAssignment.upsert({
             where: {
                 hotelId_userId: {
@@ -175,21 +182,25 @@ export async function POST(request: NextRequest) {
             update: {
                 isActive: true,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode,
-                pinHash: hashPin(payload.pinCode),
+                pinCode: null,
+                pinHash: newPinHash,
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null,
-                canEditStayPayments: payload.canEditStayPayments ?? false
+                canEditBookings: payload.canEditBookings ?? false,
+                canEditStayPayments: payload.canEditStayPayments ?? false,
+                canCancelBookings: payload.canCancelBookings ?? false
             },
             create: {
                 hotelId: payload.hotelId,
                 userId: user.id,
                 role: UserRole.MANAGER,
-                pinCode: payload.pinCode,
-                pinHash: hashPin(payload.pinCode),
+                pinCode: null,
+                pinHash: newPinHash,
                 shiftPayAmount: payload.shiftPayAmount ?? null,
                 revenueSharePct: payload.revenueSharePct ?? null,
-                canEditStayPayments: payload.canEditStayPayments ?? false
+                canEditBookings: payload.canEditBookings ?? false,
+                canEditStayPayments: payload.canEditStayPayments ?? false,
+                canCancelBookings: payload.canCancelBookings ?? false
             }
         });
 
@@ -201,10 +212,12 @@ export async function POST(request: NextRequest) {
                 telegramId: user.telegramId,
                 loginName: user.loginName,
                 username: user.username,
-                pinCode: assignment.pinCode,
+                hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct,
-                canEditStayPayments: assignment.canEditStayPayments
+                canEditBookings: assignment.canEditBookings,
+                canEditStayPayments: assignment.canEditStayPayments,
+                canCancelBookings: assignment.canCancelBookings
             }
         });
     } catch (error) {
@@ -287,7 +300,7 @@ export async function PATCH(request: NextRequest) {
                 prisma.hotelAssignment.updateMany({
                     where: { userId: assignment.userId },
                     data: {
-                        pinCode: payload.pinCode,
+                        pinCode: null,
                         pinHash: hashPin(payload.pinCode)
                     }
                 })
@@ -304,6 +317,14 @@ export async function PATCH(request: NextRequest) {
 
         if (payload.canEditStayPayments !== undefined) {
             assignmentUpdates.canEditStayPayments = payload.canEditStayPayments;
+        }
+
+        if (payload.canEditBookings !== undefined) {
+            assignmentUpdates.canEditBookings = payload.canEditBookings;
+        }
+
+        if (payload.canCancelBookings !== undefined) {
+            assignmentUpdates.canCancelBookings = payload.canCancelBookings;
         }
 
         if (Object.keys(assignmentUpdates).length) {
@@ -336,10 +357,12 @@ export async function PATCH(request: NextRequest) {
                 telegramId: updated.user.telegramId,
                 loginName: updated.user.loginName,
                 username: updated.user.username,
-                pinCode: updated.pinCode,
+                hasPin: hasConfiguredPin(updated),
                 shiftPayAmount: updated.shiftPayAmount,
                 revenueSharePct: updated.revenueSharePct,
-                canEditStayPayments: updated.canEditStayPayments
+                canEditBookings: updated.canEditBookings,
+                canEditStayPayments: updated.canEditStayPayments,
+                canCancelBookings: updated.canCancelBookings
             }
         });
     } catch (error) {

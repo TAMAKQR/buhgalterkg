@@ -115,6 +115,7 @@ export const notifyAdminAboutCheckIn = async (payload: CheckInNotificationPayloa
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: env.ADMIN_TELEGRAM_CHAT_ID,
@@ -156,6 +157,7 @@ export const notifyAdminAboutStayExtension = async (payload: StayExtensionNotifi
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             chat_id: env.ADMIN_TELEGRAM_CHAT_ID,
@@ -188,6 +190,7 @@ export const notifyAdminAboutStayTransfer = async (payload: StayTransferNotifica
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             chat_id: env.ADMIN_TELEGRAM_CHAT_ID,
@@ -229,6 +232,7 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: payload.chatId,
@@ -255,7 +259,6 @@ export type CleaningCheckInNotificationPayload = {
     chatId?: string | null;
     hotelName: string;
     roomLabel: string;
-    guestName?: string | null;
     checkOut?: string | null;
     timezone?: string;
     roomSnapshotLines?: string[];
@@ -272,7 +275,6 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
         "🛎 Гость заселился",
         `Отель: ${payload.hotelName}`,
         `Номер: ${payload.roomLabel}`,
-        payload.guestName ? `Гость: ${payload.guestName}` : null,
         `Планируемый выезд: ${formatDate(payload.checkOut, tz)}`,
         "Пожалуйста, уберите номер перед выездом гостя.",
         payload.roomSnapshotLines?.length ? '' : null,
@@ -283,6 +285,7 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: payload.chatId,

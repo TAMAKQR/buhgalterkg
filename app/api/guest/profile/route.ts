@@ -5,22 +5,39 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { handleApiError } from '@/lib/server/errors';
 import { verifyTelegramWebAppInitData } from '@/lib/server/telegram-webapp';
+import { CURRENT_GUEST_CONSENT_VERSION } from '@/lib/guest-consent';
+import {
+    consumeRequestRateLimits,
+    getClientIp,
+    readRateLimitInteger,
+    type RequestRateLimitPolicy,
+} from '@/lib/server/request-rate-limit';
+import { readJsonBody, RequestBodyTooLargeError } from '@/lib/server/read-json-body';
 
 export const dynamic = 'force-dynamic';
 
+const GUEST_PROFILE_ATTEMPT_LIMIT = readRateLimitInteger(process.env.GUEST_PROFILE_ATTEMPTS, 20);
+const GUEST_PROFILE_WINDOW_MINUTES = readRateLimitInteger(
+    process.env.GUEST_PROFILE_WINDOW_MINUTES,
+    15,
+    { max: 24 * 60 }
+);
+
+const createGuestProfileRateLimitPolicy = (clientIp: string): RequestRateLimitPolicy => ({
+    scope: 'guest:profile:ip',
+    identifier: clientIp,
+    limit: GUEST_PROFILE_ATTEMPT_LIMIT,
+    windowSeconds: GUEST_PROFILE_WINDOW_MINUTES * 60,
+});
+
 const guestProfileSchema = z.object({
-    hotelId: z.string().cuid().optional().nullable(),
+    hotelId: z.string().cuid(),
     fullName: z.string().trim().min(2).max(120),
     phone: z.string().trim().max(40).optional().nullable(),
     telegramInitData: z.string().max(4096).optional().nullable(),
-    telegramId: z.string().trim().max(64).optional().nullable(),
     documentNumber: z.string().trim().max(80).optional().nullable(),
-    notes: z.string().trim().max(300).optional().nullable(),
     consentAccepted: z.boolean(),
-    consentVersion: z.string().trim().max(40).optional().nullable()
 });
-
-const CURRENT_CONSENT_VERSION = 'guestpass-2026-06-25';
 
 const normalizeOptionalText = (value?: string | null) => {
     const trimmed = value?.trim();
@@ -87,48 +104,62 @@ const createUniqueGuestCode = async () => {
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        const rateStatus = await consumeRequestRateLimits([
+            createGuestProfileRateLimitPolicy(getClientIp(request)),
+        ]);
+        if (!rateStatus.allowed) {
+            return new NextResponse('Слишком много попыток создания GuestPass. Попробуйте позже', {
+                status: 429,
+                headers: { 'Retry-After': String(rateStatus.retryAfterSeconds) },
+            });
+        }
+
+        const body = await readJsonBody(request, 16 * 1024);
         const payload = guestProfileSchema.parse(body);
 
         if (!payload.consentAccepted) {
             return new NextResponse('Personal data consent is required', { status: 400 });
         }
 
-        const hotelId = payload.hotelId ?? null;
-        if (hotelId) {
-            const hotel = await prisma.hotel.findUnique({
-                where: { id: hotelId },
-                select: { id: true, guestQrEnabled: true }
-            });
+        const hotelId = payload.hotelId;
+        const hotel = await prisma.hotel.findUnique({
+            where: { id: hotelId },
+            select: { id: true, guestQrEnabled: true }
+        });
 
-            if (!hotel) {
-                return new NextResponse('Hotel not found', { status: 404 });
-            }
+        if (!hotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
+        }
 
-            if (!hotel.guestQrEnabled) {
-                return new NextResponse('Guest QR is disabled for this hotel', { status: 403 });
-            }
+        if (!hotel.guestQrEnabled) {
+            return new NextResponse('Guest QR is disabled for this hotel', { status: 403 });
         }
 
         const phone = normalizeOptionalText(payload.phone);
-        const verifiedTelegram = (() => {
-            const initData = normalizeOptionalText(payload.telegramInitData);
-            const token = process.env.GUEST_TELEGRAM_BOT_TOKEN;
-
-            if (!initData || !token) {
-                return null;
-            }
-
-            return verifyTelegramWebAppInitData(initData, token);
-        })();
+        const initData = normalizeOptionalText(payload.telegramInitData);
+        const guestBotToken = process.env.GUEST_TELEGRAM_BOT_TOKEN;
+        if (initData && !guestBotToken) {
+            return new NextResponse('Guest Telegram authentication is unavailable', { status: 503 });
+        }
+        const verifiedTelegram = initData && guestBotToken
+            ? verifyTelegramWebAppInitData(initData, guestBotToken)
+            : null;
+        if (initData && !verifiedTelegram?.user?.id) {
+            return new NextResponse('Invalid or expired Telegram authentication', { status: 401 });
+        }
         const telegramId = verifiedTelegram?.user?.id ? String(verifiedTelegram.user.id) : null;
         const documentNumber = normalizeOptionalText(payload.documentNumber);
-        const notes = normalizeOptionalText(payload.notes);
-        const consentVersion = normalizeOptionalText(payload.consentVersion) ?? CURRENT_CONSENT_VERSION;
+        const consentVersion = CURRENT_GUEST_CONSENT_VERSION;
         const consentAcceptedAt = new Date();
         const code = await createUniqueGuestCode();
 
         const result = await prisma.$transaction(async (tx) => {
+            if (telegramId) {
+                await tx.$executeRaw(Prisma.sql`
+                    SELECT pg_advisory_xact_lock(hashtext(${`guest-profile:${hotelId}:${telegramId}`}))
+                `);
+            }
+
             const existingByTelegram = telegramId
                 ? await tx.guestProfile.findFirst({
                     where: {
@@ -138,16 +169,21 @@ export async function POST(request: NextRequest) {
                     orderBy: { updatedAt: 'desc' }
                 })
                 : null;
-            const existingByPhone = !existingByTelegram && phone
-                ? await tx.guestProfile.findFirst({
-                    where: {
-                        hotelId,
-                        phone
-                    },
-                    orderBy: { updatedAt: 'desc' }
-                })
-                : null;
-            const existingProfile = existingByTelegram ?? existingByPhone;
+            // A phone number is not proof of identity. Anonymous browser submissions
+            // always create a separate pending profile instead of taking over an existing one.
+            let existingProfile = existingByTelegram;
+            if (existingProfile) {
+                await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                    SELECT "id"
+                    FROM "GuestProfile"
+                    WHERE "id" = ${existingProfile.id}
+                    FOR UPDATE
+                `);
+                const lockedProfile = await tx.guestProfile.findUnique({
+                    where: { id: existingProfile.id }
+                });
+                existingProfile = lockedProfile?.hotelId === hotelId ? lockedProfile : null;
+            }
             const beforeSnapshot = existingProfile ? guestProfileSnapshot(existingProfile) : null;
             const documentChanged = existingProfile
                 ? (existingProfile.documentNumber ?? null) !== (documentNumber ?? existingProfile.documentNumber ?? null)
@@ -161,7 +197,6 @@ export async function POST(request: NextRequest) {
                         phone: phone ?? existingProfile.phone,
                         telegramId: telegramId ?? existingProfile.telegramId,
                         documentNumber: documentNumber ?? existingProfile.documentNumber,
-                        notes: notes ?? existingProfile.notes,
                         consentAcceptedAt,
                         consentVersion,
                         ...(documentChanged && existingProfile.verificationStatus === 'VERIFIED'
@@ -181,7 +216,6 @@ export async function POST(request: NextRequest) {
                         phone,
                         telegramId,
                         documentNumber,
-                        notes,
                         consentAcceptedAt,
                         consentVersion
                     }
@@ -225,6 +259,16 @@ export async function POST(request: NextRequest) {
                 });
             }
 
+            if (existingProfile) {
+                await tx.guestQrToken.updateMany({
+                    where: {
+                        guestProfileId: profile.id,
+                        revokedAt: null
+                    },
+                    data: { revokedAt: new Date() }
+                });
+            }
+
             const token = await tx.guestQrToken.create({
                 data: {
                     guestProfileId: profile.id,
@@ -248,7 +292,6 @@ export async function POST(request: NextRequest) {
                 verifiedAt: result.profile.verifiedAt?.toISOString() ?? null,
                 consentAcceptedAt: result.profile.consentAcceptedAt?.toISOString() ?? null,
                 consentVersion: result.profile.consentVersion,
-                notes: result.profile.notes,
                 hotelId: result.profile.hotelId
             },
             qr: {
@@ -257,8 +300,14 @@ export async function POST(request: NextRequest) {
             }
         }, { status: 201 });
     } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+            return new NextResponse(error.message, { status: 413 });
+        }
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
+        }
+        if (error instanceof SyntaxError) {
+            return new NextResponse('Invalid JSON body', { status: 400 });
         }
 
         return handleApiError(error, 'Failed to create guest profile');

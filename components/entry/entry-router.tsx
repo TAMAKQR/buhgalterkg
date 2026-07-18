@@ -1,13 +1,33 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { AdminDashboard } from '@/components/modules/admin-dashboard';
+import dynamic from 'next/dynamic';
+
 import { AdminLoginGate } from '@/components/modules/admin-login';
 import { ManagerPinLogin } from '@/components/modules/manager-pin-login';
-import { ManagerScreen } from '@/components/modules/manager-screen';
 import { ObserverLogin } from '@/components/modules/observer-login';
-import { ObserverScreen } from '@/components/modules/observer-screen';
 import { useManualSession } from '@/hooks/useManualSession';
+
+const RoleScreenLoading = () => (
+    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f8] dark:bg-[#0c0f13]" role="status" aria-label="Загрузка интерфейса">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+    </div>
+);
+
+const AdminDashboard = dynamic(
+    () => import('@/components/modules/admin-dashboard').then((module) => module.AdminDashboard),
+    { ssr: false, loading: RoleScreenLoading }
+);
+
+const ManagerScreen = dynamic(
+    () => import('@/components/modules/manager-screen').then((module) => module.ManagerScreen),
+    { ssr: false, loading: RoleScreenLoading }
+);
+
+const ObserverScreen = dynamic(
+    () => import('@/components/modules/observer-screen').then((module) => module.ObserverScreen),
+    { ssr: false, loading: RoleScreenLoading }
+);
 
 export const EntryRouter = () => {
     const { user, loading, mutate } = useManualSession();
@@ -37,7 +57,7 @@ export const EntryRouter = () => {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-night">
+            <div className="flex min-h-screen items-center justify-center bg-[#f4f6f8] dark:bg-[#0c0f13]">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
             </div>
         );
@@ -45,11 +65,7 @@ export const EntryRouter = () => {
 
     if (!view) {
         if (mode === 'admin') {
-            return (
-                <div className="flex min-h-screen items-center justify-center bg-night px-4">
-                    <AdminLoginGate embed onBack={() => setMode('manager')} />
-                </div>
-            );
+            return <AdminLoginGate onBack={() => setMode('manager')} />;
         }
         if (mode === 'observer') {
             return <ObserverLogin onBack={() => setMode('manager')} />;

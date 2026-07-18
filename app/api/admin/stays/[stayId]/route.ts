@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
+import { CancellationPaymentAction, LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 import { normalizeMealPlan } from '@/lib/meal-plan';
+import { lockRoomsForStayMutation } from '@/lib/server/room-stay-lock';
+import { lockShiftsForLedgerMutation } from '@/lib/server/shift-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,8 @@ const updateStaySchema = z
         onlinePaid: z.number().int().min(0).optional(),
         paymentMethod: z.nativeEnum(PaymentMethod).optional().nullable(),
         shiftId: z.string().cuid().optional().nullable(),
+        cancellationPaymentAction: z.nativeEnum(CancellationPaymentAction).optional(),
+        cancellationShiftId: z.string().cuid().optional(),
         mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
         notes: z.string().max(500).optional().nullable()
     })
@@ -96,8 +100,9 @@ const getCashLedgerParts = ({
     return { cash: 0, card: 0 };
 };
 
-export async function PATCH(request: NextRequest, { params }: { params: { stayId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ stayId: string }> }) {
     try {
+        const { stayId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -106,7 +111,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         const payload = updateStaySchema.parse(body);
         const stay = await prisma.roomStay.findFirst({
             where: {
-                id: params.stayId,
+                id: stayId,
                 hotel: { country },
             },
             include: {
@@ -133,6 +138,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 hotel: typeof stay.room.hotel & {
                     usesExtranets: boolean;
                     extranetNames: string[];
+                    allowOnlinePayments: boolean;
                 };
             };
         };
@@ -200,7 +206,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         }
 
         if (payload.mealPlan !== undefined) {
-            updateData.mealPlan = normalizeMealPlan(payload.mealPlan);
+            const normalizedMealPlan = normalizeMealPlan(payload.mealPlan);
+            if (normalizedMealPlan.length > 0 && !stayRecord.room.hotel.hasMealPlan) {
+                return new NextResponse('Питание отключено для этого объекта', { status: 400 });
+            }
+            updateData.mealPlan = normalizedMealPlan;
         }
 
         if (payload.scheduledCheckIn !== undefined) {
@@ -262,18 +272,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
         }
 
         const isCancellingStay = payload.status === StayStatus.CANCELLED;
-        const nextCash = payload.cashPaid ?? stayRecord.cashPaid;
-        const nextCard = payload.cardPaid ?? stayRecord.cardPaid;
-        const nextOnline = payload.onlinePaid ?? stayRecord.onlinePaid;
         const hasPaymentBreakdownPayload =
             payload.cashPaid !== undefined ||
             payload.cardPaid !== undefined ||
             payload.onlinePaid !== undefined;
-        const nextBreakdownTotal = sumStayPayments({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
 
-        if (hasPaymentBreakdownPayload && (nextBreakdownTotal > 0 || payload.amountPaid === undefined || payload.amountPaid === 0)) {
-            updateData.amountPaid = nextBreakdownTotal;
-        } else if (payload.amountPaid !== undefined) {
+        if (payload.amountPaid !== undefined) {
             updateData.amountPaid = payload.amountPaid;
         }
 
@@ -304,94 +308,275 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
 
         if (payload.paymentMethod !== undefined) {
             updateData.paymentMethod = payload.paymentMethod ?? null;
-        } else if (payload.cashPaid !== undefined || payload.cardPaid !== undefined || payload.onlinePaid !== undefined) {
-            updateData.paymentMethod = detectStayPaymentMethod({ cashPaid: nextCash, cardPaid: nextCard, onlinePaid: nextOnline });
         }
 
-        if (isCancellingStay) {
-            updateData.amountPaid = 0;
-            updateData.cashPaid = 0;
-            updateData.cardPaid = 0;
-            updateData.onlinePaid = 0;
-            updateData.paymentMethod = null;
-        }
-
-        const nextScheduledCheckIn = updateData.scheduledCheckIn instanceof Date ? updateData.scheduledCheckIn : stay.scheduledCheckIn;
-        const nextScheduledCheckOut = updateData.scheduledCheckOut instanceof Date ? updateData.scheduledCheckOut : stay.scheduledCheckOut;
-        const nextStatus = payload.status ?? stay.status;
-        const nextPaymentTotal = hasPaymentBreakdownPayload
-            ? nextBreakdownTotal
-            : payload.amountPaid ?? stayRecord.amountPaid ?? 0;
-        const nextTariffTotal = payload.totalAmount ?? stayRecord.totalAmount ?? 0;
-        const nextBookingNumber = payload.bookingNumber !== undefined
-            ? normalizeOptionalText(payload.bookingNumber)
-            : stayRecord.bookingNumber;
-        const nextBookingSource = updateData.bookingSource !== undefined
-            ? updateData.bookingSource
-            : stayRecord.bookingSource;
-
-        if (payload.status === StayStatus.CHECKED_IN && stay.status !== StayStatus.CHECKED_IN && nextPaymentTotal <= 0) {
-            return new NextResponse('Укажите сумму оплаты перед заселением', { status: 400 });
-        }
-
-        const shouldValidateBookingIdentity =
-            nextStatus === StayStatus.SCHEDULED ||
-            nextStatus === StayStatus.CHECKED_IN ||
-            payload.bookingNumber !== undefined ||
-            payload.totalAmount !== undefined;
-
-        if (shouldValidateBookingIdentity && (nextStatus === StayStatus.SCHEDULED || nextStatus === StayStatus.CHECKED_IN)) {
-            if (nextBookingSource && !nextBookingNumber) {
-                return new NextResponse('Укажите номер бронирования', { status: 400 });
-            }
-            if (nextTariffTotal <= 0) {
-                return new NextResponse('Укажите общую сумму тарифа', { status: 400 });
-            }
-            if (nextPaymentTotal > nextTariffTotal) {
-                return new NextResponse('Оплата не может быть больше общей суммы тарифа', { status: 400 });
-            }
-        }
-
-        if (nextScheduledCheckOut <= nextScheduledCheckIn) {
-            return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });
-        }
-
-        if (nextStatus === StayStatus.SCHEDULED || nextStatus === StayStatus.CHECKED_IN) {
-            const conflictingStay = await prisma.roomStay.findFirst({
-                where: {
-                    id: { not: stay.id },
-                    roomId: stay.roomId,
-                    hotelId: stay.hotelId,
-                    status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
-                    scheduledCheckIn: { lt: nextScheduledCheckOut },
-                    scheduledCheckOut: { gt: nextScheduledCheckIn }
-                },
-                select: {
-                    id: true,
-                    guestName: true,
-                    scheduledCheckIn: true,
-                    scheduledCheckOut: true
-                }
-            });
-
-            if (conflictingStay) {
-                const guest = conflictingStay.guestName?.trim() || 'другая бронь';
-                return new NextResponse(`На эти даты уже есть ${guest} в этом номере`, { status: 409 });
-            }
-        }
+        const cancellationPaymentAction = payload.cancellationPaymentAction;
 
         const updatedStay = await prisma.$transaction(async (tx) => {
-            let result = await tx.roomStay.update({
-                where: { id: params.stayId },
-                data: updateData
+            await lockRoomsForStayMutation(tx, [stay.roomId]);
+
+            const lockedStay = await tx.roomStay.findUnique({
+                where: { id: stayId },
+                include: {
+                    shift: {
+                        select: { managerId: true },
+                    },
+                },
+            });
+            if (!lockedStay) {
+                throw new SessionError('Бронь или проживание уже изменено', 409);
+            }
+            if (lockedStay.roomId !== stay.roomId || lockedStay.hotelId !== stay.hotelId) {
+                throw new SessionError('Бронь или проживание перемещено. Обновите данные', 409);
+            }
+
+            const lockedRoom = await tx.room.findUnique({
+                where: { id: stay.roomId },
+                select: { status: true, currentStayId: true },
+            });
+            if (!lockedRoom) {
+                throw new SessionError('Номер больше не доступен', 409);
+            }
+
+            const transactionUpdateData = { ...updateData } as typeof updateData;
+            const nextCash = payload.cashPaid ?? lockedStay.cashPaid;
+            const nextCard = payload.cardPaid ?? lockedStay.cardPaid;
+            const nextOnline = payload.onlinePaid ?? lockedStay.onlinePaid;
+            const nextBreakdownTotal = sumStayPayments({
+                cashPaid: nextCash,
+                cardPaid: nextCard,
+                onlinePaid: nextOnline,
             });
 
+            if (payload.onlinePaid !== undefined && payload.onlinePaid > 0 && !stayRecord.room.hotel.allowOnlinePayments) {
+                throw new SessionError('Онлайн-оплата отключена для этой точки', 400);
+            }
+
+            if (hasPaymentBreakdownPayload && (nextBreakdownTotal > 0 || payload.amountPaid === undefined || payload.amountPaid === 0)) {
+                transactionUpdateData.amountPaid = nextBreakdownTotal;
+            } else if (payload.amountPaid !== undefined) {
+                transactionUpdateData.amountPaid = payload.amountPaid;
+            }
+
+            if (payload.paymentMethod === undefined && hasPaymentBreakdownPayload) {
+                transactionUpdateData.paymentMethod = detectStayPaymentMethod({
+                    cashPaid: nextCash,
+                    cardPaid: nextCard,
+                    onlinePaid: nextOnline,
+                });
+            }
+
+            const cancellationAmount = sumStayPayments({
+                cashPaid: lockedStay.cashPaid,
+                cardPaid: lockedStay.cardPaid,
+                onlinePaid: lockedStay.onlinePaid,
+            });
+            const requiresLedgerRefund =
+                isCancellingStay &&
+                cancellationPaymentAction === CancellationPaymentAction.REFUND &&
+                (lockedStay.cashPaid > 0 || lockedStay.cardPaid > 0);
+
+            if (isCancellingStay && cancellationAmount > 0 && !cancellationPaymentAction) {
+                throw new SessionError('Выберите: вернуть или удержать предоплату', 400);
+            }
+            if (requiresLedgerRefund && !payload.cancellationShiftId) {
+                throw new SessionError('Для возврата выберите активную смену', 400);
+            }
+
+            const lockedCancellationShift = requiresLedgerRefund
+                ? (await lockShiftsForLedgerMutation(tx, [payload.cancellationShiftId!], {
+                    hotelId: stay.hotelId,
+                    actorId: session.id,
+                    actorRole: session.role,
+                    requireOpenShiftIds: [payload.cancellationShiftId!],
+                })).get(payload.cancellationShiftId!)!
+                : null;
+
+            if (isCancellingStay) {
+                transactionUpdateData.cancellationPaymentAction = cancellationAmount > 0 ? cancellationPaymentAction : null;
+                transactionUpdateData.cancellationAmount = cancellationAmount;
+                transactionUpdateData.cancelledAt = new Date();
+                transactionUpdateData.cancelledById = session.id;
+
+                if (cancellationPaymentAction === CancellationPaymentAction.REFUND) {
+                    transactionUpdateData.amountPaid = 0;
+                    transactionUpdateData.cashPaid = 0;
+                    transactionUpdateData.cardPaid = 0;
+                    transactionUpdateData.onlinePaid = 0;
+                    transactionUpdateData.paymentMethod = null;
+                }
+            }
+
+            const transactionCheckIn = transactionUpdateData.scheduledCheckIn instanceof Date
+                ? transactionUpdateData.scheduledCheckIn
+                : lockedStay.scheduledCheckIn;
+            const transactionCheckOut = transactionUpdateData.scheduledCheckOut instanceof Date
+                ? transactionUpdateData.scheduledCheckOut
+                : lockedStay.scheduledCheckOut;
+            const transactionStatus = payload.status ?? lockedStay.status;
+            const nextPaymentTotal = hasPaymentBreakdownPayload
+                ? nextBreakdownTotal
+                : payload.amountPaid ?? lockedStay.amountPaid ?? 0;
+            const nextTariffTotal = payload.totalAmount ?? lockedStay.totalAmount ?? 0;
+            const nextBookingNumber = payload.bookingNumber !== undefined
+                ? normalizeOptionalText(payload.bookingNumber)
+                : lockedStay.bookingNumber;
+            const nextBookingSource = transactionUpdateData.bookingSource !== undefined
+                ? transactionUpdateData.bookingSource
+                : lockedStay.bookingSource;
+
+            if (transactionCheckOut <= transactionCheckIn) {
+                throw new SessionError('Дата выезда должна быть позже даты заезда', 400);
+            }
+
+            if (payload.status === StayStatus.CHECKED_IN && lockedStay.status !== StayStatus.CHECKED_IN && nextPaymentTotal <= 0) {
+                throw new SessionError('Укажите сумму оплаты перед заселением', 400);
+            }
+
+            const shouldValidateBookingIdentity =
+                transactionStatus === StayStatus.SCHEDULED ||
+                transactionStatus === StayStatus.CHECKED_IN ||
+                payload.bookingNumber !== undefined ||
+                payload.totalAmount !== undefined;
+
+            if (shouldValidateBookingIdentity && (transactionStatus === StayStatus.SCHEDULED || transactionStatus === StayStatus.CHECKED_IN)) {
+                if (nextBookingSource && !nextBookingNumber) {
+                    throw new SessionError('Укажите номер бронирования', 400);
+                }
+                if (nextTariffTotal <= 0) {
+                    throw new SessionError('Укажите общую сумму тарифа', 400);
+                }
+                if (nextPaymentTotal > nextTariffTotal) {
+                    throw new SessionError('Оплата не может быть больше общей суммы тарифа', 400);
+                }
+            }
+
+            if (transactionStatus === StayStatus.SCHEDULED || transactionStatus === StayStatus.CHECKED_IN) {
+                const conflictingStay = await tx.roomStay.findFirst({
+                    where: {
+                        id: { not: stay.id },
+                        roomId: stay.roomId,
+                        hotelId: stay.hotelId,
+                        status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                        scheduledCheckIn: { lt: transactionCheckOut },
+                        scheduledCheckOut: { gt: transactionCheckIn }
+                    },
+                    select: { guestName: true }
+                });
+
+                if (conflictingStay) {
+                    const guest = conflictingStay.guestName?.trim() || 'другая бронь';
+                    throw new SessionError(`На эти даты уже есть ${guest} в этом номере`, 409);
+                }
+            }
+
+            if (isCancellingStay) {
+                const claimed = await tx.roomStay.updateMany({
+                    where: {
+                        id: stayId,
+                        status: lockedStay.status,
+                        NOT: { status: StayStatus.CANCELLED }
+                    },
+                    data: { status: StayStatus.CANCELLED }
+                });
+
+                if (claimed.count !== 1) {
+                    throw new SessionError('Бронь уже отменена или изменена', 409);
+                }
+            }
+
+            let result = await tx.roomStay.update({
+                where: { id: stayId },
+                data: transactionUpdateData
+            });
+
+            if (requiresLedgerRefund) {
+                const linkedIncomeEntries = await tx.cashEntry.findMany({
+                    where: {
+                        stayId: lockedStay.id,
+                        entryType: LedgerEntryType.CASH_IN
+                    },
+                    orderBy: { recordedAt: 'asc' }
+                });
+                let remainingCash = lockedStay.cashPaid;
+                let remainingCard = lockedStay.cardPaid;
+
+                for (const entry of linkedIncomeEntries) {
+                    const remaining = entry.method === PaymentMethod.CASH ? remainingCash : remainingCard;
+                    const refundAmount = Math.min(entry.amount, remaining);
+                    if (refundAmount <= 0) continue;
+                    await tx.cashEntry.create({
+                        data: {
+                            hotelId: stay.hotelId,
+                            shiftId: payload.cancellationShiftId!,
+                            managerId: lockedCancellationShift!.managerId,
+                            stayId: lockedStay.id,
+                            entryType: LedgerEntryType.CASH_OUT,
+                            method: entry.method,
+                            amount: refundAmount,
+                            originalAmount: refundAmount === entry.amount ? entry.originalAmount : refundAmount,
+                            originalCurrency: refundAmount === entry.amount ? entry.originalCurrency : stay.room.hotel.currency,
+                            exchangeRate: refundAmount === entry.amount ? entry.exchangeRate : null,
+                            note: `Возврат предоплаты №${stay.room.label}`,
+                            meta: {
+                                source: 'room_stay',
+                                kind: 'booking_prepayment_refund',
+                                stayId: lockedStay.id,
+                                roomId: stay.roomId,
+                                originalEntryId: entry.id,
+                                refundedBy: session.id
+                            }
+                        }
+                    });
+                    if (entry.method === PaymentMethod.CASH) remainingCash -= refundAmount;
+                    else remainingCard -= refundAmount;
+                }
+
+                for (const fallback of [
+                    { amount: remainingCash, method: PaymentMethod.CASH },
+                    { amount: remainingCard, method: PaymentMethod.CARD }
+                ]) {
+                    if (fallback.amount <= 0) continue;
+                    await tx.cashEntry.create({
+                        data: {
+                            hotelId: stay.hotelId,
+                            shiftId: payload.cancellationShiftId!,
+                            managerId: lockedCancellationShift!.managerId,
+                            stayId: lockedStay.id,
+                            entryType: LedgerEntryType.CASH_OUT,
+                            method: fallback.method,
+                            amount: fallback.amount,
+                            originalAmount: fallback.amount,
+                            originalCurrency: stay.room.hotel.currency,
+                            note: `Возврат предоплаты №${stay.room.label}`,
+                            meta: {
+                                source: 'room_stay',
+                                kind: 'booking_prepayment_refund',
+                                stayId: lockedStay.id,
+                                roomId: stay.roomId,
+                                refundedBy: session.id
+                            }
+                        }
+                    });
+                }
+            }
+
+            const shouldSyncStayLedger = !isCancellingStay && (
+                payload.cashPaid !== undefined ||
+                payload.cardPaid !== undefined ||
+                payload.onlinePaid !== undefined ||
+                payload.amountPaid !== undefined ||
+                payload.paymentMethod !== undefined ||
+                payload.shiftId !== undefined
+            );
+
             let ledgerShiftId = result.shiftId;
-            let ledgerManagerId = requestedShift?.managerId ?? (ledgerShiftId === stay.shiftId ? stay.shift?.managerId ?? null : null);
+            let ledgerManagerId = requestedShift?.managerId ?? (ledgerShiftId === lockedStay.shiftId ? lockedStay.shift?.managerId ?? null : null);
+            let autoSelectedOpenShiftId: string | null = null;
             if (!ledgerShiftId && result.status === StayStatus.CHECKED_IN) {
                 const activeShift = await tx.shift.findFirst({
                     where: {
-                        hotelId: stay.hotelId,
+                        hotelId: lockedStay.hotelId,
                         status: ShiftStatus.OPEN
                     },
                     orderBy: { openedAt: 'desc' },
@@ -402,39 +587,28 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 });
 
                 if (activeShift) {
-                    result = await tx.roomStay.update({
-                        where: { id: params.stayId },
-                        data: { shiftId: activeShift.id }
-                    });
                     ledgerShiftId = activeShift.id;
                     ledgerManagerId = activeShift.managerId;
+                    autoSelectedOpenShiftId = activeShift.id;
                 }
             }
-
-            const shouldSyncStayLedger =
-                payload.status === StayStatus.CANCELLED ||
-                payload.cashPaid !== undefined ||
-                payload.cardPaid !== undefined ||
-                payload.onlinePaid !== undefined ||
-                payload.amountPaid !== undefined ||
-                payload.paymentMethod !== undefined ||
-                payload.shiftId !== undefined;
 
             if (shouldSyncStayLedger) {
                 const linkedLedgerEntries = await tx.cashEntry.findMany({
                     where: {
-                        stayId: stay.id,
+                        stayId: lockedStay.id,
                         entryType: LedgerEntryType.CASH_IN
                     },
                     orderBy: { recordedAt: 'asc' },
                     select: {
                         id: true,
-                        recordedAt: true
+                        recordedAt: true,
+                        shiftId: true
                     }
                 });
 
-                let legacyEntryIds: string[] = [];
-                const legacyShiftIds = Array.from(new Set([stay.shiftId, ledgerShiftId].filter((id): id is string => Boolean(id))));
+                let legacyEntries: Array<{ id: string; shiftId: string | null }> = [];
+                const legacyShiftIds = Array.from(new Set([lockedStay.shiftId, ledgerShiftId].filter((id): id is string => Boolean(id))));
                 if (linkedLedgerEntries.length === 0 && legacyShiftIds.length > 0) {
                     const legacyMetaCandidates = await tx.cashEntry.findMany({
                         where: {
@@ -444,20 +618,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             entryType: LedgerEntryType.CASH_IN,
                             meta: {
                                 path: ['stayId'],
-                                equals: stay.id
+                                equals: lockedStay.id
                             }
                         },
                         select: {
-                            id: true
+                            id: true,
+                            shiftId: true
                         }
                     });
 
                     if (legacyMetaCandidates.length > 0) {
-                        legacyEntryIds = legacyMetaCandidates.map((entry) => entry.id);
+                        legacyEntries = legacyMetaCandidates;
                     }
 
-                    if (legacyEntryIds.length === 0) {
-                        const stayStart = stay.actualCheckIn ?? stay.scheduledCheckIn;
+                    if (legacyEntries.length === 0) {
+                        const stayStart = lockedStay.actualCheckIn ?? lockedStay.scheduledCheckIn;
                         const legacyCandidates = await tx.cashEntry.findMany({
                             where: {
                                 stayId: null,
@@ -475,6 +650,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             },
                             select: {
                                 id: true,
+                                shiftId: true,
                                 method: true,
                                 amount: true
                             }
@@ -492,18 +668,62 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                             { cash: 0, card: 0 }
                         );
 
-                        const expectedLegacyTotals = getCashLedgerParts(stayRecord);
+                        const expectedLegacyTotals = getCashLedgerParts(lockedStay);
 
                         if (legacyTotals.cash === expectedLegacyTotals.cash && legacyTotals.card === expectedLegacyTotals.card) {
-                            legacyEntryIds = legacyCandidates.map((entry) => entry.id);
+                            legacyEntries = legacyCandidates.map((entry) => ({
+                                id: entry.id,
+                                shiftId: entry.shiftId,
+                            }));
                         }
                     }
                 }
 
                 const entryIdsToDelete = [
                     ...linkedLedgerEntries.map((entry) => entry.id),
-                    ...legacyEntryIds
+                    ...legacyEntries.map((entry) => entry.id)
                 ];
+
+                const nextLedgerParts = getCashLedgerParts(result);
+                const shouldRecreateLedger =
+                    result.status !== StayStatus.CANCELLED &&
+                    Boolean(ledgerShiftId) &&
+                    (
+                        linkedLedgerEntries.length > 0 ||
+                        legacyEntries.length > 0 ||
+                        lockedStay.status === StayStatus.SCHEDULED ||
+                        payload.status === StayStatus.CHECKED_IN ||
+                        nextLedgerParts.cash > 0 ||
+                        nextLedgerParts.card > 0
+                    );
+
+                const lockedLedgerShifts = await lockShiftsForLedgerMutation(
+                    tx,
+                    [
+                        ...linkedLedgerEntries.map((entry) => entry.shiftId),
+                        ...legacyEntries.map((entry) => entry.shiftId),
+                        shouldRecreateLedger ? ledgerShiftId : null,
+                        autoSelectedOpenShiftId,
+                    ],
+                    {
+                        hotelId: stay.hotelId,
+                        actorId: session.id,
+                        actorRole: session.role,
+                        requireOpenShiftIds: autoSelectedOpenShiftId ? [autoSelectedOpenShiftId] : [],
+                        allowClosedForAdmin: true,
+                    },
+                );
+
+                if (ledgerShiftId) {
+                    ledgerManagerId = lockedLedgerShifts.get(ledgerShiftId)?.managerId ?? ledgerManagerId;
+                }
+
+                if (autoSelectedOpenShiftId) {
+                    result = await tx.roomStay.update({
+                        where: { id: stayId },
+                        data: { shiftId: autoSelectedOpenShiftId }
+                    });
+                }
 
                 if (entryIdsToDelete.length > 0) {
                     await tx.cashEntry.deleteMany({
@@ -512,19 +732,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                         }
                     });
                 }
-
-                const nextLedgerParts = getCashLedgerParts(result);
-                const shouldRecreateLedger =
-                    result.status !== StayStatus.CANCELLED &&
-                    Boolean(ledgerShiftId) &&
-                    (
-                        linkedLedgerEntries.length > 0 ||
-                        legacyEntryIds.length > 0 ||
-                        stay.status === StayStatus.SCHEDULED ||
-                        payload.status === StayStatus.CHECKED_IN ||
-                        nextLedgerParts.cash > 0 ||
-                        nextLedgerParts.card > 0
-                    );
 
                 if (shouldRecreateLedger) {
                     const recordedAt = linkedLedgerEntries[0]?.recordedAt ?? result.actualCheckIn ?? result.scheduledCheckIn;
@@ -539,7 +746,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                                 hotelId: stay.hotelId,
                                 shiftId: ledgerShiftId as string,
                                 managerId: ledgerManagerId,
-                                stayId: stay.id,
+                                stayId: lockedStay.id,
                                 entryType: LedgerEntryType.CASH_IN,
                                 method: ledgerEntry.method,
                                 amount: ledgerEntry.amount,
@@ -548,21 +755,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                                 meta: {
                                     source: 'room_stay',
                                     kind: 'admin_sync',
-                                    stayId: stay.id,
+                                    stayId: lockedStay.id,
                                     roomId: stay.roomId
                                 }
                             }
                         });
                     }
                 }
+            } else if (autoSelectedOpenShiftId) {
+                await lockShiftsForLedgerMutation(tx, [autoSelectedOpenShiftId], {
+                    hotelId: stay.hotelId,
+                    actorId: session.id,
+                    actorRole: session.role,
+                    requireOpenShiftIds: [autoSelectedOpenShiftId],
+                });
+                result = await tx.roomStay.update({
+                    where: { id: lockedStay.id },
+                    data: { shiftId: autoSelectedOpenShiftId },
+                });
             }
 
             if (payload.status) {
                 const nextRoomData: Prisma.RoomUpdateInput | null = (() => {
                     if (payload.status === StayStatus.CHECKED_IN) {
-                        return { status: RoomStatus.OCCUPIED, currentStayId: stay.id };
+                        if (lockedRoom.currentStayId && lockedRoom.currentStayId !== lockedStay.id) {
+                            throw new SessionError('Номер уже занят другим проживанием', 409);
+                        }
+                        return { status: RoomStatus.OCCUPIED, currentStayId: lockedStay.id };
                     }
-                    if (stay.room.currentStayId !== stay.id) {
+                    if (lockedRoom.currentStayId !== lockedStay.id) {
                         return null;
                     }
                     if (payload.status === StayStatus.CHECKED_OUT) {
@@ -582,13 +803,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                 }
             }
 
-            return result;
+            return {
+                result,
+                previousActualCheckIn: lockedStay.actualCheckIn,
+                previousActualCheckOut: lockedStay.actualCheckOut,
+            };
         });
+
+        const {
+            result: persistedStay,
+            previousActualCheckIn,
+            previousActualCheckOut,
+        } = updatedStay;
 
         // Отправка уведомлений горничным
         const hotel = stay.room.hotel;
-        const wasCheckedIn = stay.actualCheckIn !== null;
-        const wasCheckedOut = stay.actualCheckOut !== null;
+        const wasCheckedIn = previousActualCheckIn !== null;
+        const wasCheckedOut = previousActualCheckOut !== null;
         const nowCheckedIn = (payload.actualCheckIn !== undefined && updateData.actualCheckIn !== null) ||
             (payload.status === StayStatus.CHECKED_IN);
         const nowCheckedOut = (payload.actualCheckOut !== undefined && updateData.actualCheckOut !== null) ||
@@ -604,8 +835,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
                     chatId: hotel.cleaningChatId,
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
-                    guestName: updatedStay.guestName || stay.guestName,
-                    checkOut: updatedStay.scheduledCheckOut?.toISOString() || stay.scheduledCheckOut?.toISOString(),
+                    checkOut: persistedStay.scheduledCheckOut?.toISOString() || stay.scheduledCheckOut?.toISOString(),
                     timezone: hotel.timezone,
                     roomSnapshotLines,
                 });
@@ -630,7 +860,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { stayId
             }
         }
 
-        return NextResponse.json({ success: true, stay: updatedStay });
+        return NextResponse.json({ success: true, stay: persistedStay });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });

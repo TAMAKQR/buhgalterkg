@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, CheckCircle2, FileText, MapPin, Pencil, QrCode, Smartphone, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { CURRENT_GUEST_CONSENT_VERSION } from '@/lib/guest-consent';
 
 type GuestHotel = {
     id: string;
@@ -17,6 +19,7 @@ type GuestHotel = {
     guestAmenities?: string[];
     guestPhotoUrls?: string[];
     guestMapUrl?: string | null;
+    guestQrEnabled?: boolean;
 };
 
 type GuestVerificationStatus = 'PENDING' | 'VERIFIED' | 'NEEDS_REVIEW';
@@ -64,7 +67,29 @@ declare global {
 }
 
 const storedGuestKey = 'hotel-ops-guest-profile';
-const CURRENT_CONSENT_VERSION = 'guestpass-2026-06-25';
+const isExpiredQr = (expiresAt?: string | null) => {
+    if (!expiresAt) return true;
+    const expiresAtMs = Date.parse(expiresAt);
+    return !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now();
+};
+
+const safeStoredGuestProfile = (profile: GuestProfileResult): GuestProfileResult => ({
+    guest: {
+        id: profile.guest.id,
+        fullName: profile.guest.fullName,
+        phone: profile.guest.phone ?? null,
+        documentNumber: null,
+        verificationStatus: profile.guest.verificationStatus ?? null,
+        verifiedAt: profile.guest.verifiedAt ?? null,
+        consentAcceptedAt: profile.guest.consentAcceptedAt ?? null,
+        consentVersion: profile.guest.consentVersion ?? null,
+        hotelId: profile.guest.hotelId ?? null
+    },
+    qr: {
+        code: profile.qr.code,
+        expiresAt: profile.qr.expiresAt ?? null
+    }
+});
 
 const formatTelegramName = (user?: TelegramWebAppUser | null) =>
     [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
@@ -177,6 +202,7 @@ function HotelDirectory({ hotels, isLoading }: { hotels: GuestHotel[]; isLoading
 
 export const GuestApp = () => {
     const [hotels, setHotels] = useState<GuestHotel[]>([]);
+    const [selectedHotelId, setSelectedHotelId] = useState('');
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
     const [documentNumber, setDocumentNumber] = useState('');
@@ -191,25 +217,39 @@ export const GuestApp = () => {
     const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser | null>(null);
 
     useEffect(() => {
-        const saved = localStorage.getItem(storedGuestKey);
+        const saved = sessionStorage.getItem(storedGuestKey);
+        localStorage.removeItem(storedGuestKey);
         if (saved) {
             try {
                 const parsed = JSON.parse(saved) as GuestProfileResult;
-                setProfile(parsed);
                 setFullName(parsed.guest.fullName ?? '');
                 setPhone(parsed.guest.phone ?? '');
-                setDocumentNumber(parsed.guest.documentNumber ?? '');
+                setDocumentNumber('');
+                setSelectedHotelId(parsed.guest.hotelId ?? '');
+                if (parsed.qr?.code && !isExpiredQr(parsed.qr.expiresAt)) {
+                    setProfile(safeStoredGuestProfile(parsed));
+                } else {
+                    sessionStorage.removeItem(storedGuestKey);
+                }
             } catch {
-                localStorage.removeItem(storedGuestKey);
+                sessionStorage.removeItem(storedGuestKey);
             }
         }
 
-        fetch('/api/guest/hotels', { cache: 'no-store' })
+        fetch('/api/guest/hotels')
             .then((response) => {
                 if (!response.ok) throw new Error('Не удалось загрузить объекты');
                 return response.json() as Promise<{ hotels: GuestHotel[] }>;
             })
-            .then((result) => setHotels(result.hotels))
+            .then((result) => {
+                setHotels(result.hotels);
+                const availableHotels = result.hotels.filter((hotel) => hotel.guestQrEnabled);
+                setSelectedHotelId((current) => (
+                    availableHotels.some((hotel) => hotel.id === current)
+                        ? current
+                        : availableHotels[0]?.id ?? ''
+                ));
+            })
             .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Ошибка загрузки'))
             .finally(() => setIsLoadingHotels(false));
     }, []);
@@ -252,9 +292,12 @@ export const GuestApp = () => {
     }, []);
 
     useEffect(() => {
-        if (!profile?.qr.code) {
+        if (!profile?.qr.code || isExpiredQr(profile.qr.expiresAt)) {
             setQrDataUrl(null);
             setIsQrOpen(false);
+            if (profile?.qr.code) {
+                sessionStorage.removeItem(storedGuestKey);
+            }
             return;
         }
 
@@ -268,9 +311,10 @@ export const GuestApp = () => {
         })
             .then(setQrDataUrl)
             .catch(() => setQrDataUrl(null));
-    }, [profile?.qr.code]);
+    }, [profile?.qr.code, profile?.qr.expiresAt]);
 
     const telegramLabel = telegramUser ? formatTelegramName(telegramUser) || telegramUser.username || String(telegramUser.id) : '';
+    const guestQrHotels = useMemo(() => hotels.filter((hotel) => hotel.guestQrEnabled), [hotels]);
     const isTelegramLinked = Boolean(telegramInitData && telegramUser);
     const hasDocumentNumber = Boolean((profile?.guest.documentNumber ?? documentNumber).trim());
     const profileVerification = getVerificationMeta(profile?.guest.verificationStatus);
@@ -296,6 +340,11 @@ export const GuestApp = () => {
             return;
         }
 
+        if (!selectedHotelId || !guestQrHotels.some((hotel) => hotel.id === selectedHotelId)) {
+            setError('Выберите объект, для которого доступен GuestPass');
+            return;
+        }
+
         if (!consentAccepted) {
             setError('Нужно согласие на обработку данных для создания QR');
             return;
@@ -307,12 +356,13 @@ export const GuestApp = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    hotelId: selectedHotelId,
                     fullName: fullName.trim(),
                     phone: phone.trim() || undefined,
                     telegramInitData: telegramInitData || undefined,
                     documentNumber: documentNumber.trim() || undefined,
                     consentAccepted: true,
-                    consentVersion: CURRENT_CONSENT_VERSION
+                    consentVersion: CURRENT_GUEST_CONSENT_VERSION
                 })
             });
 
@@ -320,7 +370,7 @@ export const GuestApp = () => {
 
             const result = await response.json() as GuestProfileResult;
             setProfile(result);
-            localStorage.setItem(storedGuestKey, JSON.stringify(result));
+            sessionStorage.setItem(storedGuestKey, JSON.stringify(safeStoredGuestProfile(result)));
         } catch (submitError) {
             setError(submitError instanceof Error ? submitError.message : 'Не удалось создать QR');
         } finally {
@@ -329,7 +379,7 @@ export const GuestApp = () => {
     };
 
     const resetProfile = () => {
-        localStorage.removeItem(storedGuestKey);
+        sessionStorage.removeItem(storedGuestKey);
         setProfile(null);
         setQrDataUrl(null);
         setConsentAccepted(false);
@@ -417,6 +467,29 @@ export const GuestApp = () => {
                         </div>
 
                         <div className="mt-5 space-y-4">
+                            {isLoadingHotels ? (
+                                <div className="h-16 animate-pulse rounded-2xl bg-slate-100" aria-label="Загружаем объекты" />
+                            ) : guestQrHotels.length ? (
+                                <label className="block">
+                                    <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Объект</span>
+                                    <Select
+                                        value={selectedHotelId}
+                                        onChange={(event) => {
+                                            setSelectedHotelId(event.target.value);
+                                            setError(null);
+                                        }}
+                                        aria-label="Объект GuestPass"
+                                    >
+                                        {guestQrHotels.map((hotel) => (
+                                            <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
+                                        ))}
+                                    </Select>
+                                </label>
+                            ) : (
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-5 text-amber-900">
+                                    GuestPass сейчас не подключен ни к одному объекту.
+                                </div>
+                            )}
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Имя и фамилия</span>
                                 <Input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Например, Азамат Ибраев" autoComplete="name" />
@@ -450,7 +523,11 @@ export const GuestApp = () => {
 
                         {error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
-                        <Button type="submit" className="mt-4 w-full py-3" disabled={isSubmitting || !consentAccepted}>
+                        <Button
+                            type="submit"
+                            className="mt-4 w-full py-3"
+                            disabled={isSubmitting || isLoadingHotels || !selectedHotelId || !consentAccepted}
+                        >
                             {isSubmitting ? 'Создаем...' : 'Создать'}
                         </Button>
                     </form>

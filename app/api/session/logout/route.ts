@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
         httpOnly: true,
         path: '/',
         maxAge: 0,
+        sameSite: 'lax' as const,
         ...(process.env.NODE_ENV === 'production' && {
             secure: true,
-            sameSite: 'none' as const
         })
     };
     response.cookies.set('manualSession', '', cookieOptions);

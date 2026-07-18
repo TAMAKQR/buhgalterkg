@@ -5,49 +5,57 @@ import { prisma } from '@/lib/db';
 import { UserRole } from '@prisma/client';
 import type { SessionUser } from '@/lib/types';
 import { createManualSession, manualSessionAvailable } from '@/lib/server/manual-session';
-import { verifyPassword } from '@/lib/password';
+import {
+    hashPassword,
+    passwordHashNeedsUpgrade,
+    verifyDummyPassword,
+    verifyPassword,
+} from '@/lib/password';
+import {
+    clearRequestRateLimits,
+    consumeRequestRateLimits,
+    getClientIp,
+    readRateLimitInteger,
+    type RequestRateLimitPolicy,
+} from '@/lib/server/request-rate-limit';
+import { readJsonBody, RequestBodyTooLargeError } from '@/lib/server/read-json-body';
 
-const ATTEMPT_LIMIT = Math.max(1, Number(process.env.OBSERVER_LOGIN_ATTEMPTS ?? process.env.ADMIN_LOGIN_ATTEMPTS ?? '5'));
-const WINDOW_MINUTES = Math.max(1, Number(process.env.OBSERVER_LOGIN_WINDOW_MINUTES ?? process.env.ADMIN_LOGIN_WINDOW_MINUTES ?? '15'));
-const WINDOW_MS = WINDOW_MINUTES * 60 * 1000;
+const IP_ATTEMPT_LIMIT = readRateLimitInteger(
+    process.env.OBSERVER_LOGIN_ATTEMPTS ?? process.env.ADMIN_LOGIN_ATTEMPTS,
+    5
+);
+const ACCOUNT_ATTEMPT_LIMIT = Math.max(
+    IP_ATTEMPT_LIMIT + 1,
+    readRateLimitInteger(process.env.OBSERVER_LOGIN_ACCOUNT_ATTEMPTS, IP_ATTEMPT_LIMIT * 4)
+);
+const WINDOW_MINUTES = readRateLimitInteger(
+    process.env.OBSERVER_LOGIN_WINDOW_MINUTES ?? process.env.ADMIN_LOGIN_WINDOW_MINUTES,
+    15,
+    { max: 24 * 60 }
+);
+const WINDOW_SECONDS = WINDOW_MINUTES * 60;
 
-type AttemptRecord = { count: number; resetAt: number };
-const attemptStore = new Map<string, AttemptRecord>();
+const createIpRateLimitPolicy = (clientIp: string): RequestRateLimitPolicy => ({
+    scope: 'login:observer:ip',
+    identifier: clientIp,
+    limit: IP_ATTEMPT_LIMIT,
+    windowSeconds: WINDOW_SECONDS,
+});
 
-const getClientFingerprint = (request: NextRequest) => {
-    const forwarded = request.headers.get('x-forwarded-for');
-    if (forwarded) {
-        const [first] = forwarded.split(',');
-        if (first?.trim()) return first.trim();
+const createAccountRateLimitPolicy = (login: string): RequestRateLimitPolicy => ({
+    scope: 'login:observer:account',
+    identifier: login,
+    limit: ACCOUNT_ATTEMPT_LIMIT,
+    windowSeconds: WINDOW_SECONDS,
+});
+
+const tooManyAttemptsResponse = (retryAfterSeconds: number) => new NextResponse(
+    'Превышено число попыток. Попробуйте позже',
+    {
+        status: 429,
+        headers: { 'Retry-After': String(retryAfterSeconds) },
     }
-    return (
-        request.headers.get('cf-connecting-ip') ??
-        request.headers.get('x-real-ip') ??
-        request.ip ??
-        'unknown'
-    );
-};
-
-const checkRateLimit = (key: string) => {
-    const entry = attemptStore.get(key);
-    if (!entry) return { allowed: true } as const;
-    const now = Date.now();
-    if (entry.resetAt <= now) { attemptStore.delete(key); return { allowed: true } as const; }
-    if (entry.count >= ATTEMPT_LIMIT) return { allowed: false, retryAfter: entry.resetAt - now } as const;
-    return { allowed: true } as const;
-};
-
-const registerFailure = (key: string) => {
-    const now = Date.now();
-    const entry = attemptStore.get(key);
-    if (entry && entry.resetAt > now) {
-        attemptStore.set(key, { count: entry.count + 1, resetAt: entry.resetAt });
-        return;
-    }
-    attemptStore.set(key, { count: 1, resetAt: now + WINDOW_MS });
-};
-
-const clearAttempts = (key: string) => { attemptStore.delete(key); };
+);
 
 const loginSchema = z.object({
     login: z.string().min(1),
@@ -55,23 +63,24 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-    const fingerprint = getClientFingerprint(request);
-    const rateStatus = checkRateLimit(fingerprint);
-    if (!rateStatus.allowed) {
-        const retrySeconds = Math.ceil(rateStatus.retryAfter / 1000);
-        return new NextResponse('Превышено число попыток. Попробуйте позже', {
-            status: 429,
-            headers: { 'Retry-After': String(retrySeconds) },
-        });
-    }
-
     try {
         if (!manualSessionAvailable()) {
             return new NextResponse('Веб-доступ отключён', { status: 503 });
         }
 
-        const body = await request.json();
+        const ipRateLimitPolicy = createIpRateLimitPolicy(getClientIp(request));
+        const ipRateStatus = await consumeRequestRateLimits([ipRateLimitPolicy]);
+        if (!ipRateStatus.allowed) {
+            return tooManyAttemptsResponse(ipRateStatus.retryAfterSeconds);
+        }
+
+        const body = await readJsonBody(request, 8 * 1024);
         const { login, password } = loginSchema.parse(body);
+        const accountRateLimitPolicy = createAccountRateLimitPolicy(login.trim().toLowerCase());
+        const accountRateStatus = await consumeRequestRateLimits([accountRateLimitPolicy]);
+        if (!accountRateStatus.allowed) {
+            return tooManyAttemptsResponse(accountRateStatus.retryAfterSeconds);
+        }
 
         const user = await prisma.user.findUnique({
             where: { loginName: login },
@@ -84,13 +93,19 @@ export async function POST(request: NextRequest) {
         });
 
         if (!user || user.role !== UserRole.OBSERVER || !user.loginHash) {
-            registerFailure(fingerprint);
+            verifyDummyPassword(password);
             return new NextResponse('Неверный логин или пароль', { status: 401 });
         }
 
         if (!verifyPassword(password, user.loginHash)) {
-            registerFailure(fingerprint);
             return new NextResponse('Неверный логин или пароль', { status: 401 });
+        }
+
+        if (passwordHashNeedsUpgrade(user.loginHash)) {
+            await prisma.user.updateMany({
+                where: { id: user.id, loginHash: user.loginHash },
+                data: { loginHash: hashPassword(password) },
+            });
         }
 
         if (user.assignments.length === 0) {
@@ -112,24 +127,29 @@ export async function POST(request: NextRequest) {
         };
 
         const { token, user: sessionData } = createManualSession(sessionUser);
-        clearAttempts(fingerprint);
+        await clearRequestRateLimits([ipRateLimitPolicy, accountRateLimitPolicy]);
 
         const response = NextResponse.json({ success: true, user: sessionData });
         const cookieOptions = {
             httpOnly: true,
             path: '/',
             maxAge: 60 * 60 * 24 * 30,
+            sameSite: 'lax' as const,
             ...(process.env.NODE_ENV === 'production' && {
                 secure: true,
-                sameSite: 'none' as const,
             }),
         };
         response.cookies.set('manualSession', token, cookieOptions);
 
         return response;
     } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+            return new NextResponse(error.message, { status: 413 });
+        }
         if (error instanceof z.ZodError) {
-            registerFailure(fingerprint);
+            return new NextResponse('Неверные данные', { status: 400 });
+        }
+        if (error instanceof SyntaxError) {
             return new NextResponse('Неверные данные', { status: 400 });
         }
         console.error(error);

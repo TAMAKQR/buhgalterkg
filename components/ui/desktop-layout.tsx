@@ -10,11 +10,11 @@ interface DesktopLayoutProps {
 
 export const DesktopLayout = ({ children, sidebar, header }: DesktopLayoutProps) => {
     return (
-        <div className="min-h-screen bg-night">
+        <div className="min-h-screen bg-[#f6f7f9] text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200">
             {/* Desktop Header */}
             {header && (
                 <header className="sticky top-0 z-50 border-b border-white/5 bg-night/95 backdrop-blur-sm lg:block hidden">
-                    <div className="desktop-container px-4 py-3">
+                    <div className="workspace-page py-3">
                         {header}
                     </div>
                 </header>
@@ -33,7 +33,7 @@ export const DesktopLayout = ({ children, sidebar, header }: DesktopLayoutProps)
                     )}
 
                     {/* Main Content */}
-                    <main className="flex-1 lg:p-6 p-0">
+                    <main className="workspace-page min-w-0 flex-1 py-3 lg:py-5">
                         {children}
                     </main>
                 </div>

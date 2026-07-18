@@ -5,11 +5,14 @@ import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { getSessionUser } from '@/lib/server/session';
+import { SessionError } from '@/lib/server/errors';
+import { getCountryFromRequest } from '@/lib/server/request-country';
+import { getDatabaseActorUserId } from '@/lib/server/audit-actor';
 
 export const dynamic = 'force-dynamic';
 
 const updateGuestProfileSchema = z.object({
-    hotelId: z.string().cuid().optional().nullable(),
+    hotelId: z.string().cuid(),
     fullName: z.string().trim().min(2).max(120),
     phone: z.string().trim().max(40).optional().nullable(),
     telegramId: z.string().trim().max(64).optional().nullable(),
@@ -194,14 +197,16 @@ const profileSnapshot = (profile: {
 const changedFields = (before: ReturnType<typeof profileSnapshot>, after: ReturnType<typeof profileSnapshot>) =>
     Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
 
-export async function PATCH(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ guestProfileId: string }> }) {
     try {
+        const { guestProfileId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
         const payload = updateGuestProfileSchema.parse(await request.json());
 
-        const existing = await prisma.guestProfile.findUnique({
-            where: { id: params.guestProfileId },
+        const existing = await prisma.guestProfile.findFirst({
+            where: { id: guestProfileId, hotel: { country } },
             select: {
                 id: true,
                 hotelId: true,
@@ -212,7 +217,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                 verificationStatus: true,
                 notes: true,
                 consentAcceptedAt: true,
-                consentVersion: true
+                consentVersion: true,
+                updatedAt: true
             }
         });
 
@@ -220,15 +226,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
             return new NextResponse('Guest profile not found', { status: 404 });
         }
 
-        const hotelId = payload.hotelId ?? null;
-        if (hotelId) {
-            const hotel = await prisma.hotel.findUnique({
-                where: { id: hotelId },
-                select: { id: true }
-            });
-            if (!hotel) {
-                return new NextResponse('Hotel not found', { status: 404 });
-            }
+        const hotelId = payload.hotelId;
+        const hotel = await prisma.hotel.findFirst({
+            where: { id: hotelId, country },
+            select: { id: true }
+        });
+        if (!hotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
         }
 
         const before = profileSnapshot(existing);
@@ -241,12 +245,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
             ? existing.consentAcceptedAt ?? new Date()
             : existing.consentAcceptedAt;
         const consentVersion = payload.consentAccepted
-            ? normalizeOptionalText(payload.consentVersion) ?? existing.consentVersion ?? CURRENT_CONSENT_VERSION
+            ? existing.consentVersion ?? CURRENT_CONSENT_VERSION
             : existing.consentVersion;
+        const actorUserId = getDatabaseActorUserId(session);
 
         const profile = await prisma.$transaction(async (tx) => {
-            const updated = await tx.guestProfile.update({
-                where: { id: existing.id },
+            const updateResult = await tx.guestProfile.updateMany({
+                where: { id: existing.id, updatedAt: existing.updatedAt },
                 data: {
                     hotelId,
                     fullName: payload.fullName,
@@ -255,12 +260,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                     documentNumber: nextDocumentNumber,
                     verificationStatus: shouldVerify ? 'VERIFIED' : payload.verificationStatus,
                     verifiedAt: shouldVerify ? new Date() : null,
-                    verifiedById: shouldVerify ? session.id : null,
+                    verifiedById: shouldVerify ? actorUserId : null,
                     verifiedHotelId: shouldVerify ? hotelId : null,
                     notes: normalizeOptionalText(payload.notes),
                     consentAcceptedAt,
                     consentVersion
-                },
+                }
+            });
+
+            if (updateResult.count !== 1) {
+                throw new SessionError('Профиль уже изменён. Обновите данные и повторите', 409);
+            }
+
+            if (existing.hotelId !== hotelId) {
+                await tx.guestQrToken.updateMany({
+                    where: { guestProfileId: existing.id, revokedAt: null },
+                    data: { revokedAt: new Date() }
+                });
+            }
+
+            const updated = await tx.guestProfile.findUniqueOrThrow({
+                where: { id: existing.id },
                 select: guestProfileSelect
             });
 
@@ -282,7 +302,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                     data: {
                         guestProfileId: updated.id,
                         hotelId,
-                        actorUserId: session.id,
+                        actorUserId,
                         actorType: 'ADMIN',
                         actorLabel: session.displayName,
                         action: 'PROFILE_UPDATED',
@@ -298,7 +318,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
                     data: {
                         guestProfileId: updated.id,
                         hotelId,
-                        actorUserId: session.id,
+                        actorUserId,
                         actorType: 'ADMIN',
                         actorLabel: session.displayName,
                         action: 'DOCUMENT_VERIFIED',
@@ -320,13 +340,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { guestP
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ guestProfileId: string }> }) {
     try {
+        const { guestProfileId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
-        const existing = await prisma.guestProfile.findUnique({
-            where: { id: params.guestProfileId },
+        const existing = await prisma.guestProfile.findFirst({
+            where: { id: guestProfileId, hotel: { country } },
             select: { id: true }
         });
 

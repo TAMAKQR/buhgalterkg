@@ -4,8 +4,10 @@ import { LedgerEntryType, PaymentMethod, ShiftStatus, StayStatus } from '@prisma
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { getCountryFromRequest } from '@/lib/server/request-country';
+import { lockRoomsForStayMutation } from '@/lib/server/room-stay-lock';
+import { lockShiftsForLedgerMutation } from '@/lib/server/shift-lock';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 import { normalizeMealPlan } from '@/lib/meal-plan';
 
@@ -82,20 +84,6 @@ export async function POST(request: NextRequest) {
             return new NextResponse('Укажите номер бронирования', { status: 400 });
         }
 
-        const conflictingStay = await prisma.roomStay.findFirst({
-            where: {
-                roomId: room.id,
-                status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
-                scheduledCheckIn: { lt: scheduledCheckOut },
-                scheduledCheckOut: { gt: scheduledCheckIn }
-            },
-            select: { id: true }
-        });
-
-        if (conflictingStay) {
-            return new NextResponse('На эти даты у номера уже есть бронь или проживание', { status: 409 });
-        }
-
         const prepaymentAmount = payload.prepaymentAmount ?? 0;
         const prepaymentMethod = prepaymentAmount > 0 ? payload.prepaymentMethod : null;
         if (prepaymentAmount > 0 && !prepaymentMethod) {
@@ -103,6 +91,12 @@ export async function POST(request: NextRequest) {
         }
         if (prepaymentAmount > payload.totalAmount) {
             return new NextResponse('Предоплата не может быть больше общей суммы тарифа', { status: 400 });
+        }
+        if (prepaymentMethod === 'ONLINE' && !room.hotel.allowOnlinePayments) {
+            return new NextResponse('Оплата с сайта отключена для этого объекта', { status: 400 });
+        }
+        if ((payload.mealPlan?.length ?? 0) > 0 && !room.hotel.hasMealPlan) {
+            return new NextResponse('Питание отключено для этого объекта', { status: 400 });
         }
 
         const prepaymentCash = prepaymentMethod === 'CASH' ? prepaymentAmount : 0;
@@ -136,6 +130,39 @@ export async function POST(request: NextRequest) {
         }
 
         const stay = await prisma.$transaction(async (tx) => {
+            await lockRoomsForStayMutation(tx, [room.id]);
+
+            const lockedRoom = await tx.room.findUnique({
+                where: { id: room.id },
+                select: { isActive: true },
+            });
+            if (!lockedRoom?.isActive) {
+                throw new SessionError('Номер архивирован и недоступен для новых броней', 409);
+            }
+
+            const lockedPrepaymentShift = requestedShift
+                ? (await lockShiftsForLedgerMutation(tx, [requestedShift.id], {
+                    hotelId: room.hotelId,
+                    actorId: session.id,
+                    actorRole: session.role,
+                    requireOpenShiftIds: [requestedShift.id],
+                })).get(requestedShift.id)!
+                : null;
+
+            const conflictingStay = await tx.roomStay.findFirst({
+                where: {
+                    roomId: room.id,
+                    status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                    scheduledCheckIn: { lt: scheduledCheckOut },
+                    scheduledCheckOut: { gt: scheduledCheckIn }
+                },
+                select: { id: true }
+            });
+
+            if (conflictingStay) {
+                throw new SessionError('На эти даты у номера уже есть бронь или проживание', 409);
+            }
+
             const createdStay = await tx.roomStay.create({
                 data: {
                     roomId: room.id,
@@ -169,7 +196,7 @@ export async function POST(request: NextRequest) {
                     data: {
                         hotelId: room.hotelId,
                         shiftId: requestedShift.id,
-                        managerId: requestedShift.managerId,
+                        managerId: lockedPrepaymentShift!.managerId,
                         stayId: createdStay.id,
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerPrepaymentMethod,

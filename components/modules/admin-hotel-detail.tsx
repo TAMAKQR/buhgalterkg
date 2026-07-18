@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
+import useSWRInfinite from 'swr/infinite';
 import { useForm } from 'react-hook-form';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -13,9 +13,12 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useApi } from '@/hooks/useApi';
-import { formatDateTime, formatMoney } from '@/lib/timezone';
-import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
+import { formatDateTime, formatMoney, parseDateOnly } from '@/lib/timezone';
+import { useHotelToday } from '@/hooks/useHotelToday';
+import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
+import { RoomEconomicsPanel } from '@/components/modules/room-economics-panel';
+import { Pencil, Trash2 } from 'lucide-react';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -37,6 +40,26 @@ type PendingPostpaidStayDetail = PendingOnlineStayDetail & {
     pendingPostpaidAmount?: number | null;
 };
 
+interface CursorPagination {
+    total: number;
+    limit: number;
+    hasMore: boolean;
+    nextCursor?: string | null;
+}
+
+interface StayHistoryPayload {
+    stays: Array<{
+        roomId: string;
+        stay: RoomStayDetail;
+    }>;
+    pagination: CursorPagination;
+}
+
+interface PendingStayPayload<TStay extends PendingOnlineStayDetail> {
+    stays: TStay[];
+    pagination: CursorPagination;
+}
+
 interface RoomStayDetail {
     id: string;
     guestName?: string | null;
@@ -56,6 +79,9 @@ interface RoomStayDetail {
     tariffPending?: boolean | null;
     bookingSource?: string | null;
     bookingNumber?: string | null;
+    cancellationPaymentAction?: 'REFUND' | 'RETAIN' | null;
+    cancellationAmount?: number | null;
+    cancelledAt?: string | null;
     shiftId?: string | null;
     shiftNumber?: number | null;
     shiftStatus?: ShiftStatusValue | null;
@@ -104,6 +130,37 @@ interface LedgerEntryDetail {
     shiftNumber?: number | null;
 }
 
+interface ShiftLedgerPayload {
+    shift?: {
+        id: string;
+        number: number;
+        status: ShiftStatusValue;
+    } | null;
+    entries: LedgerEntryDetail[];
+    summary: {
+        totals: {
+            cashIn: number;
+            cashOut: number;
+            payouts: number;
+            adjustments: number;
+        };
+        cashMovement: number;
+        incomeBreakdown: {
+            stays: { total: number; cash: number; card: number };
+            cashbox: { total: number; cash: number; card: number };
+        };
+        expenseOut: number;
+        collections: number;
+        collectionOriginals: Array<{ currency: string; amount: number }>;
+    } | null;
+    pagination: {
+        total: number | null;
+        limit: number;
+        hasMore: boolean;
+        nextCursor?: string | null;
+    };
+}
+
 interface ShiftHistoryEntry {
     id: string;
     number: number;
@@ -137,6 +194,7 @@ interface HotelDetailPayload {
     extranetNames?: string[];
     hasMealPlan?: boolean | null;
     allowPostpaidStays?: boolean | null;
+    allowOnlinePayments?: boolean | null;
     guestQrEnabled?: boolean | null;
     guestDescription?: string | null;
     guestAmenities?: string[];
@@ -153,10 +211,12 @@ interface HotelDetailPayload {
         telegramId?: string | null;
         loginName?: string | null;
         username?: string | null;
-        pinCode?: string | null;
+        hasPin?: boolean;
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
+        canEditBookings?: boolean | null;
         canEditStayPayments?: boolean | null;
+        canCancelBookings?: boolean | null;
     }>;
     rooms: Array<{
         id: string;
@@ -170,9 +230,11 @@ interface HotelDetailPayload {
     }>;
     activeShift?: ShiftHistoryEntry | null;
     shiftHistory: ShiftHistoryEntry[];
-    pendingOnlineStays?: PendingOnlineStayDetail[];
-    pendingPostpaidStays?: PendingPostpaidStayDetail[];
-    transactions: LedgerEntryDetail[];
+    prepaidBookings?: {
+        count: number;
+        total: number;
+        items: PendingOnlineStayDetail[];
+    };
     timezone?: string | null;
     currency?: string | null;
     financials: {
@@ -205,7 +267,9 @@ interface AddManagerForm {
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
+    canEditBookings: boolean;
     canEditStayPayments: boolean;
+    canCancelBookings: boolean;
 }
 
 interface UpdateManagerForm {
@@ -216,7 +280,9 @@ interface UpdateManagerForm {
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
+    canEditBookings: boolean;
     canEditStayPayments: boolean;
+    canCancelBookings: boolean;
 }
 
 interface EditShiftForm {
@@ -272,6 +338,7 @@ interface StayEditForm {
     shiftId: string;
     bookingSource: string;
     bookingNumber: string;
+    cancellationPaymentAction: '' | 'REFUND' | 'RETAIN';
     notes: string;
 }
 
@@ -322,6 +389,7 @@ const createStayEditDefaults = (): StayEditForm => ({
     shiftId: '',
     bookingSource: '',
     bookingNumber: '',
+    cancellationPaymentAction: '',
     notes: ''
 });
 
@@ -387,13 +455,6 @@ const ledgerEntryTypeLabels: Record<LedgerEntryTypeValue, string> = {
     ADJUSTMENT: 'Корректировка'
 };
 
-const ledgerEntryTone: Record<LedgerEntryTypeValue, 'default' | 'success' | 'warning' | 'danger'> = {
-    CASH_IN: 'success',
-    CASH_OUT: 'danger',
-    MANAGER_PAYOUT: 'warning',
-    ADJUSTMENT: 'default'
-};
-
 const ledgerAmountClass: Record<LedgerEntryTypeValue, string> = {
     CASH_IN: 'text-emerald-300',
     CASH_OUT: 'text-rose-300',
@@ -410,9 +471,6 @@ const ledgerSignSymbol: Record<LedgerEntryTypeValue, string> = {
 
 const ledgerDisplayLabel = (entry: LedgerEntryDetail) =>
     isCollectionLedgerEntry(entry) ? 'Инкассация' : ledgerEntryTypeLabels[entry.entryType];
-
-const ledgerDisplayTone = (entry: LedgerEntryDetail): 'default' | 'success' | 'warning' | 'danger' =>
-    isCollectionLedgerEntry(entry) ? 'default' : ledgerEntryTone[entry.entryType];
 
 const ledgerDisplayAmountClass = (entry: LedgerEntryDetail) =>
     isCollectionLedgerEntry(entry) ? 'text-cyan-300' : ledgerAmountClass[entry.entryType];
@@ -521,16 +579,14 @@ const startOfLocalDay = (value: Date) => {
 };
 
 const addDays = (value: Date, days: number) => {
-    const copy = new Date(value);
-    copy.setDate(copy.getDate() + days);
-    return copy;
+    return new Date(value.getTime() + days * 86_400_000);
 };
 
-const formatBoardDay = (value: Date) =>
-    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(value).replace('.', '');
+const formatBoardDay = (value: Date, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', timeZone: timezone }).format(value).replace('.', '');
 
-const formatBoardWeekday = (value: Date) =>
-    new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
+const formatBoardWeekday = (value: Date, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: timezone }).format(value).replace('.', '');
 
 const bookingBoardStatusClass: Record<StayStatusValue, string> = {
     SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/12 dark:text-cyan-100',
@@ -546,14 +602,28 @@ interface AdminHotelDetailProps {
 }
 
 export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
-    const router = useRouter();
     const { request, get } = useApi();
     const { toast } = useToast();
+    const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
+    const boardRequestRange = useMemo(() => {
+        const visibleStart = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
+        return {
+            startAt: addDays(visibleStart, -2).toISOString(),
+            endAt: addDays(visibleStart, bookingBoardDayCount + 2).toISOString(),
+        };
+    }, [bookingBoardStartOffset]);
 
-    const hotelKey = hotelId ? `/api/hotels/${hotelId}` : null;
-    const { data, error, isLoading, mutate } = useSWR<HotelDetailPayload>(hotelKey, (url: string) => get<HotelDetailPayload>(url));
+    const hotelKey = hotelId
+        ? `/api/hotels/${hotelId}?view=core&boardStartAt=${encodeURIComponent(boardRequestRange.startAt)}&boardEndAt=${encodeURIComponent(boardRequestRange.endAt)}`
+        : null;
+    const { data, error, isLoading, mutate: mutateHotel } = useSWR<HotelDetailPayload>(
+        hotelKey,
+        (url: string) => get<HotelDetailPayload>(url),
+        { keepPreviousData: true }
+    );
 
     const hotelTz = data?.timezone ?? undefined;
+    const hotelTodayKey = useHotelToday(hotelTz);
     const hotelCur = data?.currency ?? undefined;
     const formatCurrency = useCallback((value?: number | null) => {
         if (typeof value !== 'number' || Number.isNaN(value)) return '—';
@@ -571,7 +641,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const formatStayDate = (value?: string | null) => formatDateTime(value, hotelTz, undefined, '—');
 
     const managerForm = useForm<AddManagerForm>({
-        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditStayPayments: false }
+        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false }
     });
     const updateManagerForm = useForm<UpdateManagerForm>({
         defaultValues: {
@@ -582,7 +652,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             pinCode: '',
             shiftPayAmount: undefined,
             revenueSharePct: undefined,
-            canEditStayPayments: false
+            canEditBookings: false,
+            canEditStayPayments: false,
+            canCancelBookings: false
         }
     });
     const roomForm = useForm<CreateRoomsForm>({
@@ -636,6 +708,24 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     });
 
     const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
+    const {
+        data: selectedShiftLedgerPages,
+        error: selectedShiftLedgerError,
+        isLoading: isSelectedShiftLedgerLoading,
+        mutate: mutateSelectedShiftLedger,
+        size: selectedShiftLedgerPageCount,
+        setSize: setSelectedShiftLedgerPageCount
+    } = useSWRInfinite<ShiftLedgerPayload>(
+        (_pageIndex, previousPage) => {
+            if (!hotelId || !selectedShiftId || (previousPage && !previousPage.pagination.nextCursor)) {
+                return null;
+            }
+            const cursor = previousPage?.pagination.nextCursor;
+            return `/api/admin/hotels/${hotelId}/ledger?shiftId=${encodeURIComponent(selectedShiftId)}&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}&summary=false` : ''}`;
+        },
+        (url: string) => get<ShiftLedgerPayload>(url),
+        { revalidateFirstPage: true }
+    );
     const [editingShift, setEditingShift] = useState<ShiftHistoryEntry | null>(null);
     const [editingLedgerEntry, setEditingLedgerEntry] = useState<LedgerEntryDetail | null>(null);
     const [isCreatingShift, setIsCreatingShift] = useState(false);
@@ -661,6 +751,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
     const [isRoomListExpanded, setIsRoomListExpanded] = useState(false);
     const [isStayEditorOpen, setIsStayEditorOpen] = useState(false);
+    const [selectedStayDetail, setSelectedStayDetail] = useState<RoomStayDetail | null>(null);
+    const [loadingStayId, setLoadingStayId] = useState<string | null>(null);
     const [isBookingFormOpen, setIsBookingFormOpen] = useState(false);
     const [isCreatingBooking, setIsCreatingBooking] = useState(false);
     const [confirmingOnlineStayId, setConfirmingOnlineStayId] = useState<string | null>(null);
@@ -688,9 +780,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         if (!data || !stayFormValues.stayId || !stayFormValues.roomId) {
             return null;
         }
+        if (selectedStayDetail?.id === stayFormValues.stayId) {
+            return selectedStayDetail;
+        }
         const room = data.rooms.find((candidate) => candidate.id === stayFormValues.roomId);
         return room?.stays.find((stay) => stay.id === stayFormValues.stayId) ?? null;
-    }, [data, stayFormValues.roomId, stayFormValues.stayId]);
+    }, [data, selectedStayDetail, stayFormValues.roomId, stayFormValues.stayId]);
     const selectedRoomForEditor = useMemo(() => {
         if (!data || !stayFormValues.roomId) {
             return null;
@@ -724,7 +819,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     useEffect(() => {
         if (selectedManager) {
+            updateManagerForm.setValue('canEditBookings', Boolean(selectedManager.canEditBookings));
             updateManagerForm.setValue('canEditStayPayments', Boolean(selectedManager.canEditStayPayments));
+            updateManagerForm.setValue('canCancelBookings', Boolean(selectedManager.canCancelBookings));
         }
     }, [selectedManager, updateManagerForm]);
 
@@ -773,35 +870,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     }, [shiftList, selectedShiftId, activeShiftId]);
 
-    const shiftLedgerTotals = useMemo(() => {
-        const map = new Map<number, { cashIn: number; cashOut: number; payouts: number; adjustments: number }>();
-        if (!data) {
-            return map;
-        }
-        for (const entry of data.transactions) {
-            if (!entry.shiftNumber) {
-                continue;
-            }
-            const bucket = map.get(entry.shiftNumber) ?? { cashIn: 0, cashOut: 0, payouts: 0, adjustments: 0 };
-            switch (entry.entryType) {
-                case 'CASH_IN':
-                    bucket.cashIn += entry.amount;
-                    break;
-                case 'CASH_OUT':
-                    bucket.cashOut += entry.amount;
-                    break;
-                case 'MANAGER_PAYOUT':
-                    bucket.payouts += entry.amount;
-                    break;
-                case 'ADJUSTMENT':
-                    bucket.adjustments += entry.amount;
-                    break;
-            }
-            map.set(entry.shiftNumber, bucket);
-        }
-        return map;
-    }, [data]);
-
     const roomStatusBuckets = useMemo(() => {
         const buckets = {
             available: [] as string[],
@@ -844,57 +912,40 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             first.label.localeCompare(second.label, 'ru', { numeric: true, sensitivity: 'base' })
         );
     }, [data]);
+    const dirtyRooms = useMemo(
+        () => sortedRooms.filter((room) => room.status === 'DIRTY'),
+        [sortedRooms]
+    );
 
     const selectedShift = shiftList.find((shift) => shift.id === selectedShiftId) ?? null;
-    const shiftTransactions = useMemo(() => {
-        if (!data) {
-            return new Map<number, HotelDetailPayload['transactions']>();
-        }
-        const map = new Map<number, Array<HotelDetailPayload['transactions'][number]>>();
-        for (const entry of data.transactions) {
-            if (!entry.shiftNumber) {
-                continue;
-            }
-            const bucket = map.get(entry.shiftNumber) ?? [];
-            bucket.push(entry);
-            map.set(entry.shiftNumber, bucket);
-        }
-        return map;
-    }, [data]);
-
     const selectedShiftTransactions = useMemo(() => {
-        if (!selectedShift) {
-            return [];
+        const seen = new Set<string>();
+        const entries: LedgerEntryDetail[] = [];
+        for (const page of selectedShiftLedgerPages ?? []) {
+            for (const entry of page.entries) {
+                if (!seen.has(entry.id)) {
+                    seen.add(entry.id);
+                    entries.push(entry);
+                }
+            }
         }
-        return shiftTransactions.get(selectedShift.number) ?? [];
-    }, [selectedShift, shiftTransactions]);
+        return entries;
+    }, [selectedShiftLedgerPages]);
+    const selectedShiftLedger = selectedShiftLedgerPages?.[0] ?? null;
+    const selectedShiftTransactionTotal = selectedShiftLedger?.pagination.total ?? 0;
+    const selectedShiftLedgerLastPage = selectedShiftLedgerPages?.[selectedShiftLedgerPages.length - 1] ?? null;
+    const hasMoreSelectedShiftTransactions = Boolean(selectedShiftLedgerLastPage?.pagination.hasMore);
+    const isLoadingMoreSelectedShiftTransactions = isSelectedShiftLedgerLoading || (
+        selectedShiftLedgerPageCount > 0 &&
+        Boolean(selectedShiftLedgerPages) &&
+        typeof selectedShiftLedgerPages?.[selectedShiftLedgerPageCount - 1] === 'undefined'
+    );
 
     const selectedShiftCash = useMemo(() => {
-        if (!selectedShift) {
+        if (!selectedShift || !selectedShiftLedger?.summary) {
             return null;
         }
-        const ledger = shiftLedgerTotals.get(selectedShift.number) ?? { cashIn: 0, cashOut: 0, payouts: 0, adjustments: 0 };
-        const selectedHotelCurrency = (hotelCur || 'KGS').toUpperCase();
-        const cashMovement = selectedShiftTransactions.reduce((total, entry) => {
-            if (entry.method !== 'CASH') {
-                return total;
-            }
-            const entryCurrency = (entry.originalCurrency || selectedHotelCurrency).toUpperCase();
-            if (entryCurrency !== selectedHotelCurrency) {
-                return total;
-            }
-            switch (entry.entryType) {
-                case 'CASH_IN':
-                case 'ADJUSTMENT':
-                    return total + (entry.originalAmount ?? entry.amount);
-                case 'CASH_OUT':
-                case 'MANAGER_PAYOUT':
-                    return total - (entry.originalAmount ?? entry.amount);
-                default:
-                    return total;
-            }
-        }, 0);
-        const fallbackClosing = selectedShift.openingCash + cashMovement;
+        const fallbackClosing = selectedShift.openingCash + selectedShiftLedger.summary.cashMovement;
         const currentCash = selectedShift.status === 'CLOSED'
             ? typeof selectedShift.closingCash === 'number'
                 ? selectedShift.closingCash
@@ -903,31 +954,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return {
             openingCash: selectedShift.openingCash,
             currentCash,
-            ...ledger
+            ...selectedShiftLedger.summary.totals
         };
-    }, [hotelCur, selectedShift, selectedShiftTransactions, shiftLedgerTotals]);
+    }, [selectedShift, selectedShiftLedger]);
 
-    const selectedShiftIncomeBreakdown = useMemo(() => {
-        if (!selectedShift) {
-            return null;
-        }
-        const base = () => ({ total: 0, cash: 0, card: 0 });
-        const stays = base();
-        const cashbox = base();
-        for (const entry of selectedShiftTransactions) {
-            if (entry.entryType !== 'CASH_IN') {
-                continue;
-            }
-            const target = isStayIncomeNote(entry.note) ? stays : cashbox;
-            if (entry.method === 'CARD') {
-                target.card += entry.amount;
-            } else {
-                target.cash += entry.amount;
-            }
-            target.total += entry.amount;
-        }
-        return { stays, cashbox };
-    }, [selectedShift, selectedShiftTransactions]);
+    const selectedShiftIncomeBreakdown = selectedShiftLedger?.summary?.incomeBreakdown ?? null;
 
     const selectedShiftOutflows = useMemo(() => {
         if (!selectedShift) {
@@ -936,32 +967,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return selectedShiftTransactions.filter((entry) => entry.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(entry));
     }, [selectedShift, selectedShiftTransactions]);
 
-    const selectedShiftExpenseOut = useMemo(
-        () => selectedShiftOutflows.reduce((total, entry) => total + entry.amount, 0),
-        [selectedShiftOutflows]
-    );
+    const selectedShiftExpenseOut = selectedShiftLedger?.summary?.expenseOut ?? 0;
 
-    const selectedShiftCollections = useMemo(
-        () => selectedShiftTransactions
-            .filter((entry) => isCollectionLedgerEntry(entry))
-            .reduce((total, entry) => total + entry.amount, 0),
-        [selectedShiftTransactions]
+    const selectedShiftCollections = selectedShiftLedger?.summary?.collections ?? 0;
+    const selectedShiftCollectionOriginals = useMemo(
+        () => selectedShiftLedger?.summary?.collectionOriginals ?? [],
+        [selectedShiftLedger]
     );
-    const selectedShiftCollectionOriginals = useMemo(() => {
-        const totals = new Map<string, number>();
-        for (const entry of selectedShiftTransactions) {
-            if (
-                !isCollectionLedgerEntry(entry) ||
-                !entry.originalCurrency ||
-                entry.originalCurrency === hotelCur ||
-                typeof entry.originalAmount !== 'number'
-            ) {
-                continue;
-            }
-            totals.set(entry.originalCurrency, (totals.get(entry.originalCurrency) ?? 0) + entry.originalAmount);
-        }
-        return Array.from(totals.entries()).map(([currency, amount]) => ({ currency, amount }));
-    }, [hotelCur, selectedShiftTransactions]);
     const selectedShiftCollectionsLabel = useMemo(() => {
         const parts = selectedShiftCollections > 0 ? [formatCurrency(selectedShiftCollections)] : [];
         for (const item of selectedShiftCollectionOriginals) {
@@ -970,53 +982,169 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return parts.length ? parts.join(' + ') : formatCurrency(0);
     }, [formatCurrency, selectedShiftCollectionOriginals, selectedShiftCollections]);
 
-    const pendingOnlineHistory = useMemo(() => data?.pendingOnlineStays ?? [], [data]);
-    const pendingPostpaidHistory = useMemo(() => data?.pendingPostpaidStays ?? [], [data]);
     const prepaidBookings = useMemo(() => {
         if (!data) {
             return [];
         }
 
-        return data.rooms
-            .flatMap((room) =>
-                room.stays
-                    .filter((stay) => stay.status === 'SCHEDULED' && (stay.amountPaid ?? 0) > 0)
-                    .map((stay) => ({ room, stay }))
-            )
-            .sort((first, second) => {
-                const firstTime = new Date(first.stay.scheduledCheckIn).getTime();
-                const secondTime = new Date(second.stay.scheduledCheckIn).getTime();
-                return firstTime - secondTime;
-            });
+        return (data.prepaidBookings?.items ?? []).flatMap((stay) => {
+            const room = data.rooms.find((candidate) => candidate.id === stay.roomId);
+            return room ? [{ room, stay }] : [];
+        });
     }, [data]);
-    const prepaidBookingsTotal = useMemo(
-        () => prepaidBookings.reduce((total, item) => total + (item.stay.amountPaid ?? 0), 0),
-        [prepaidBookings]
-    );
+    const prepaidBookingsTotal = data?.prepaidBookings?.total ?? 0;
+    const prepaidBookingsCount = data?.prepaidBookings?.count ?? prepaidBookings.length;
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
+    const [isDirtyRoomsOpen, setIsDirtyRoomsOpen] = useState(false);
     const [roomOverviewMode, setRoomOverviewMode] = useState<RoomOverviewMode>('board');
-    const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
+    const roomBoardRef = useRef<HTMLDivElement | null>(null);
     const [boardListPopup, setBoardListPopup] = useState<BoardListPopupKind | null>(null);
     const [stayHistoryQuery, setStayHistoryQuery] = useState('');
     const [stayHistoryStatus, setStayHistoryStatus] = useState<StayHistoryStatusFilter>('ALL');
     const [expandedStayHistoryRooms, setExpandedStayHistoryRooms] = useState<Set<string>>(() => new Set());
     const [isOutflowModalOpen, setIsOutflowModalOpen] = useState(false);
+    const [debouncedStayHistoryQuery, setDebouncedStayHistoryQuery] = useState('');
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => setDebouncedStayHistoryQuery(stayHistoryQuery.trim()), 300);
+        return () => window.clearTimeout(timer);
+    }, [stayHistoryQuery]);
+
+    const {
+        data: stayHistoryPages,
+        isLoading: isStayHistoryLoading,
+        mutate: mutateStayHistory,
+        size: stayHistoryPageCount,
+        setSize: setStayHistoryPageCount,
+    } = useSWRInfinite<StayHistoryPayload>(
+        (_pageIndex, previousPage) => {
+            if (!hotelId || roomOverviewMode !== 'history' || !isRoomHistoryExpanded || (previousPage && !previousPage.pagination.nextCursor)) {
+                return null;
+            }
+            const cursor = previousPage?.pagination.nextCursor;
+            const search = debouncedStayHistoryQuery
+                ? `&search=${encodeURIComponent(debouncedStayHistoryQuery)}`
+                : '';
+            const status = stayHistoryStatus !== 'ALL'
+                ? `&status=${encodeURIComponent(stayHistoryStatus)}`
+                : '';
+            return `/api/hotels/${hotelId}?view=history&limit=50${search}${status}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+        },
+        (url: string) => get<StayHistoryPayload>(url),
+        { revalidateFirstPage: true }
+    );
+
+    const {
+        data: pendingOnlinePages,
+        isLoading: isPendingOnlineLoading,
+        mutate: mutatePendingOnline,
+        size: pendingOnlinePageCount,
+        setSize: setPendingOnlinePageCount,
+    } = useSWRInfinite<PendingStayPayload<PendingOnlineStayDetail>>(
+        (_pageIndex, previousPage) => {
+            if (!hotelId || !isPendingOnlineHistoryOpen || (previousPage && !previousPage.pagination.nextCursor)) {
+                return null;
+            }
+            const cursor = previousPage?.pagination.nextCursor;
+            return `/api/hotels/${hotelId}?view=pending&kind=online&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+        },
+        (url: string) => get<PendingStayPayload<PendingOnlineStayDetail>>(url),
+        { revalidateFirstPage: true }
+    );
+
+    const {
+        data: pendingPostpaidPages,
+        isLoading: isPendingPostpaidLoading,
+        mutate: mutatePendingPostpaid,
+        size: pendingPostpaidPageCount,
+        setSize: setPendingPostpaidPageCount,
+    } = useSWRInfinite<PendingStayPayload<PendingPostpaidStayDetail>>(
+        (_pageIndex, previousPage) => {
+            if (!hotelId || !isPendingPostpaidHistoryOpen || (previousPage && !previousPage.pagination.nextCursor)) {
+                return null;
+            }
+            const cursor = previousPage?.pagination.nextCursor;
+            return `/api/hotels/${hotelId}?view=pending&kind=postpaid&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+        },
+        (url: string) => get<PendingStayPayload<PendingPostpaidStayDetail>>(url),
+        { revalidateFirstPage: true }
+    );
+
+    const stayHistoryRows = useMemo(() => {
+        const uniqueRows = new Map<string, StayHistoryPayload['stays'][number]>();
+        for (const page of stayHistoryPages ?? []) {
+            for (const row of page.stays) {
+                uniqueRows.set(row.stay.id, row);
+            }
+        }
+        return Array.from(uniqueRows.values());
+    }, [stayHistoryPages]);
+    const pendingOnlineHistory = useMemo(() => {
+        const uniqueStays = new Map<string, PendingOnlineStayDetail>();
+        for (const page of pendingOnlinePages ?? []) {
+            for (const stay of page.stays) {
+                uniqueStays.set(stay.id, stay);
+            }
+        }
+        return Array.from(uniqueStays.values());
+    }, [pendingOnlinePages]);
+    const pendingPostpaidHistory = useMemo(() => {
+        const uniqueStays = new Map<string, PendingPostpaidStayDetail>();
+        for (const page of pendingPostpaidPages ?? []) {
+            for (const stay of page.stays) {
+                uniqueStays.set(stay.id, stay);
+            }
+        }
+        return Array.from(uniqueStays.values());
+    }, [pendingPostpaidPages]);
+
+    const stayHistoryLastPage = stayHistoryPages?.[stayHistoryPages.length - 1] ?? null;
+    const pendingOnlineLastPage = pendingOnlinePages?.[pendingOnlinePages.length - 1] ?? null;
+    const pendingPostpaidLastPage = pendingPostpaidPages?.[pendingPostpaidPages.length - 1] ?? null;
+    const hasMoreStayHistory = Boolean(stayHistoryLastPage?.pagination.hasMore);
+    const hasMorePendingOnline = Boolean(pendingOnlineLastPage?.pagination.hasMore);
+    const hasMorePendingPostpaid = Boolean(pendingPostpaidLastPage?.pagination.hasMore);
+    const isLoadingMoreStayHistory = isStayHistoryLoading || (stayHistoryPageCount > 0 && Boolean(stayHistoryPages) && typeof stayHistoryPages?.[stayHistoryPageCount - 1] === 'undefined');
+    const isLoadingMorePendingOnline = isPendingOnlineLoading || (pendingOnlinePageCount > 0 && Boolean(pendingOnlinePages) && typeof pendingOnlinePages?.[pendingOnlinePageCount - 1] === 'undefined');
+    const isLoadingMorePendingPostpaid = isPendingPostpaidLoading || (pendingPostpaidPageCount > 0 && Boolean(pendingPostpaidPages) && typeof pendingPostpaidPages?.[pendingPostpaidPageCount - 1] === 'undefined');
+
+    const mutate = useCallback(async () => {
+        const [refreshedHotel] = await Promise.all([
+            mutateHotel(),
+            mutateSelectedShiftLedger(),
+            mutateStayHistory(),
+            mutatePendingOnline(),
+            mutatePendingPostpaid(),
+        ]);
+        return refreshedHotel;
+    }, [mutateHotel, mutatePendingOnline, mutatePendingPostpaid, mutateSelectedShiftLedger, mutateStayHistory]);
+
     useEffect(() => {
         setIsTransactionsExpanded(false);
+        void setSelectedShiftLedgerPageCount(1);
         setIsRoomHistoryExpanded(false);
         setStayHistoryQuery('');
         setStayHistoryStatus('ALL');
         setExpandedStayHistoryRooms(new Set());
         setIsOutflowModalOpen(false);
-    }, [selectedShiftId]);
+    }, [selectedShiftId, setSelectedShiftLedgerPageCount]);
     const closeOutflowModal = () => setIsOutflowModalOpen(false);
 
+    const openAdminBoardView = useCallback(() => {
+        setRoomOverviewMode('board');
+        setBoardListPopup(null);
+        window.requestAnimationFrame(() => {
+            roomBoardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }, []);
+
     const bookingBoardDays = useMemo(() => {
-        const firstDay = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
+        const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
+        const firstDay = addDays(hotelToday, bookingBoardStartOffset);
         return Array.from({ length: bookingBoardDayCount }, (_, index) => addDays(firstDay, index));
-    }, [bookingBoardStartOffset]);
+    }, [bookingBoardStartOffset, hotelTodayKey, hotelTz]);
 
     const bookingBoardRange = useMemo(() => {
         const start = bookingBoardDays[0] ?? startOfLocalDay(new Date());
@@ -1149,10 +1277,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const filteredRoomStayHistory = useMemo(() => {
         const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
         const hasFilters = Boolean(query) || stayHistoryStatus !== 'ALL';
+        const lazyStaysByRoom = new Map<string, RoomStayDetail[]>();
+        for (const row of stayHistoryRows) {
+            const roomStays = lazyStaysByRoom.get(row.roomId) ?? [];
+            roomStays.push(row.stay);
+            lazyStaysByRoom.set(row.roomId, roomStays);
+        }
 
         return sortedRooms
             .map((room) => {
-                const stays = [...(room.stays ?? [])]
+                const uniqueStays = new Map<string, RoomStayDetail>();
+                for (const stay of [...(room.stays ?? []), ...(lazyStaysByRoom.get(room.id) ?? [])]) {
+                    uniqueStays.set(stay.id, stay);
+                }
+                const stays = Array.from(uniqueStays.values())
                     .sort((first, second) => stayStartTimestamp(second) - stayStartTimestamp(first))
                     .filter((stay) => {
                         if (stayHistoryStatus !== 'ALL' && stay.status !== stayHistoryStatus) {
@@ -1193,9 +1331,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 };
             })
             .filter((item): item is NonNullable<typeof item> => Boolean(item));
-    }, [expandedStayHistoryRooms, sortedRooms, stayHistoryQuery, stayHistoryStatus]);
+    }, [expandedStayHistoryRooms, sortedRooms, stayHistoryQuery, stayHistoryRows, stayHistoryStatus]);
 
-    const totalFilteredStayHistory = filteredRoomStayHistory.reduce((total, item) => total + item.total, 0);
+    const totalFilteredStayHistory = stayHistoryPages?.[0]?.pagination.total
+        ?? filteredRoomStayHistory.reduce((total, item) => total + item.total, 0);
 
     const toMinor = (value: number) => Math.round(value * 100);
     const toOptionalMinor = (value?: number | null) => {
@@ -1638,6 +1777,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const handleCloseStayEditor = () => {
         setIsStayEditorOpen(false);
+        setSelectedStayDetail(null);
         resetStayEditor();
     };
 
@@ -1763,14 +1903,31 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             shiftId: stay.shiftId ?? '',
             bookingSource: stay.bookingSource ?? '',
             bookingNumber: stay.bookingNumber ?? '',
+            cancellationPaymentAction: stay.cancellationPaymentAction ?? '',
             notes: stay.notes ?? ''
         });
     };
 
-    const handleSelectStayForEdit = (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
-        hydrateStayEditor(room, stay);
-        stayEditForm.setFocus('guestName');
-        setIsStayEditorOpen(true);
+    const handleSelectStayForEdit = async (room: HotelDetailPayload['rooms'][number], stay: RoomStayDetail) => {
+        if (loadingStayId === stay.id) {
+            return;
+        }
+
+        try {
+            setLoadingStayId(stay.id);
+            const detail = await get<{ stay: RoomStayDetail }>(
+                `/api/hotels/${hotelId}?view=stay&stayId=${encodeURIComponent(stay.id)}`
+            );
+            setSelectedStayDetail(detail.stay);
+            hydrateStayEditor(room, detail.stay);
+            setIsStayEditorOpen(true);
+            window.setTimeout(() => stayEditForm.setFocus('guestName'), 0);
+        } catch (stayDetailError) {
+            console.error(stayDetailError);
+            toast('Не удалось загрузить детали проживания', 'error');
+        } finally {
+            setLoadingStayId(null);
+        }
     };
 
     const handleUpdateStay = stayEditForm.handleSubmit(async (values) => {
@@ -1785,6 +1942,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const totalMinor = breakdownTotalMinor > 0 ? breakdownTotalMinor : toOptionalMinorValue(values.totalPaid);
         const totalAmountMinor = toOptionalMinorValue(values.totalAmount);
         const bookingNumber = normalizeOptionalText(values.bookingNumber);
+        const currentPaidMinor = selectedStayForEditor
+            ? (selectedStayForEditor.cashPaid ?? 0) + (selectedStayForEditor.cardPaid ?? 0) + (selectedStayForEditor.onlinePaid ?? 0)
+            : 0;
 
         if ((values.status === 'SCHEDULED' || values.status === 'CHECKED_IN') && values.bookingSource.trim() && !bookingNumber) {
             toast('Укажите номер бронирования', 'error');
@@ -1798,6 +1958,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
         if ((totalMinor ?? 0) > (totalAmountMinor ?? 0) && (values.status === 'SCHEDULED' || values.status === 'CHECKED_IN')) {
             toast('Оплата не может быть больше тарифа', 'error');
+            return;
+        }
+
+        if (values.status === 'CANCELLED' && currentPaidMinor > 0 && !values.cancellationPaymentAction) {
+            toast('Выберите, вернуть или удержать предоплату', 'error');
+            return;
+        }
+
+        if (
+            values.status === 'CANCELLED' &&
+            values.cancellationPaymentAction === 'REFUND' &&
+            ((selectedStayForEditor?.cashPaid ?? 0) > 0 || (selectedStayForEditor?.cardPaid ?? 0) > 0) &&
+            !activeShiftId
+        ) {
+            toast('Для возврата наличной или безналичной предоплаты нужна активная смена', 'error');
             return;
         }
 
@@ -1822,20 +1997,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     paymentMethod: values.paymentMethod === 'AUTO' || values.paymentMethod === 'ONLINE' ? null : values.paymentMethod,
                     shiftId: values.shiftId || null,
                     bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined,
-                    bookingNumber
+                    bookingNumber,
+                    cancellationPaymentAction: values.status === 'CANCELLED' && currentPaidMinor > 0 ? values.cancellationPaymentAction || undefined : undefined,
+                    cancellationShiftId: values.status === 'CANCELLED' && values.cancellationPaymentAction === 'REFUND' ? activeShiftId ?? undefined : undefined
                 }
             });
 
-            const refreshed = await mutate();
-            const snapshot = refreshed ?? data ?? null;
-            if (snapshot) {
-                const updatedRoom = snapshot.rooms.find((room) => room.id === values.roomId);
-                const updatedStay = updatedRoom?.stays.find((stay) => stay.id === values.stayId);
-                if (updatedRoom && updatedStay) {
-                    hydrateStayEditor(updatedRoom, updatedStay);
-                } else {
-                    handleCloseStayEditor();
-                }
+            await mutate();
+            const updatedRoom = data?.rooms.find((room) => room.id === values.roomId);
+            if (updatedRoom) {
+                const detail = await get<{ stay: RoomStayDetail }>(
+                    `/api/hotels/${hotelId}?view=stay&stayId=${encodeURIComponent(values.stayId)}`
+                );
+                setSelectedStayDetail(detail.stay);
+                hydrateStayEditor(updatedRoom, detail.stay);
             }
         } catch (stayUpdateError) {
             console.error(stayUpdateError);
@@ -1864,13 +2039,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 }
             });
 
-            const refreshed = await mutate();
-            const snapshot = refreshed ?? data ?? null;
-            if (snapshot && stayEditForm.getValues('stayId') === stay.id) {
-                const updatedRoom = snapshot.rooms.find((candidate) => candidate.id === room.id);
-                const updatedStay = updatedRoom?.stays.find((candidate) => candidate.id === stay.id);
-                if (updatedRoom && updatedStay) {
-                    hydrateStayEditor(updatedRoom, updatedStay);
+            await mutate();
+            if (stayEditForm.getValues('stayId') === stay.id) {
+                const updatedRoom = data?.rooms.find((candidate) => candidate.id === room.id);
+                if (updatedRoom) {
+                    const detail = await get<{ stay: RoomStayDetail }>(
+                        `/api/hotels/${hotelId}?view=stay&stayId=${encodeURIComponent(stay.id)}`
+                    );
+                    setSelectedStayDetail(detail.stay);
+                    hydrateStayEditor(updatedRoom, detail.stay);
                 }
             }
             toast('Поступление с сайта подтверждено', 'success');
@@ -1881,30 +2058,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             setConfirmingOnlineStayId(null);
         }
     };
-
-    if (isLoading || !data) {
-        return (
-            <div className="flex min-h-screen flex-col gap-4 px-2 py-4 sm:px-6 sm:py-6">
-                <div className="flex items-center justify-between">
-                    <Skeleton className="h-10 w-48" />
-                    <Skeleton className="h-10 w-24" />
-                </div>
-                <Skeleton className="h-24" />
-                <Skeleton className="h-40" />
-                <Skeleton className="h-72" />
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-2 py-4 text-center text-rose-300 sm:px-6">
-                <p>Не удалось загрузить данные точки</p>
-                <p className="text-sm text-white/60">{String(error)}</p>
-                <Button onClick={() => router.refresh()}>Повторить</Button>
-            </div>
-        );
-    }
 
     const handleAddManager = managerForm.handleSubmit(async (values) => {
         const shiftPayAmount = toOptionalMinorValue(values.shiftPayAmount);
@@ -1919,10 +2072,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 pinCode: values.pinCode,
                 shiftPayAmount: shiftPayAmount ?? undefined,
                 revenueSharePct: revenueSharePct ?? undefined,
-                canEditStayPayments: values.canEditStayPayments
+                canEditBookings: values.canEditBookings,
+                canEditStayPayments: values.canEditStayPayments,
+                canCancelBookings: values.canCancelBookings
             }
         });
-        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditStayPayments: false });
+        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
         mutate();
     });
 
@@ -1938,7 +2093,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             pinCode: values.pinCode.trim() || undefined,
             shiftPayAmount: shiftPayAmount ?? undefined,
             revenueSharePct: revenueSharePct ?? undefined,
-            canEditStayPayments: values.canEditStayPayments
+            canEditBookings: values.canEditBookings,
+            canEditStayPayments: values.canEditStayPayments,
+            canCancelBookings: values.canCancelBookings
         };
 
         const hasUpdates =
@@ -1948,7 +2105,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             Boolean(payload.pinCode) ||
             shiftPayAmount !== null ||
             revenueSharePct !== null ||
-            values.canEditStayPayments !== Boolean(selectedManager?.canEditStayPayments);
+            values.canEditBookings !== Boolean(selectedManager?.canEditBookings) ||
+            values.canEditStayPayments !== Boolean(selectedManager?.canEditStayPayments) ||
+            values.canCancelBookings !== Boolean(selectedManager?.canCancelBookings);
 
         if (!hasUpdates) {
             updateManagerForm.setError('assignmentId', {
@@ -1972,7 +2131,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 pinCode: '',
                 shiftPayAmount: undefined,
                 revenueSharePct: undefined,
-                canEditStayPayments: values.canEditStayPayments
+                canEditBookings: values.canEditBookings,
+                canEditStayPayments: values.canEditStayPayments,
+                canCancelBookings: values.canCancelBookings
             });
             mutate();
             toast('Менеджер обновлён', 'success');
@@ -1994,7 +2155,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             pinCode: '',
             shiftPayAmount: target?.shiftPayAmount != null ? toMajorValue(target.shiftPayAmount) : undefined,
             revenueSharePct: target?.revenueSharePct ?? undefined,
-            canEditStayPayments: Boolean(target?.canEditStayPayments)
+            canEditBookings: Boolean(target?.canEditBookings),
+            canEditStayPayments: Boolean(target?.canEditStayPayments),
+            canCancelBookings: Boolean(target?.canCancelBookings)
         });
     };
 
@@ -2026,9 +2189,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (error) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-2 py-4 text-center text-rose-200 sm:px-6">
+            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-3 bg-[#f6f7f9] py-4 text-center text-rose-700 dark:bg-[#0c0f13] dark:text-rose-200">
                 <p className="text-lg font-semibold">Не удалось загрузить данные объекта</p>
-                <p className="text-sm text-rose-100/70">{String(error)}</p>
+                <p className="text-sm text-rose-600/80 dark:text-rose-100/70">{String(error)}</p>
                 <Button type="button" variant="secondary" onClick={() => mutate()}>
                     Повторить запрос
                 </Button>
@@ -2038,21 +2201,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (!data || isLoading) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-2 py-4 text-center text-white/70 sm:px-6">
+            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f6f7f9] py-4 text-center text-slate-500 dark:bg-[#0c0f13] dark:text-white/70">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="h-4 w-64" />
                 <p className="text-sm">Загружаем актуальные данные отеля…</p>
-            </div>
-        );
-    }
-
-    if (!data) {
-        return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-2 py-4 text-center text-white/70 sm:px-6">
-                <p className="text-lg font-semibold">Отель не найден</p>
-                <Button type="button" variant="secondary" onClick={() => mutate()}>
-                    Обновить
-                </Button>
             </div>
         );
     }
@@ -2088,39 +2240,34 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const shiftQuickStats = selectedShift && selectedShiftCash
         ? [
             {
-                label: 'Касса сейчас',
-                value: formatCurrency(selectedShiftCash.currentCash),
-                valueClass: 'text-emerald-300'
-            },
-            {
                 label: 'На старте',
                 value: formatCurrency(selectedShiftCash.openingCash),
-                valueClass: 'text-amber-200'
+                valueClass: 'text-slate-900 dark:text-white'
             },
             {
                 label: 'Поступления',
                 value: formatCurrency(selectedShiftCash.cashIn),
-                valueClass: 'text-emerald-300'
+                valueClass: 'text-emerald-600 dark:text-emerald-300'
             },
             {
                 label: 'Списания',
                 value: formatCurrency(selectedShiftExpenseOut),
-                valueClass: 'text-rose-300'
+                valueClass: selectedShiftExpenseOut > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-white'
             },
             {
                 label: 'Инкассация',
                 value: selectedShiftCollectionsLabel,
-                valueClass: 'text-cyan-300'
+                valueClass: 'text-slate-900 dark:text-white'
             },
             {
                 label: 'Ожидает сайт',
                 value: formatCurrency(selectedShift.pendingOnline ?? 0),
-                valueClass: 'text-amber-300'
+                valueClass: (selectedShift.pendingOnline ?? 0) > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-900 dark:text-white'
             },
             {
                 label: 'Постоплата',
                 value: `${formatCurrency(selectedShift.pendingPostpaid ?? 0)}${selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}`,
-                valueClass: 'text-cyan-300'
+                valueClass: (selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-900 dark:text-white'
             }
         ]
         : [];
@@ -2169,14 +2316,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     };
     const formLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/40';
-    const formPanelClass = 'mt-4 rounded-2xl border p-3.5 sm:mt-5 sm:rounded-[26px] sm:p-5';
+    const formPanelClass = 'mt-4 rounded-xl border p-4 sm:mt-5 sm:p-5';
     const modalLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-white/35';
 
     return (
         <>
-            <div className="flex min-h-screen flex-col gap-3 px-3 pb-24 pt-3 sm:gap-6 sm:px-6 sm:pt-6">
-                <Card className="overflow-hidden border-slate-200 bg-[linear-gradient(135deg,_#ffffff_0%,_#f8fafc_45%,_#e8eef7_100%)] p-0 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_rgba(255,255,255,0.04)_42%,_rgba(7,10,18,0.92)_100%)] dark:shadow-none">
-                    <div className="flex flex-col gap-4 px-3.5 py-4 sm:gap-6 sm:px-6 sm:py-6">
+            <div className="workspace-page flex min-h-screen w-full flex-col gap-4 bg-[#f6f7f9] pb-24 pt-4 text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200 lg:gap-5 lg:py-5">
+                <Card className="overflow-hidden border-slate-200/80 bg-white p-0 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21] dark:shadow-none">
+                    <div className="flex flex-col gap-4 p-4 sm:p-5">
                         <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
                             <div className="min-w-0 space-y-3">
                                 <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/45">
@@ -2185,8 +2332,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     {hotelCur && <span>{hotelCur}</span>}
                                 </div>
                                 <div className="space-y-2">
-                                    <h1 className="break-words text-xl font-semibold tracking-tight text-slate-950 sm:text-4xl dark:text-white">{data.name}</h1>
-                                    <p className="max-w-2xl text-sm text-slate-600 sm:text-base dark:text-white/65">{data.address}</p>
+                                    <h1 className="break-words text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl dark:text-white">{data.name}</h1>
+                                    <p className="max-w-2xl text-sm text-slate-600 dark:text-white/65">{data.address}</p>
                                 </div>
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-700 dark:text-white/70">
                                     <Badge label={activeShiftLabel} tone={data.activeShift ? 'warning' : 'default'} />
@@ -2209,15 +2356,16 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             </div>
                         </div>
 
-                        <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
-                            {summaryCards.map((item) => (
-                                <div
-                                    key={item.label}
-                                    className="min-w-0 rounded-2xl border border-slate-200 bg-white/82 px-3 py-3 shadow-[0_14px_34px_-32px_rgba(15,23,42,0.45)] backdrop-blur sm:rounded-[24px] sm:px-4 sm:py-4 dark:border-white/10 dark:bg-white/[0.045] dark:shadow-[0_14px_34px_-32px_rgba(15,23,42,0.75)]"
-                                >
+                        <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-slate-200/80 dark:border-white/[0.07] dark:bg-white/[0.07]">
+                            <div className="grid gap-px md:grid-cols-2 xl:grid-cols-4">
+                                {summaryCards.map((item) => (
+                                    <div
+                                        key={item.label}
+                                        className="min-w-0 bg-slate-50 px-3.5 py-3 dark:bg-[#171b21]"
+                                    >
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/40">{item.label}</p>
-                                    <p className="mt-2 break-words text-lg font-semibold tracking-tight text-slate-950 sm:mt-3 sm:text-xl dark:text-white">{item.value}</p>
-                                    <p className="mt-1 break-words text-xs text-slate-600 sm:text-sm dark:text-white/55">
+                                    <p className="mt-1.5 break-words text-lg font-semibold tracking-tight text-slate-950 dark:text-white">{item.value}</p>
+                                    <p className="mt-1 break-words text-xs text-slate-600 dark:text-white/55">
                                         {item.caption}
                                         {item.label === 'Касса' ? (
                                             <>
@@ -2244,10 +2392,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             </>
                                         ) : null}
                                     </p>
-                                </div>
-                            ))}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        <div className="rounded-[24px] border border-slate-200 bg-white/86 p-3.5 shadow-[0_18px_42px_-36px_rgba(15,23,42,0.5)] sm:p-4 dark:border-cyan-300/15 dark:bg-cyan-400/[0.07] dark:text-cyan-50">
+                        <div className="rounded-lg border border-slate-200/80 bg-slate-50 p-3.5 shadow-sm sm:p-4 dark:border-cyan-300/15 dark:bg-cyan-400/[0.07] dark:text-cyan-50 dark:shadow-none">
                             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                                 <div className="min-w-0">
                                     <p className="text-sm font-semibold text-slate-950 dark:text-cyan-50">AI аудит объекта</p>
@@ -2305,7 +2454,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             {adminBusinessAiError ? <p className="mt-3 text-xs text-rose-600 dark:text-rose-200">{adminBusinessAiError}</p> : null}
                         </div>
                         {isPendingOnlineHistoryOpen ? (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-amber-800 sm:rounded-[24px] sm:p-4 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Ожидающие поступления</p>
@@ -2315,7 +2464,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         Скрыть
                                     </Button>
                                 </div>
-                                {pendingOnlineHistory.length ? (
+                                {isPendingOnlineLoading && !pendingOnlinePages ? (
+                                    <p className="mt-4 rounded-2xl border border-amber-200/80 bg-white px-3 py-3 text-sm text-amber-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-amber-50/70">
+                                        Загружаем поступления…
+                                    </p>
+                                ) : pendingOnlineHistory.length ? (
                                     <div className="mt-4 max-h-[440px] space-y-2 overflow-y-auto pr-1">
                                         {pendingOnlineHistory.map((stay) => {
                                             const guestLabel = stay.guestName?.trim() || 'Гость';
@@ -2361,6 +2514,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </div>
                                             );
                                         })}
+                                        {hasMorePendingOnline ? (
+                                            <div className="flex justify-center pt-2">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={isLoadingMorePendingOnline}
+                                                    onClick={() => void setPendingOnlinePageCount((count) => count + 1)}
+                                                >
+                                                    {isLoadingMorePendingOnline ? 'Загрузка…' : 'Показать ещё'}
+                                                </Button>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : (
                                     <p className="mt-4 rounded-2xl border border-amber-200/80 bg-white px-3 py-3 text-sm text-amber-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-amber-50/70">
@@ -2370,7 +2536,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             </div>
                         ) : null}
                         {isPendingPostpaidHistoryOpen ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3.5 text-cyan-900 sm:rounded-[24px] sm:p-4 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-900/55 dark:text-cyan-100/60">Постоплата и тарифы на уточнении</p>
@@ -2381,7 +2547,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         Скрыть
                                     </Button>
                                 </div>
-                                {pendingPostpaidHistory.length ? (
+                                {isPendingPostpaidLoading && !pendingPostpaidPages ? (
+                                    <p className="mt-4 rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 text-sm text-cyan-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-cyan-50/70">
+                                        Загружаем постоплаты…
+                                    </p>
+                                ) : pendingPostpaidHistory.length ? (
                                     <div className="mt-4 max-h-[440px] space-y-2 overflow-y-auto pr-1">
                                         {pendingPostpaidHistory.map((stay) => {
                                             const guestLabel = stay.guestName?.trim() || 'Гость';
@@ -2422,6 +2592,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </div>
                                             );
                                         })}
+                                        {hasMorePendingPostpaid ? (
+                                            <div className="flex justify-center pt-2">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={isLoadingMorePendingPostpaid}
+                                                    onClick={() => void setPendingPostpaidPageCount((count) => count + 1)}
+                                                >
+                                                    {isLoadingMorePendingPostpaid ? 'Загрузка…' : 'Показать ещё'}
+                                                </Button>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : (
                                     <p className="mt-4 rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 text-sm text-cyan-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-cyan-50/70">
@@ -2430,17 +2613,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 )}
                             </div>
                         ) : null}
-                        {prepaidBookings.length > 0 ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3.5 text-cyan-900 sm:rounded-[24px] sm:p-4 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
+                        {prepaidBookingsCount > 0 ? (
+                            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-700/60 dark:text-cyan-100/55">Предоплаты по броням</p>
                                         <p className="mt-1 text-lg font-semibold">{formatCurrency(prepaidBookingsTotal)}</p>
                                     </div>
-                                    <Badge label={`${prepaidBookings.length} броней`} tone="default" />
+                                    <Badge label={`${prepaidBookingsCount} броней`} tone="default" />
                                 </div>
                                 <div className="mt-4 grid gap-2 lg:grid-cols-2">
-                                    {prepaidBookings.slice(0, 6).map(({ room, stay }) => {
+                                    {prepaidBookings.map(({ room, stay }) => {
                                         const paymentParts = [
                                             (stay.cashPaid ?? 0) > 0 ? `нал ${formatCurrency(stay.cashPaid)}` : null,
                                             (stay.cardPaid ?? 0) > 0 ? `безнал ${formatCurrency(stay.cardPaid)}` : null,
@@ -2476,7 +2659,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         );
                                     })}
                                 </div>
-                                {prepaidBookings.length > 6 ? (
+                                {prepaidBookingsCount > prepaidBookings.length ? (
                                     <p className="mt-3 text-xs text-cyan-800/70 dark:text-cyan-50/55">
                                         Показаны ближайшие 6. Полный список доступен в истории броней.
                                     </p>
@@ -2486,39 +2669,56 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     </div>
                 </Card>
 
-                <Card className="space-y-4">
-                    <CardHeader
-                        title="Смены"
-                        subtitle="Операционный контур"
-                        actions={
-                            data.shiftHistory.length ? (
-                                <div className="flex flex-wrap gap-2">
-                                    <Button
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => setIsCreatingShift(!isCreatingShift)}
-                                    >
-                                        {isCreatingShift ? 'Отмена' : '+ Смена'}
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={handleClearShiftHistory}
-                                        disabled={isClearingHistory}
-                                    >
-                                        {isClearingHistory ? 'Очищаем…' : 'Очистить'}
-                                    </Button>
-                                </div>
-                            ) : null
-                        }
-                    />
+                <RoomEconomicsPanel
+                    hotelId={data.id}
+                    currency={data.currency ?? 'KGS'}
+                    timezone={data.timezone ?? 'Asia/Bishkek'}
+                    rooms={data.rooms.map((room) => ({
+                        id: room.id,
+                        label: room.label,
+                        floor: room.floor ?? undefined,
+                        isActive: room.isActive,
+                    }))}
+                    expenseCategories={data.expenseCategories ?? []}
+                    onChanged={() => { void mutateHotel(); }}
+                />
+
+                <Card className="space-y-4 p-4 sm:p-5">
+                    <div className="w-full">
+                        <CardHeader
+                            title="Смены"
+                            subtitle="Операционный контур"
+                            actions={
+                                data.shiftHistory.length ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => setIsCreatingShift(!isCreatingShift)}
+                                        >
+                                            {isCreatingShift ? 'Отмена' : '+ Смена'}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={handleClearShiftHistory}
+                                            disabled={isClearingHistory}
+                                        >
+                                            {isClearingHistory ? 'Очищаем…' : 'Очистить'}
+                                        </Button>
+                                    </div>
+                                ) : null
+                            }
+                        />
+                    </div>
                     {shiftList.length ? (
                         <div className="space-y-4">
-                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                <p className="mb-2 text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Выбор смены</p>
+                            <div className="w-full">
+                                <label className="sr-only" htmlFor="admin-shift-select">Выбор смены</label>
                                 <Select
+                                    id="admin-shift-select"
                                     value={selectedShiftId ?? activeShiftId ?? shiftList[0]?.id ?? ''}
                                     onChange={(event) => setSelectedShiftId(event.target.value)}
                                 >
@@ -2529,12 +2729,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     ))}
                                 </Select>
                             </div>
-                            <div className="rounded-xl bg-white/[0.04] p-4">
+                            <div className="min-w-0">
                                 {selectedShift ? (
                                     <>
-                                        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+                                        <div className="w-full space-y-4">
                                             <div className="space-y-4">
-                                                <div className="flex flex-wrap items-start justify-between gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                     <div>
                                                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-white/70">
                                                             <Badge label={`Смена №${selectedShift.number}`} />
@@ -2544,305 +2744,331 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             />
                                                             {selectedShift.isCurrent && <Badge label="Текущая" tone="warning" />}
                                                         </div>
-                                                        <p className="mt-3 text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{selectedShift.manager}</p>
-                                                        <div className="mt-2 space-y-1 text-sm text-slate-500 dark:text-white/60">
+                                                        <p className="mt-2 text-base font-semibold tracking-tight text-slate-900 dark:text-white sm:text-lg">{selectedShift.manager}</p>
+                                                        <div className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-white/60">
                                                             <p>Открыта {formatDateTime(selectedShift.openedAt, hotelTz)}</p>
                                                             {selectedShift.closedAt && <p>Закрыта {formatDateTime(selectedShift.closedAt, hotelTz)}</p>}
                                                         </div>
                                                     </div>
-                                                    <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-right dark:border-white/[0.06] dark:bg-white/[0.04]">
-                                                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Статус кассы</p>
-                                                        <p className="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-300">{selectedShiftCash ? formatCurrency(selectedShiftCash.currentCash) : '—'}</p>
-                                                        {selectedShift.handoverCash != null && (
-                                                            <p className="mt-1 text-xs text-slate-500 dark:text-white/50">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
-                                                        )}
+                                                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                                                        <div className="min-w-[140px] text-right">
+                                                            <p className="text-xs uppercase tracking-[0.14em] text-slate-400 dark:text-white/35">Касса сейчас</p>
+                                                            <p className="mt-0.5 text-xl font-semibold text-emerald-600 dark:text-emerald-300">{selectedShiftCash ? formatCurrency(selectedShiftCash.currentCash) : '—'}</p>
+                                                            {selectedShift.handoverCash != null && (
+                                                                <p className="text-[11px] text-slate-500 dark:text-white/50">Передано {formatShiftAmount(selectedShift.handoverCash)}</p>
+                                                            )}
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="secondary"
+                                                            onClick={() => {
+                                                                if (adminAiAnalysis && adminAiShiftId === selectedShift.id) {
+                                                                    setIsAdminAiModalOpen(true);
+                                                                    return;
+                                                                }
+                                                                void handleAnalyzeSelectedShift();
+                                                            }}
+                                                            disabled={isAdminAiLoading}
+                                                        >
+                                                            {isAdminAiLoading
+                                                                ? 'Анализ...'
+                                                                : adminAiAnalysis && adminAiShiftId === selectedShift.id
+                                                                    ? 'Открыть AI-отчёт'
+                                                                    : 'AI-анализ'}
+                                                        </Button>
                                                     </div>
                                                 </div>
+                                                {adminAiError ? <p className="px-1 text-xs text-rose-600 dark:text-rose-300">{adminAiError}</p> : null}
 
                                                 {shiftQuickStats.length ? (
-                                                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                                    <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-slate-200/80 dark:border-white/[0.07] dark:bg-white/[0.07]">
+                                                        <div className="grid grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-6">
                                                         {shiftQuickStats.map((item) => (
                                                             <div
                                                                 key={item.label}
-                                                                className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]"
+                                                                className="min-w-0 bg-slate-50 px-3.5 py-3 dark:bg-[#171b21]"
                                                             >
-                                                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">{item.label}</p>
-                                                                <p className={`mt-2 text-lg font-semibold ${item.valueClass}`}>{item.value}</p>
+                                                                <p className="text-xs font-medium text-slate-500 dark:text-white/40">{item.label}</p>
+                                                                <p className={`mt-1 truncate text-base font-semibold ${item.valueClass}`} title={item.value}>{item.value}</p>
                                                             </div>
                                                         ))}
+                                                        </div>
                                                     </div>
                                                 ) : null}
 
-                                                <div className="rounded-[24px] border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
-                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-white/[0.02]">
+                                                    <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3 dark:border-white/[0.07]">
+                                                        <div>
+                                                            <p className="text-base font-semibold text-slate-900 dark:text-white">Движение средств</p>
+                                                            <p className="mt-0.5 text-xs text-slate-500 dark:text-white/40">Деньги, зафиксированные в этой смене</p>
+                                                        </div>
+                                                        <p className="shrink-0 text-base font-semibold text-emerald-600 dark:text-emerald-300">
+                                                            {isSelectedShiftLedgerLoading ? 'Загрузка…' : `+${formatCurrency(selectedShiftCash?.cashIn ?? 0)}`}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="grid lg:grid-cols-[minmax(0,1fr)_280px]">
                                                         <div className="min-w-0">
-                                                            <p className="text-sm font-semibold">AI анализ смены</p>
-                                                            <p className="mt-1 text-xs opacity-75">
-                                                                {adminAiAnalysis && adminAiShiftId === selectedShift.id
-                                                                    ? 'Отчет готов к просмотру'
-                                                                    : 'Финансы, оплаты и операционные риски'}
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {adminAiAnalysis && adminAiShiftId === selectedShift.id ? (
-                                                                <Button
-                                                                    type="button"
-                                                                    size="sm"
-                                                                    variant="ghost"
-                                                                    onClick={() => setIsAdminAiModalOpen(true)}
-                                                                >
-                                                                    Открыть отчет
-                                                                </Button>
+                                                            {selectedShiftLedgerError ? (
+                                                                <div className="flex items-center justify-between gap-3 px-3 py-4 text-xs text-rose-600 dark:text-rose-300">
+                                                                    <span>Не удалось загрузить кассу выбранной смены.</span>
+                                                                    <Button type="button" size="sm" variant="ghost" onClick={() => void mutateSelectedShiftLedger()}>Повторить</Button>
+                                                                </div>
+                                                            ) : isSelectedShiftLedgerLoading ? (
+                                                                <p className="px-3 py-4 text-xs text-slate-500 dark:text-white/40">Загружаем точную сводку смены…</p>
+                                                            ) : selectedShiftIncomeBreakdown ? (
+                                                                <div className="overflow-x-auto">
+                                                                    <table className="w-full min-w-[560px] text-left text-sm">
+                                                                        <thead className="bg-slate-50 text-xs font-medium text-slate-500 dark:bg-white/[0.025] dark:text-white/40">
+                                                                            <tr>
+                                                                                <th className="px-4 py-2.5 font-medium">Источник</th>
+                                                                                <th className="px-4 py-2.5 text-right font-medium">Наличные</th>
+                                                                                <th className="px-4 py-2.5 text-right font-medium">Безналично</th>
+                                                                                <th className="px-4 py-2.5 text-right font-medium">Итого</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y divide-slate-200/70 text-slate-700 dark:divide-white/[0.06] dark:text-white/70">
+                                                                            <tr>
+                                                                                <td className="px-4 py-2.5 font-medium text-slate-900 dark:text-white">Заселения</td>
+                                                                                <td className="px-4 py-2.5 text-right">{formatCurrency(selectedShiftIncomeBreakdown.stays.cash)}</td>
+                                                                                <td className="px-4 py-2.5 text-right">{formatCurrency(selectedShiftIncomeBreakdown.stays.card)}</td>
+                                                                                <td className="px-4 py-2.5 text-right font-semibold text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.stays.total)}</td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td className="px-4 py-2.5 font-medium text-slate-900 dark:text-white">Кассовые операции</td>
+                                                                                <td className="px-4 py-2.5 text-right">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.cash)}</td>
+                                                                                <td className="px-4 py-2.5 text-right">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</td>
+                                                                                <td className="px-4 py-2.5 text-right font-semibold text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.total)}</td>
+                                                                            </tr>
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            ) : (
+                                                                <p className="px-3 py-4 text-xs text-slate-500 dark:text-white/40">Поступлений в этой смене нет.</p>
+                                                            )}
+
+                                                            {(selectedShift.pendingOnline ?? 0) > 0 ? (
+                                                                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/15 dark:bg-amber-400/[0.07] dark:text-amber-200">
+                                                                    <span><span className="font-medium">Ожидает сайт</span> · не входит в кассу до подтверждения</span>
+                                                                    <span className="font-semibold">{formatCurrency(selectedShift.pendingOnline)}</span>
+                                                                </div>
                                                             ) : null}
-                                                            <Button
+                                                            {((selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0) ? (
+                                                                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-cyan-200/80 bg-cyan-50/70 px-3 py-2 text-xs text-cyan-800 dark:border-cyan-400/15 dark:bg-cyan-400/[0.07] dark:text-cyan-200">
+                                                                    <span><span className="font-medium">Постоплата</span>{selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}</span>
+                                                                    <span className="font-semibold">{formatCurrency(selectedShift.pendingPostpaid ?? 0)}</span>
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <div className="divide-y divide-slate-200/70 border-t border-slate-200/80 text-sm dark:divide-white/[0.06] dark:border-white/[0.07] lg:border-l lg:border-t-0">
+                                                            <button
                                                                 type="button"
-                                                                size="sm"
-                                                                variant="secondary"
-                                                                onClick={() => void handleAnalyzeSelectedShift()}
-                                                                disabled={isAdminAiLoading}
+                                                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50 disabled:cursor-default dark:hover:bg-white/[0.035]"
+                                                                onClick={() => selectedShiftExpenseOut > 0 && setIsOutflowModalOpen(true)}
+                                                                disabled={selectedShiftExpenseOut <= 0}
                                                             >
-                                                                {isAdminAiLoading ? 'Анализ...' : 'Анализировать'}
-                                                            </Button>
+                                                                <span className="text-slate-500 dark:text-white/50">Списания</span>
+                                                                <span className={selectedShiftExpenseOut > 0 ? 'font-semibold text-rose-600 dark:text-rose-300' : 'font-semibold text-slate-900 dark:text-white'}>{formatCurrency(selectedShiftExpenseOut)}</span>
+                                                            </button>
+                                                            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                                                                <span className="text-slate-500 dark:text-white/50">Инкассация</span>
+                                                                <span className="font-semibold text-slate-900 dark:text-white">{selectedShiftCollectionsLabel}</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                                                                <span className="text-slate-500 dark:text-white/50">Выплаты</span>
+                                                                <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(selectedShiftCash?.payouts ?? 0)}</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                                                                <span className="text-slate-500 dark:text-white/50">Корректировки</span>
+                                                                <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(selectedShiftCash?.adjustments ?? 0)}</span>
+                                                            </div>
+                                                            {selectedShift.bonus != null && selectedShift.bonus > 0 ? (
+                                                                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                                                                    <span className="text-slate-500 dark:text-white/50">Бонус</span>
+                                                                    <span className="font-semibold text-emerald-600 dark:text-emerald-300">+{formatCurrency(selectedShift.bonus)}</span>
+                                                                </div>
+                                                            ) : null}
                                                         </div>
                                                     </div>
-                                                    {adminAiError ? <p className="mt-3 text-xs text-rose-600 dark:text-rose-200">{adminAiError}</p> : null}
-                                                </div>
-
-                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Движение средств</p>
-                                                    <div className="mt-3 space-y-3 text-sm text-slate-700 dark:text-white">
-                                                        <div>
-                                                            <p className="flex items-center justify-between font-medium">
-                                                                <span>Поступления</span>
-                                                                <span className="text-emerald-300">{formatCurrency(selectedShiftCash?.cashIn ?? 0)}</span>
-                                                            </p>
-                                                            {selectedShiftIncomeBreakdown && (
-                                                                <div className="mt-2 rounded-2xl border border-slate-200/80 bg-white p-3 text-[11px] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/60">
-                                                                    <div className="space-y-3">
-                                                                        <div>
-                                                                            <p className="flex items-center justify-between text-xs text-slate-600 dark:text-white/70">
-                                                                                <span>Заселения</span>
-                                                                                <span className="text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.stays.total)}</span>
-                                                                            </p>
-                                                                            <p className="mt-1 flex items-center justify-between"><span>наличные</span><span>{formatCurrency(selectedShiftIncomeBreakdown.stays.cash)}</span></p>
-                                                                            <p className="flex items-center justify-between"><span>безналично</span><span>{formatCurrency(selectedShiftIncomeBreakdown.stays.card)}</span></p>
-                                                                        </div>
-                                                                        <div className="border-t border-slate-200/80 pt-3 dark:border-white/[0.06]">
-                                                                            <p className="flex items-center justify-between text-xs text-slate-600 dark:text-white/70">
-                                                                                <span>Касса</span>
-                                                                                <span className="text-slate-900 dark:text-white">{formatCurrency(selectedShiftIncomeBreakdown.cashbox.total)}</span>
-                                                                            </p>
-                                                                            <p className="mt-1 flex items-center justify-between"><span>наличные</span><span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.cash)}</span></p>
-                                                                            <p className="flex items-center justify-between"><span>безналично</span><span>{formatCurrency(selectedShiftIncomeBreakdown.cashbox.card)}</span></p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                            {(selectedShift.pendingOnline ?? 0) > 0 && (
-                                                                <div className="mt-2 rounded-2xl border border-amber-200/80 bg-amber-50 px-3 py-2.5 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>Ожидает поступления с сайта</span>
-                                                                        <span className="font-semibold">{formatCurrency(selectedShift.pendingOnline)}</span>
-                                                                    </div>
-                                                                    <p className="mt-1 text-[11px] text-amber-600/80 dark:text-amber-200/70">Не входит в кассу и поступления смены до фактического получения.</p>
-                                                                </div>
-                                                            )}
-                                                            {((selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0) && (
-                                                                <div className="mt-2 rounded-2xl border border-cyan-200/80 bg-cyan-50 px-3 py-2.5 text-xs text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-500/10 dark:text-cyan-200">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>Постоплата / тариф уточняется</span>
-                                                                        <span className="font-semibold">{formatCurrency(selectedShift.pendingPostpaid ?? 0)}</span>
-                                                                    </div>
-                                                                    {(selectedShift.tariffPendingCount ?? 0) > 0 ? (
-                                                                        <p className="mt-1 text-[11px] text-cyan-600/80 dark:text-cyan-200/70">{selectedShift.tariffPendingCount} заселений ждут уточнения тарифа.</p>
-                                                                    ) : null}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition ${selectedShiftOutflows.length ? 'border-rose-200/80 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/15 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15' : 'border-slate-200/80 bg-white text-slate-400 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-white/40'}`}
-                                                            onClick={() => selectedShiftOutflows.length && setIsOutflowModalOpen(true)}
-                                                            disabled={!selectedShiftOutflows.length}
-                                                        >
-                                                            <span>Списания</span>
-                                                            <span>{formatCurrency(selectedShiftExpenseOut)}</span>
-                                                        </button>
-                                                        <p className="flex items-center justify-between">
-                                                            <span>Инкассация</span>
-                                                            <span className="text-cyan-300">{selectedShiftCollectionsLabel}</span>
-                                                        </p>
-                                                        <p className="flex items-center justify-between">
-                                                            <span>Выплаты</span>
-                                                            <span className="text-amber-200">{formatCurrency(selectedShiftCash?.payouts ?? 0)}</span>
-                                                        </p>
-                                                        <p className="flex items-center justify-between">
-                                                            <span>Корректировки</span>
-                                                            <span>{formatCurrency(selectedShiftCash?.adjustments ?? 0)}</span>
-                                                        </p>
-                                                        {selectedShift.bonus != null && selectedShift.bonus > 0 && (
-                                                            <p className="flex items-center justify-between">
-                                                                <span>Бонус</span>
-                                                                <span className="text-emerald-300">+{formatCurrency(selectedShift.bonus)}</span>
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                                </section>
                                             </div>
 
-                                            <div className="space-y-4">
-                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Сводка смены</p>
-                                                    <div className="mt-3 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                                                        <div>
-                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">На начало</p>
-                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.openingCash)}</p>
+                                            {selectedShift.status === 'CLOSED' || shiftNoteItems.length ? (
+                                                <div className={`grid gap-2 ${selectedShift.status === 'CLOSED' && shiftNoteItems.length ? 'md:grid-cols-2' : ''}`}>
+                                                    {selectedShift.status === 'CLOSED' ? (
+                                                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                            <p className="text-xs uppercase tracking-[0.14em] text-slate-400 dark:text-white/35">Закрытие смены</p>
+                                                            <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+                                                                <div>
+                                                                    <p className="text-slate-400 dark:text-white/35">На начало</p>
+                                                                    <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.openingCash)}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-slate-400 dark:text-white/35">Передано</p>
+                                                                    <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.handoverCash)}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-slate-400 dark:text-white/35">Касса факт</p>
+                                                                    <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.closingCash)}</p>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">Передано</p>
-                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.handoverCash)}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/35">Касса факт</p>
-                                                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatShiftAmount(selectedShift.closingCash)}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                                    ) : null}
 
-                                                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Комментарии</p>
                                                     {shiftNoteItems.length ? (
-                                                        <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-white/65">
-                                                            {shiftNoteItems.map((note) => (
-                                                                <p key={note}>{note}</p>
-                                                            ))}
+                                                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                                            <p className="text-xs uppercase tracking-[0.14em] text-slate-400 dark:text-white/35">Комментарии</p>
+                                                            <div className="mt-2 space-y-1 text-sm text-slate-600 dark:text-white/65">
+                                                                {shiftNoteItems.map((note) => <p key={note}>{note}</p>)}
+                                                            </div>
                                                         </div>
-                                                    ) : (
-                                                        <p className="mt-3 text-sm text-slate-400 dark:text-white/35">По этой смене комментариев нет.</p>
-                                                    )}
+                                                    ) : null}
                                                 </div>
-                                            </div>
+                                            ) : null}
                                         </div>
-                                        <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400 dark:text-white/35">Номера</p>
-                                            <div className="mt-3 grid gap-2 text-sm text-slate-700 dark:text-white/80 sm:grid-cols-2">
-                                                <div className="flex items-center justify-between">
-                                                    <span>Свободно</span>
-                                                    <span>{roomStatusBuckets.available.length}</span>
+                                        <section className="mt-4 w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-white/[0.02]">
+                                            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3 dark:border-white/[0.07]">
+                                                <h4 className="text-base font-semibold text-slate-900 dark:text-white">Состояние номеров</h4>
+                                                <span className="text-xs text-slate-500 dark:text-white/40">Всего {sortedRooms.length}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-px bg-slate-200/80 text-xs dark:bg-white/[0.07] sm:grid-cols-5">
+                                                <div className="bg-slate-50 px-3 py-2.5 dark:bg-[#171b21]">
+                                                    <p className="text-slate-500 dark:text-white/40">Свободно</p>
+                                                    <p className="mt-0.5 text-base font-semibold text-slate-900 dark:text-white">{roomStatusBuckets.available.length}</p>
                                                 </div>
-                                                <div className="flex items-center justify-between">
-                                                    <span>Занято</span>
-                                                    <span>{roomStatusBuckets.occupied.length}</span>
+                                                <div className="bg-slate-50 px-3 py-2.5 dark:bg-[#171b21]">
+                                                    <p className="text-slate-500 dark:text-white/40">Занято</p>
+                                                    <p className="mt-0.5 text-base font-semibold text-slate-900 dark:text-white">{roomStatusBuckets.occupied.length}</p>
                                                 </div>
-                                                <div className={`flex items-center justify-between ${roomStatusBuckets.overdue.length ? 'text-rose-500 dark:text-rose-300' : ''}`}>
-                                                    <span>Просрочено</span>
-                                                    <span>{roomStatusBuckets.overdue.length}</span>
+                                                <div className="bg-slate-50 px-3 py-2.5 dark:bg-[#171b21]">
+                                                    <p className="text-slate-500 dark:text-white/40">Просрочено</p>
+                                                    <p className={`mt-0.5 text-base font-semibold ${roomStatusBuckets.overdue.length ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>{roomStatusBuckets.overdue.length}</p>
                                                 </div>
-                                                <div className="flex items-center justify-between">
-                                                    <span>Уборка</span>
-                                                    <span>{roomStatusBuckets.dirty.length}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between">
-                                                    <span>Бронь</span>
-                                                    <span>{roomStatusBuckets.hold.length}</span>
+                                                <button
+                                                    type="button"
+                                                    className="group bg-slate-50 px-3 py-2.5 text-left transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400/40 dark:bg-[#171b21] dark:hover:bg-white/[0.045]"
+                                                    onClick={() => setIsDirtyRoomsOpen(true)}
+                                                    aria-label={`Показать номера на уборке: ${roomStatusBuckets.dirty.length}`}
+                                                >
+                                                    <p className="flex items-center justify-between gap-2 text-slate-500 dark:text-white/40"><span>Уборка</span><span className="transition group-hover:translate-x-0.5">›</span></p>
+                                                    <p className={`mt-0.5 text-base font-semibold ${roomStatusBuckets.dirty.length ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>{roomStatusBuckets.dirty.length}</p>
+                                                </button>
+                                                <div className="col-span-2 bg-slate-50 px-3 py-2.5 dark:bg-[#171b21] sm:col-span-1">
+                                                    <p className="text-slate-500 dark:text-white/40">Бронь</p>
+                                                    <p className="mt-0.5 text-base font-semibold text-slate-900 dark:text-white">{roomStatusBuckets.hold.length}</p>
                                                 </div>
                                             </div>
-                                            <div className="mt-4 grid gap-3 text-xs text-slate-500 dark:text-white/60 sm:grid-cols-2">
-                                                <div>
-                                                    <p className="font-semibold text-slate-700 dark:text-white/70">Свободные</p>
-                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.available.length ? roomStatusBuckets.available.join(', ') : '—'}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="font-semibold text-slate-700 dark:text-white/70">Занятые</p>
-                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.occupied.length ? roomStatusBuckets.occupied.join(', ') : '—'}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="font-semibold text-rose-500 dark:text-rose-300">Просроченные</p>
-                                                    <p className="mt-1 min-h-[1.5rem]">{roomStatusBuckets.overdue.length ? roomStatusBuckets.overdue.join(', ') : '—'}</p>
-                                                </div>
+                                        </section>
+                                        {isSelectedShiftLedgerLoading ? (
+                                            <p className="mt-2 text-xs text-slate-400 dark:text-white/30">Загружаем операции выбранной смены…</p>
+                                        ) : selectedShiftLedgerError ? (
+                                            <div className="mt-2 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-300">
+                                                <span>История операций недоступна.</span>
+                                                <Button type="button" size="sm" variant="ghost" onClick={() => void mutateSelectedShiftLedger()}>Повторить</Button>
                                             </div>
-                                        </div>
-                                        {selectedShiftTransactions.length ? (
-                                            <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <div className="mb-3 flex items-center justify-between">
+                                        ) : selectedShiftTransactionTotal > 0 ? (
+                                            <div className="mt-4 w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-white/[0.02]">
+                                                <div className="flex items-center justify-between gap-3 px-4 py-3">
                                                     <div>
-                                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Операции <span className="text-slate-400 dark:text-white/40">{selectedShiftTransactions.length}</span></h4>
+                                                        <h4 className="text-base font-semibold text-slate-900 dark:text-white">
+                                                            Операции <span className="text-slate-400 dark:text-white/40">{selectedShiftTransactions.length < selectedShiftTransactionTotal ? `${selectedShiftTransactions.length} из ${selectedShiftTransactionTotal}` : selectedShiftTransactionTotal}</span>
+                                                        </h4>
                                                     </div>
                                                     <Button
                                                         type="button"
                                                         size="sm"
                                                         variant="ghost"
-                                                        className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
+                                                        className="text-slate-600 hover:bg-slate-100 dark:text-white/70 dark:hover:bg-white/[0.06]"
                                                         onClick={() => setIsTransactionsExpanded((prev) => !prev)}
                                                     >
                                                         {isTransactionsExpanded ? 'Свернуть' : 'Развернуть'}
                                                     </Button>
                                                 </div>
                                                 {isTransactionsExpanded ? (
-                                                    <div className="space-y-3">
+                                                    <div className="max-h-[420px] divide-y divide-slate-200/70 overflow-y-auto border-t border-slate-200/80 dark:divide-white/[0.06] dark:border-white/[0.07]">
                                                         {selectedShiftTransactions.map((entry) => {
                                                             const note = entry.note?.trim() || null;
                                                             const categoryName = entry.category?.name?.trim() || null;
                                                             return (
-                                                                <div key={entry.id} className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                                                        <div>
-                                                                            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 dark:text-white/40">{formatDateTime(entry.recordedAt, hotelTz)}</p>
-                                                                            <p className="text-sm text-slate-500 dark:text-white/70">{entry.managerName ?? 'Система'}</p>
-                                                                        </div>
-                                                                        <div className="text-right">
-                                                                            <p className={`text-lg font-semibold ${ledgerDisplayAmountClass(entry)}`}>
-                                                                                {formatLedgerAmount(entry)}
+                                                                <div key={entry.id} className="px-3 py-2.5">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="min-w-0">
+                                                                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                                                                                <p className="text-xs font-medium text-slate-900 dark:text-white">{ledgerDisplayLabel(entry)}</p>
+                                                                                <span className="text-[11px] text-slate-400 dark:text-white/35">{ledgerMethodLabels[entry.method]}</span>
+                                                                                {categoryName ? <span className="text-[11px] text-slate-400 dark:text-white/35">· {categoryName}</span> : null}
+                                                                            </div>
+                                                                            <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/45">
+                                                                                {formatDateTime(entry.recordedAt, hotelTz)} · {entry.managerName ?? 'Система'}{note ? ` · ${note}` : ''}
                                                                             </p>
-                                                                            <p className="text-xs text-slate-400 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                                         </div>
-                                                                    </div>
-                                                                    <div className="mt-3 flex flex-wrap gap-2">
-                                                                        <Badge label={ledgerDisplayLabel(entry)} tone={ledgerDisplayTone(entry)} />
-                                                                        <Badge label={ledgerMethodLabels[entry.method]} />
-                                                                        {categoryName ? <Badge label={categoryName} /> : null}
-                                                                    </div>
-                                                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                                                                        <p className="text-xs text-slate-400 dark:text-white/40">{note || categoryName || ledgerDisplayLabel(entry)}</p>
+                                                                        <div className="flex shrink-0 items-center gap-2">
+                                                                            <p className={`text-sm font-semibold ${ledgerDisplayAmountClass(entry)}`}>{formatLedgerAmount(entry)}</p>
                                                                         <Button
                                                                             type="button"
-                                                                            size="sm"
+                                                                            size="icon"
                                                                             variant="ghost"
-                                                                            className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
+                                                                            className="h-7 w-7 text-slate-500 hover:bg-slate-100 dark:text-white/50 dark:hover:bg-white/[0.06]"
                                                                             onClick={() => handleSelectLedgerEntryForEdit(entry)}
+                                                                            title="Редактировать операцию"
+                                                                            aria-label="Редактировать операцию"
                                                                         >
-                                                                            Редактировать
+                                                                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                                                                         </Button>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             );
                                                         })}
+                                                        {hasMoreSelectedShiftTransactions ? (
+                                                            <div className="flex justify-center px-3 py-3">
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    disabled={isLoadingMoreSelectedShiftTransactions}
+                                                                    onClick={() => void setSelectedShiftLedgerPageCount((count) => count + 1)}
+                                                                >
+                                                                    {isLoadingMoreSelectedShiftTransactions ? 'Загрузка…' : 'Показать ещё'}
+                                                                </Button>
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 ) : null}
                                             </div>
                                         ) : (
                                             <p className="mt-2 text-xs text-slate-400 dark:text-white/30">Нет операций</p>
                                         )}
-                                        <div className="mt-6 space-y-6">
-                                            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <div className="mt-4 space-y-4">
+                                            <div ref={roomBoardRef} className="scroll-mt-5 rounded-xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Номера <span className="text-slate-400 dark:text-white/40">{sortedRooms.length}</span></h3>
+                                                    <div className="min-w-0">
+                                                        <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                                                            Номера <span className="text-slate-400 dark:text-white/40">{sortedRooms.length}</span>
+                                                        </h3>
+                                                    </div>
                                                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 dark:text-white/50">
                                                         {roomOverviewMode === 'history' && isRoomHistoryExpanded && totalFilteredStayHistory > 0 && (
                                                             <span>{totalFilteredStayHistory} записей</span>
                                                         )}
-                                                        <div className="flex rounded-2xl border border-slate-200/80 bg-white p-0.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                                                        <div className="flex rounded-lg border border-slate-200/80 bg-white p-0.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
                                                             <button
                                                                 type="button"
-                                                                className={`rounded-[14px] px-3 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'board' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
-                                                                onClick={() => setRoomOverviewMode('board')}
+                                                                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'board' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
+                                                                onClick={openAdminBoardView}
                                                             >
                                                                 Шахматка
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className={`rounded-[14px] px-3 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'history' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
-                                                                onClick={() => setRoomOverviewMode('history')}
+                                                                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${roomOverviewMode === 'history' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:text-white/50 dark:hover:text-white'}`}
+                                                                onClick={() => {
+                                                                    setBoardListPopup(null);
+                                                                    setRoomOverviewMode('history');
+                                                                    setIsRoomHistoryExpanded(true);
+                                                                }}
                                                             >
                                                                 Список
                                                             </button>
@@ -2855,48 +3081,36 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         >
                                                             Новая бронь
                                                         </Button>
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
-                                                            onClick={() => {
-                                                                setRoomOverviewMode('history');
-                                                                setIsRoomHistoryExpanded((prev) => !prev);
-                                                            }}
-                                                        >
-                                                            {isRoomHistoryExpanded ? 'Свернуть' : 'Открыть'}
-                                                        </Button>
                                                     </div>
                                                 </div>
                                                 {roomOverviewMode === 'board' ? (
-                                                    <div className="mt-4 space-y-3">
-                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="mt-3 space-y-3">
+                                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                                                             <div className="flex flex-wrap gap-1.5">
                                                                 <button
                                                                     type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-cyan-300 bg-cyan-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-cyan-900 transition break-words [overflow-wrap:anywhere] hover:bg-cyan-100 dark:border-cyan-300/35 dark:bg-cyan-400/15 dark:text-cyan-100 dark:hover:bg-cyan-400/20"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-cyan-300 bg-cyan-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-cyan-900 transition break-words [overflow-wrap:anywhere] hover:bg-cyan-100 dark:border-cyan-300/35 dark:bg-cyan-400/15 dark:text-cyan-100 dark:hover:bg-cyan-400/20"
                                                                     onClick={() => setBoardListPopup('scheduled')}
                                                                 >
                                                                     Бронь <span className="font-semibold">{boardScheduledItems.length}</span>
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-amber-300/35 dark:bg-amber-400/15 dark:text-amber-100 dark:hover:bg-amber-400/20"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-amber-300/35 dark:bg-amber-400/15 dark:text-amber-100 dark:hover:bg-amber-400/20"
                                                                     onClick={() => setBoardListPopup('checkedIn')}
                                                                 >
                                                                     Заселён <span className="font-semibold">{boardCheckedInItems.length}</span>
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-rose-700 transition break-words [overflow-wrap:anywhere] hover:bg-rose-100 dark:border-rose-300/35 dark:bg-rose-500/15 dark:text-rose-100 dark:hover:bg-rose-500/20"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-rose-700 transition break-words [overflow-wrap:anywhere] hover:bg-rose-100 dark:border-rose-300/35 dark:bg-rose-500/15 dark:text-rose-100 dark:hover:bg-rose-500/20"
                                                                     onClick={() => setBoardListPopup('overdue')}
                                                                 >
                                                                     Просрочено <span className="font-semibold">{boardOverdueItems.length}</span>
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-slate-600 transition break-words [overflow-wrap:anywhere] hover:bg-slate-100 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/55 dark:hover:bg-white/[0.08]"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-slate-600 transition break-words [overflow-wrap:anywhere] hover:bg-slate-100 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/55 dark:hover:bg-white/[0.08]"
                                                                     onClick={() => setBoardListPopup('freeDates')}
                                                                 >
                                                                     Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
@@ -2932,17 +3146,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 </Button>
                                                             </div>
                                                         </div>
-                                                        <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]">
+                                                        <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]">
                                                             <div className="min-w-[1120px]">
                                                                 <div
-                                                                    className="grid border-b border-slate-200/80 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/45"
+                                                                    className="grid border-b border-slate-200/80 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-white/[0.06] dark:bg-[#151923] dark:text-white/45"
                                                                     style={{ gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))` }}
                                                                 >
                                                                     <div className="sticky left-0 z-20 bg-slate-50 px-3 py-2 dark:bg-[#151923]">Номер</div>
                                                                     {bookingBoardDays.map((day) => (
                                                                         <div key={`board-day-${day.toISOString()}`} className="border-l border-slate-200/80 px-2 py-2 text-center dark:border-white/[0.06]">
-                                                                            <p>{formatBoardDay(day)}</p>
-                                                                            <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day)}</p>
+                                                                            <p>{formatBoardDay(day, hotelTz)}</p>
+                                                                            <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
                                                                         </div>
                                                                     ))}
                                                                 </div>
@@ -3060,11 +3274,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             </button>
                                                                             <button
                                                                                 type="button"
-                                                                                className="text-[11px] text-rose-400/70 transition hover:text-rose-500 dark:text-rose-300/60 dark:hover:text-rose-300"
+                                                                                className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300/70 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                                                                                 onClick={() => handleDeleteRoom(room.id)}
                                                                                 disabled={removingRoomId === room.id}
+                                                                                title="Удалить номер"
+                                                                                aria-label="Удалить номер"
                                                                             >
-                                                                                {removingRoomId === room.id ? '…' : '✕'}
+                                                                                {removingRoomId === room.id ? '…' : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
                                                                             </button>
                                                                         </div>
                                                                         <div className="mt-2 space-y-1.5 pl-1">
@@ -3091,6 +3307,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     })();
                                                                                     const sourceLabel = stayEntry.bookingSource?.trim() ? `источник ${stayEntry.bookingSource.trim()}` : undefined;
                                                                                     const bookingNumberLabel = stayEntry.bookingNumber?.trim() ? `бронь № ${stayEntry.bookingNumber.trim()}` : undefined;
+                                                                                    const cancellationLabel = stayEntry.status === 'CANCELLED' && stayEntry.cancellationPaymentAction
+                                                                                        ? `${stayEntry.cancellationPaymentAction === 'REFUND' ? 'предоплата возвращена' : 'предоплата удержана'} · ${formatCurrency(stayEntry.cancellationAmount ?? 0)}`
+                                                                                        : undefined;
                                                                                     const phoneLabel = stayEntry.guestPhone?.trim() ? `тел. ${stayEntry.guestPhone.trim()}` : undefined;
                                                                                     const companyLabel = stayEntry.companyName?.trim() ? `компания ${stayEntry.companyName.trim()}` : undefined;
                                                                                     const transferLabel = stayEntry.transfers?.length
@@ -3107,10 +3326,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                     <Badge label={stayStatusLabels[stayEntry.status]} tone={stayStatusTone[stayEntry.status]} />
                                                                                                     <button
                                                                                                         type="button"
-                                                                                                        className="text-[11px] text-slate-400 transition hover:text-slate-700 dark:text-white/30 dark:hover:text-white"
+                                                                                                        className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-white/40 dark:hover:bg-white/[0.06] dark:hover:text-white"
                                                                                                         onClick={() => handleSelectStayForEdit(room, stayEntry)}
+                                                                                                        title="Редактировать проживание"
+                                                                                                        aria-label="Редактировать проживание"
                                                                                                     >
-                                                                                                        ✎
+                                                                                                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                                                                                                     </button>
                                                                                                 </div>
                                                                                             </div>
@@ -3129,12 +3350,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                     {[paymentLabel, sourceLabel, bookingNumberLabel].filter(Boolean).join(' · ')}
                                                                                                 </p>
                                                                                             ) : null}
+                                                                                            {cancellationLabel ? (
+                                                                                                <p className={`mt-1 text-[11px] font-semibold ${stayEntry.cancellationPaymentAction === 'REFUND' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>{cancellationLabel}</p>
+                                                                                            ) : null}
                                                                                             {(phoneLabel || companyLabel || stayEntry.notes) ? (
                                                                                                 <p className="mt-1 text-[11px] text-slate-500 dark:text-white/45">
                                                                                                     {[companyLabel, phoneLabel, stayEntry.notes?.trim()].filter(Boolean).join(' · ')}
                                                                                                 </p>
                                                                                             ) : null}
-                                                                                            {onlinePortion > 0 ? (
+                                                                                            {onlinePortion > 0 && stayEntry.status !== 'CANCELLED' ? (
                                                                                                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
                                                                                                     <span className="font-medium">Ожидает сайт: {formatCurrency(onlinePortion)}</span>
                                                                                                     <button
@@ -3183,8 +3407,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     </div>
                                                                 ))
                                                             ) : (
-                                                                <p className="py-3 text-xs text-slate-400 dark:text-white/40">По фильтрам ничего не найдено</p>
+                                                                <p className="py-3 text-xs text-slate-400 dark:text-white/40">
+                                                                    {isStayHistoryLoading ? 'Загружаем историю…' : 'По фильтрам ничего не найдено'}
+                                                                </p>
                                                             )}
+                                                            {hasMoreStayHistory ? (
+                                                                <div className="flex justify-center py-3">
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        disabled={isLoadingMoreStayHistory}
+                                                                        onClick={() => void setStayHistoryPageCount((count) => count + 1)}
+                                                                    >
+                                                                        {isLoadingMoreStayHistory ? 'Загрузка…' : 'Показать более ранние записи'}
+                                                                    </Button>
+                                                                </div>
+                                                            ) : null}
                                                         </div>
                                                     </>
                                                 ) : null}
@@ -3193,26 +3432,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         <div className="mt-4 flex flex-wrap gap-2">
                                             <Button
                                                 type="button"
-                                                size="sm"
+                                                size="icon"
                                                 variant="ghost"
-                                                className="border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                className="h-9 w-9 border border-white/15 text-white/80 hover:bg-white/[0.06]"
                                                 onClick={() => handleSelectShiftForEdit(selectedShift)}
+                                                title="Редактировать смену"
+                                                aria-label="Редактировать смену"
                                             >
-                                                Редактировать смену
+                                                <Pencil className="h-4 w-4" aria-hidden="true" />
                                             </Button>
                                         </div>
                                     </>
                                 ) : (
-                                    <p className="text-sm text-white/60">Выберите смену слева.</p>
+                                    <p className="text-sm text-slate-500 dark:text-white/60">Выберите смену.</p>
                                 )}
                             </div>
                         </div>
                     ) : (
-                        <p className="text-sm text-white/60">Смен пока нет.</p>
+                        <p className="text-sm text-slate-500 dark:text-white/60">Смен пока нет.</p>
                     )}
 
                     {editingShift && (
-                        <div className={`${formPanelClass} border-amber-200/70 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/8`}>
+                        <div className={`${formPanelClass} w-full border-amber-200/70 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/8`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-amber-700/70 dark:text-amber-200/60">Редактирование</p>
@@ -3231,7 +3472,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || (manager.pinCode ? `PIN ${manager.pinCode}` : 'Менеджер')}
+                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -3304,11 +3545,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             {!confirmDeleteShift ? (
                                 <Button
                                     type="button"
+                                    size="icon"
                                     variant="danger"
-                                    className="mt-4 w-full"
+                                    className="mt-4 h-9 w-9"
                                     onClick={() => setConfirmDeleteShift(true)}
+                                    title="Удалить смену"
+                                    aria-label="Удалить смену"
                                 >
-                                    Удалить смену
+                                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                             ) : (
                                 <div className="mt-3 flex gap-2">
@@ -3335,7 +3579,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
 
                     {isCreatingShift && (
-                        <div className={`${formPanelClass} border-emerald-200/70 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/8`}>
+                        <div className={`${formPanelClass} w-full border-emerald-200/70 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/8`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-700/70 dark:text-emerald-300/60">Создание смены</p>
@@ -3354,7 +3598,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || (manager.pinCode ? `PIN ${manager.pinCode}` : 'Менеджер')}
+                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -3691,6 +3935,28 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </Select>
                                     </div>
                                 </div>
+                                {stayFormValues.status === 'CANCELLED' && selectedStayForEditor && (
+                                    ((selectedStayForEditor.cashPaid ?? 0) + (selectedStayForEditor.cardPaid ?? 0) + (selectedStayForEditor.onlinePaid ?? 0)) > 0
+                                ) ? (
+                                    <div className="rounded-2xl border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-500/10">
+                                        <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">Что сделать с предоплатой {formatCurrency((selectedStayForEditor.cashPaid ?? 0) + (selectedStayForEditor.cardPaid ?? 0) + (selectedStayForEditor.onlinePaid ?? 0))}?</p>
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                            <label className={`cursor-pointer rounded-xl border p-3 text-sm transition ${stayFormValues.cancellationPaymentAction === 'REFUND' ? 'border-emerald-400 bg-emerald-50 text-emerald-900 dark:bg-emerald-400/10 dark:text-emerald-100' : 'border-amber-200 bg-white/70 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70'}`}>
+                                                <input type="radio" value="REFUND" className="sr-only" {...stayEditForm.register('cancellationPaymentAction')} />
+                                                <span className="block font-semibold">Вернуть гостю</span>
+                                                <span className="mt-1 block text-xs opacity-65">Возврат попадёт в расход активной смены.</span>
+                                            </label>
+                                            <label className={`cursor-pointer rounded-xl border p-3 text-sm transition ${stayFormValues.cancellationPaymentAction === 'RETAIN' ? 'border-amber-400 bg-amber-100/70 text-amber-950 dark:bg-amber-400/15 dark:text-amber-100' : 'border-amber-200 bg-white/70 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70'}`}>
+                                                <input type="radio" value="RETAIN" className="sr-only" {...stayEditForm.register('cancellationPaymentAction')} />
+                                                <span className="block font-semibold">Удержать</span>
+                                                <span className="mt-1 block text-xs opacity-65">Сумма останется учтённой как удержанная.</span>
+                                            </label>
+                                        </div>
+                                        {stayFormValues.cancellationPaymentAction === 'REFUND' && ((selectedStayForEditor.cashPaid ?? 0) > 0 || (selectedStayForEditor.cardPaid ?? 0) > 0) && !activeShiftId ? (
+                                            <p className="mt-3 text-xs font-medium text-rose-600 dark:text-rose-300">Сначала откройте смену объекта для возврата.</p>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                                 <div className="grid gap-3 md:grid-cols-4">
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>{`Наличные (${hotelCur || 'KZT'})`}</label>
@@ -3710,15 +3976,16 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             {...stayEditForm.register('cardPaid', { valueAsNumber: true })}
                                         />
                                     </div>
-                                    <div className="space-y-1">
+                                    {(data?.allowOnlinePayments !== false || (selectedStayForEditor?.onlinePaid ?? 0) > 0) && <div className="space-y-1">
                                         <label className={modalLabelClass}>{`На сайте (${hotelCur || 'KZT'})`}</label>
                                         <Input
                                             type="number"
                                             step="0.01"
                                             min="0"
+                                            disabled={data?.allowOnlinePayments === false}
                                             {...stayEditForm.register('onlinePaid', { valueAsNumber: true })}
                                         />
-                                    </div>
+                                    </div>}
                                     <div className="space-y-1">
                                         <label className={modalLabelClass}>{`Общая оплата (${hotelCur || 'KZT'})`}</label>
                                         <Input
@@ -3930,37 +4197,47 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 {manager.username ? `@${manager.username} • ` : ''}
-                                                                PIN {manager.pinCode ?? 'не задан'}
+                                                                PIN {manager.hasPin ? 'настроен' : 'не задан'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
                                                                 Ставка: {manager.shiftPayAmount != null ? formatCurrency(manager.shiftPayAmount) : '—'} •
                                                                 Процент: {manager.revenueSharePct != null ? formatPercentage(manager.revenueSharePct) : '—'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
-                                                                Исправления: {manager.canEditStayPayments ? 'разрешены' : 'без доступа'}
+                                                                Права: {[
+                                                                    manager.canEditBookings ? 'бронь' : null,
+                                                                    manager.canEditStayPayments ? 'оплаты' : null,
+                                                                    manager.canCancelBookings ? 'отмена' : null
+                                                                ].filter(Boolean).join(' · ') || 'только основные операции'}
                                                             </p>
                                                         </div>
-                                                        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                                                        <div className="flex flex-wrap items-center justify-end gap-2">
                                                             <Badge label="Менеджер" />
-                                                            {manager.canEditStayPayments ? <Badge label="Суммы" tone="success" /> : null}
+                                                            {manager.canEditBookings ? <Badge label="Брони" tone="success" /> : null}
+                                                            {manager.canEditStayPayments ? <Badge label="Оплаты" tone="success" /> : null}
+                                                            {manager.canCancelBookings ? <Badge label="Отмена" tone="warning" /> : null}
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="ghost"
-                                                                className="border border-slate-200/80 text-xs text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/[0.06]"
+                                                                className="h-8 w-8 border border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                                 onClick={() => handleSelectManagerForEdit(manager.assignmentId)}
+                                                                title="Редактировать менеджера"
+                                                                aria-label="Редактировать менеджера"
                                                             >
-                                                                Редактировать
+                                                                <Pencil className="h-4 w-4" aria-hidden="true" />
                                                             </Button>
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="ghost"
-                                                                className="border border-rose-400/40 text-xs text-rose-200 hover:bg-rose-500/10"
+                                                                className="h-8 w-8 border border-rose-300/60 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:border-rose-400/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
                                                                 onClick={() => handleRemoveManager(manager.assignmentId)}
                                                                 disabled={removingManagerId === manager.assignmentId}
+                                                                title="Удалить менеджера"
+                                                                aria-label="Удалить менеджера"
                                                             >
-                                                                {removingManagerId === manager.assignmentId ? 'Удаляем…' : 'Удалить'}
+                                                                {removingManagerId === manager.assignmentId ? '…' : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                                                             </Button>
                                                         </div>
                                                     </div>
@@ -4014,8 +4291,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         )}
                                                         <Input
                                                             placeholder="PIN (6 цифр)"
+                                                            type="password"
                                                             maxLength={6}
                                                             inputMode="numeric"
+                                                            autoComplete="new-password"
                                                             {...managerForm.register('pinCode', {
                                                                 required: 'Укажите PIN',
                                                                 minLength: { value: 6, message: 'Код состоит из 6 цифр' },
@@ -4040,14 +4319,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             placeholder="Процент с оборота"
                                                             {...managerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
                                                         />
-                                                        <label className="flex items-start gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70">
-                                                            <input
-                                                                type="checkbox"
-                                                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
-                                                                {...managerForm.register('canEditStayPayments')}
-                                                            />
-                                                            <span>Разрешить исправлять суммы и отменять операции</span>
-                                                        </label>
+                                                        <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-white/40">Дополнительные права</p>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...managerForm.register('canEditBookings')} />
+                                                                <span>Редактировать данные и даты броней</span>
+                                                            </label>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...managerForm.register('canEditStayPayments')} />
+                                                                <span>Изменять суммы и способы оплаты</span>
+                                                            </label>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...managerForm.register('canCancelBookings')} />
+                                                                <span>Отменять будущие брони</span>
+                                                            </label>
+                                                        </div>
                                                         <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
                                                         <Button type="submit" className="w-full">
                                                             Добавить менеджера
@@ -4122,9 +4408,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             {...updateManagerForm.register('username')}
                                                         />
                                                         <Input
-                                                            placeholder={selectedManager?.pinCode ? `Новый PIN (сейчас ${selectedManager.pinCode})` : 'Новый PIN (6 цифр)'}
+                                                            placeholder={selectedManager?.hasPin ? 'Новый PIN (пусто — без изменений)' : 'Новый PIN (6 цифр)'}
+                                                            type="password"
                                                             maxLength={6}
                                                             inputMode="numeric"
+                                                            autoComplete="new-password"
                                                             {...updateManagerForm.register('pinCode', {
                                                                 validate: (value) => {
                                                                     if (!value.trim()) {
@@ -4161,14 +4449,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             }
                                                             {...updateManagerForm.register('revenueSharePct', { valueAsNumber: true, min: 0 })}
                                                         />
-                                                        <label className="flex items-start gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70">
-                                                            <input
-                                                                type="checkbox"
-                                                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
-                                                                {...updateManagerForm.register('canEditStayPayments')}
-                                                            />
-                                                            <span>Разрешить исправлять суммы и отменять операции</span>
-                                                        </label>
+                                                        <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-white/40">Дополнительные права</p>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...updateManagerForm.register('canEditBookings')} />
+                                                                <span>Редактировать данные и даты броней</span>
+                                                            </label>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...updateManagerForm.register('canEditStayPayments')} />
+                                                                <span>Изменять суммы и способы оплаты</span>
+                                                            </label>
+                                                            <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-white/70">
+                                                                <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...updateManagerForm.register('canCancelBookings')} />
+                                                                <span>Отменять будущие брони</span>
+                                                            </label>
+                                                        </div>
                                                         <Button type="submit" className="w-full" variant="secondary">
                                                             Обновить менеджера
                                                         </Button>
@@ -4236,11 +4531,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     </>
                                                                 ) : (
                                                                     <>
-                                                                        <Button type="button" size="sm" variant="ghost" className="border border-slate-200/80 dark:border-white/15" onClick={() => handleStartEditExpenseCategory(category)}>
-                                                                            Изменить
+                                                                        <Button type="button" size="icon" variant="ghost" className="h-8 w-8 border border-slate-200/80 dark:border-white/15" onClick={() => handleStartEditExpenseCategory(category)} title="Изменить категорию" aria-label="Изменить категорию">
+                                                                            <Pencil className="h-4 w-4" aria-hidden="true" />
                                                                         </Button>
-                                                                        <Button type="button" size="sm" variant="ghost" className="border border-rose-200/80 text-rose-600 hover:bg-rose-50 dark:border-rose-500/20 dark:text-rose-300 dark:hover:bg-rose-500/10" disabled={isRemoving} onClick={() => handleDeleteExpenseCategory(category.id)}>
-                                                                            {isRemoving ? 'Удаляем…' : 'Удалить'}
+                                                                        <Button type="button" size="icon" variant="ghost" className="h-8 w-8 border border-rose-200/80 text-rose-600 hover:bg-rose-50 dark:border-rose-500/20 dark:text-rose-300 dark:hover:bg-rose-500/10" disabled={isRemoving} onClick={() => handleDeleteExpenseCategory(category.id)} title="Удалить категорию" aria-label="Удалить категорию">
+                                                                            {isRemoving ? '…' : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                                                                         </Button>
                                                                     </>
                                                                 )}
@@ -4304,11 +4599,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <span className="flex-1" />
                                                             <button
                                                                 type="button"
-                                                                className="text-[11px] text-rose-300/60 hover:text-rose-300 transition"
+                                                                className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300/70 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                                                                 onClick={() => handleDeleteBonusTier(tier.id)}
                                                                 disabled={removingTierId === tier.id}
+                                                                title="Удалить бонусный порог"
+                                                                aria-label="Удалить бонусный порог"
                                                             >
-                                                                {removingTierId === tier.id ? '…' : '✕'}
+                                                                {removingTierId === tier.id ? '…' : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                                                             </button>
                                                         </div>
                                                     ))}
@@ -4510,18 +4807,22 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <span className="min-w-[1rem] flex-1" />
                                                             <button
                                                                 type="button"
-                                                                className="text-[11px] text-slate-400 transition hover:text-slate-700 dark:text-white/30 dark:hover:text-white"
+                                                                className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-white/45 dark:hover:bg-white/[0.06] dark:hover:text-white"
                                                                 onClick={() => handleStartEditRoom(room)}
+                                                                title="Редактировать номер"
+                                                                aria-label="Редактировать номер"
                                                             >
-                                                                ✎
+                                                                <Pencil className="h-4 w-4" aria-hidden="true" />
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="text-[11px] text-rose-400/70 transition hover:text-rose-500 dark:text-rose-300/60 dark:hover:text-rose-300"
+                                                                className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300/70 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                                                                 onClick={() => handleDeleteRoom(room.id)}
                                                                 disabled={removingRoomId === room.id}
+                                                                title="Удалить номер"
+                                                                aria-label="Удалить номер"
                                                             >
-                                                                {removingRoomId === room.id ? '…' : '✕'}
+                                                                {removingRoomId === room.id ? '…' : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                                                             </button>
                                                         </div>
                                                     )}
@@ -4535,6 +4836,67 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         </div>
                     </div>
                 )}
+                {isDirtyRoomsOpen ? (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm"
+                        onClick={() => setIsDirtyRoomsOpen(false)}
+                    >
+                        <Card
+                            className="flex max-h-[82dvh] w-full max-w-md flex-col overflow-hidden border-slate-700/55 bg-[#10141b] p-0 text-slate-100 shadow-2xl dark:bg-[#10141b]"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="flex items-start justify-between gap-3 border-b border-slate-700/55 px-4 py-3 sm:px-5">
+                                <div className="min-w-0">
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{data.name}</p>
+                                    <h3 className="mt-1 text-lg font-semibold">Номера на уборке</h3>
+                                    <p className="mt-1 text-xs text-slate-400">{dirtyRooms.length} {dirtyRooms.length === 1 ? 'номер' : 'номеров'} ожидают уборку</p>
+                                </div>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setIsDirtyRoomsOpen(false)} aria-label="Закрыть список">
+                                    ×
+                                </Button>
+                            </div>
+
+                            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                                {dirtyRooms.length ? (
+                                    <div className="space-y-2">
+                                        {dirtyRooms.map((room) => (
+                                            <div key={`dirty-room-${room.id}`} className="rounded-xl border border-rose-300/15 bg-rose-400/[0.07] px-3 py-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-semibold text-white">№ {room.label}</p>
+                                                        <p className="mt-0.5 text-xs text-slate-400">{room.floor?.trim() || 'Этаж не указан'}</p>
+                                                    </div>
+                                                    <span className="shrink-0 rounded-full bg-rose-400/15 px-2.5 py-1 text-[11px] font-semibold text-rose-200">Уборка</span>
+                                                </div>
+                                                {room.notes?.trim() ? <p className="mt-2 text-xs leading-relaxed text-slate-300">{room.notes.trim()}</p> : null}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-emerald-300/15 bg-emerald-400/[0.07] px-4 py-6 text-center">
+                                        <p className="text-sm font-semibold text-emerald-200">Все номера убраны</p>
+                                        <p className="mt-1 text-xs text-slate-400">Сейчас номеров со статусом уборки нет.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 border-t border-slate-700/55 px-4 py-3">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setIsDirtyRoomsOpen(false)}>Закрыть</Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        setIsDirtyRoomsOpen(false);
+                                        openAdminBoardView();
+                                    }}
+                                >
+                                    Открыть шахматку
+                                </Button>
+                            </div>
+                        </Card>
+                    </div>
+                ) : null}
                 {boardListPopup && (() => {
                     const isFreeDatesPopup = boardListPopup === 'freeDates';
                     const stayItems = boardListPopup === 'scheduled'
@@ -4550,7 +4912,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 ? 'Просрочено'
                                 : 'Свободные даты';
                     const count = isFreeDatesPopup ? boardFreeDateItems.length : stayItems.length;
-                    const periodLabel = `${formatBoardDay(bookingBoardRange.start)} - ${formatBoardDay(addDays(bookingBoardRange.end, -1))}`;
+                    const periodLabel = `${formatBoardDay(bookingBoardRange.start, hotelTz)} - ${formatBoardDay(addDays(bookingBoardRange.end, -1), hotelTz)}`;
 
                     return (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
@@ -4573,8 +4935,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 {boardFreeDateItems.map((item) => {
                                                     const lastFreeDay = addDays(item.endDate, -1);
                                                     const rangeLabel = item.startIndex + 1 === item.endIndex
-                                                        ? formatBoardDay(item.startDate)
-                                                        : `${formatBoardDay(item.startDate)} - ${formatBoardDay(lastFreeDay)}`;
+                                                        ? formatBoardDay(item.startDate, hotelTz)
+                                                        : `${formatBoardDay(item.startDate, hotelTz)} - ${formatBoardDay(lastFreeDay, hotelTz)}`;
 
                                                     return (
                                                         <button
@@ -4676,8 +5038,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         );
                                     })
                                 ) : (
-                                    <p className="text-sm text-slate-400 dark:text-white/30">Нет записей</p>
+                                    <p className="text-sm text-slate-400 dark:text-white/30">
+                                        {hasMoreSelectedShiftTransactions ? 'Старые списания ещё не загружены.' : 'Нет записей'}
+                                    </p>
                                 )}
+                                {hasMoreSelectedShiftTransactions ? (
+                                    <div className="flex justify-center pt-1">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={isLoadingMoreSelectedShiftTransactions}
+                                            onClick={() => void setSelectedShiftLedgerPageCount((count) => count + 1)}
+                                        >
+                                            {isLoadingMoreSelectedShiftTransactions ? 'Загрузка…' : 'Загрузить более ранние операции'}
+                                        </Button>
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     </div>

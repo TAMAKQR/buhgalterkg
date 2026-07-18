@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { prisma } from '@/lib/db';
 import { RoomStatus } from '@prisma/client';
+import { deriveTelegramWebhookSecret, validateTelegramWebhookSecret } from '@/lib/server/telegram-webhook-auth';
 
 const TELEGRAM_API = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
@@ -48,6 +49,7 @@ const chatLabel = (chat: { id: number; title?: string; type: string }) => {
 const sendTelegramRequest = async (method: string, body: Record<string, unknown>) => {
     const response = await fetch(`${TELEGRAM_API}/${method}`, {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
@@ -114,7 +116,13 @@ const handleCleaningCallback = async (callbackQuery: NonNullable<TelegramUpdate[
 
     const room = await prisma.room.findUnique({
         where: { id: roomId },
-        select: { id: true, label: true, status: true, currentStayId: true },
+        select: {
+            id: true,
+            label: true,
+            status: true,
+            currentStayId: true,
+            hotel: { select: { cleaningChatId: true } }
+        },
     });
 
     if (!room) {
@@ -126,6 +134,11 @@ const handleCleaningCallback = async (callbackQuery: NonNullable<TelegramUpdate[
         return;
     }
 
+    const callbackChatId = callbackQuery.message?.chat.id;
+    if (!room.hotel.cleaningChatId || String(callbackChatId ?? '') !== room.hotel.cleaningChatId) {
+        return;
+    }
+
     if (room.status !== RoomStatus.DIRTY) {
         await sendTelegramRequest('answerCallbackQuery', {
             callback_query_id: callbackQuery.id,
@@ -134,13 +147,25 @@ const handleCleaningCallback = async (callbackQuery: NonNullable<TelegramUpdate[
         return;
     }
 
-    await prisma.room.update({
-        where: { id: room.id },
+    const updateResult = await prisma.room.updateMany({
+        where: {
+            id: room.id,
+            status: RoomStatus.DIRTY,
+            currentStayId: null,
+        },
         data: {
             status: RoomStatus.AVAILABLE,
-            currentStayId: room.currentStayId ?? null,
         },
     });
+
+    if (updateResult.count !== 1) {
+        await sendTelegramRequest('answerCallbackQuery', {
+            callback_query_id: callbackQuery.id,
+            text: `Состояние комнаты ${room.label} уже изменилось`,
+            show_alert: true,
+        });
+        return;
+    }
 
     const cleanerName = formatCleanerName(callbackQuery.from);
     const message = callbackQuery.message;
@@ -162,6 +187,14 @@ const handleCleaningCallback = async (callbackQuery: NonNullable<TelegramUpdate[
 
 export async function POST(request: Request) {
     try {
+        const authFailure = validateTelegramWebhookSecret(request, [
+            env.TELEGRAM_WEBHOOK_SECRET,
+            deriveTelegramWebhookSecret(env.TELEGRAM_BOT_TOKEN),
+        ]);
+        if (authFailure) {
+            return NextResponse.json({ ok: false, error: authFailure.message }, { status: authFailure.status });
+        }
+
         const update = (await request.json()) as TelegramUpdate;
         if (update.callback_query) {
             await handleCleaningCallback(update.callback_query);

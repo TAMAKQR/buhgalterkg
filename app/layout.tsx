@@ -1,11 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { Space_Grotesk } from 'next/font/google';
-import Script from 'next/script';
 import { ToastProvider } from '@/components/ui/toast';
 import { ThemeProvider } from '@/components/providers/theme-provider';
-
-const grotesk = Space_Grotesk({ subsets: ['latin', 'latin-ext'], variable: '--font-sans' });
+import { ServiceWorkerMaintenance } from '@/components/providers/service-worker-maintenance';
 
 export const metadata: Metadata = {
     title: 'Hotel Ops',
@@ -31,17 +28,14 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
     themeColor: '#0f172a',
     width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1
+    initialScale: 1
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="ru" className={`${grotesk.variable} dark`} suppressHydrationWarning>
-            <head>
-                <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
-            </head>
-            <body className="min-h-screen bg-night dark:bg-night bg-light-bg text-light-text dark:text-mist antialiased font-sans">
+        <html lang="ru" className="min-h-full bg-[#f4f6f8] dark dark:bg-[#0c0f13]" suppressHydrationWarning>
+            <body className="min-h-screen bg-[#f4f6f8] font-sans text-light-text antialiased dark:bg-[#0c0f13] dark:text-mist">
+                <ServiceWorkerMaintenance />
                 <ThemeProvider>
                     <ToastProvider>
                         {children}

@@ -1,11 +1,12 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import { AuthShell } from '@/components/ui/auth-shell';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
+import { ArrowRight, Building2, Eye, ShieldCheck } from 'lucide-react';
 
 interface ManualLoginResponse {
     success: boolean;
@@ -67,51 +68,33 @@ export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLogin
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-night px-4 text-white">
-            <Card className="w-full max-w-sm space-y-5 p-5">
-                <div>
-                    <h1 className="text-xl font-semibold">Вход менеджера</h1>
-                    <p className="mt-1 text-sm text-white/50">Введите назначенный логин и PIN-код.</p>
+        <AuthShell
+            title="С возвращением"
+            description="Войдите, чтобы продолжить работу"
+            icon={<Building2 className="h-5 w-5" aria-hidden="true" />}
+            footer={(
+                <div className="flex items-center justify-center gap-1 text-xs">
+                    <button type="button" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/[0.05] dark:hover:text-slate-200" onClick={onAdminMode}><ShieldCheck className="h-3.5 w-3.5" />Администратор</button>
+                    <span className="text-slate-300 dark:text-slate-700">·</span>
+                    <button type="button" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/[0.05] dark:hover:text-slate-200" onClick={onObserverMode}><Eye className="h-3.5 w-3.5" />Наблюдатель</button>
                 </div>
-                <form className="space-y-3" onSubmit={handleSubmit}>
-                    <Input
-                        type="text"
-                        placeholder="Логин"
-                        autoComplete="username"
-                        value={login}
-                        onChange={(event) => setLogin(event.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())}
-                        disabled={pending}
-                    />
-                    <Input
-                        type="password"
-                        placeholder="PIN (6 цифр)"
-                        maxLength={6}
-                        inputMode="numeric"
-                        autoComplete="current-password"
-                        value={pinCode}
-                        onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))}
-                        disabled={pending}
-                    />
-                    {error && <p className="text-xs text-rose-400">{error}</p>}
-                    <Button type="submit" className="w-full" disabled={pending || pinCode.length !== 6 || !login.trim()}>
-                        {pending ? 'Вход…' : 'Войти'}
-                    </Button>
-                </form>
-                <button
-                    type="button"
-                    className="block w-full text-center text-xs text-white/40 transition-colors hover:text-white/60"
-                    onClick={onAdminMode}
-                >
-                    Войти как администратор
-                </button>
-                <button
-                    type="button"
-                    className="block w-full text-center text-xs text-white/40 transition-colors hover:text-white/60"
-                    onClick={onObserverMode}
-                >
-                    Войти как наблюдатель
-                </button>
-            </Card>
-        </div>
+            )}
+        >
+            <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+                <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Логин</span>
+                    <Input type="text" placeholder="Введите логин" autoComplete="username" autoCapitalize="none" spellCheck={false} value={login} onChange={(event) => setLogin(event.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())} disabled={pending} />
+                </label>
+                <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">PIN-код</span>
+                    <Input className="font-mono text-base tracking-[0.35em]" type="password" placeholder="••••••" maxLength={6} inputMode="numeric" pattern="[0-9]*" autoComplete="one-time-code" value={pinCode} onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))} disabled={pending} />
+                </label>
+                {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</p>}
+                <Button type="submit" className="w-full gap-2" disabled={pending || pinCode.length !== 6 || !login.trim()}>
+                    {pending ? 'Проверяем…' : 'Продолжить'}
+                    {!pending && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+                </Button>
+            </form>
+        </AuthShell>
     );
 }

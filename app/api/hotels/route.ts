@@ -10,8 +10,58 @@ import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { hasConfiguredPin } from '@/lib/pin';
+import { httpUrlSchema } from '@/lib/http-url';
 
 export const dynamic = 'force-dynamic';
+
+const DIRECTORY_HOTEL_LIMIT = 250;
+const DIRECTORY_ASSIGNMENT_LIMIT = 2_500;
+const FULL_MANAGERS_PER_HOTEL_LIMIT = 100;
+const FULL_REPORT_DEFAULT_DAYS = 31;
+const FULL_REPORT_MAX_DAYS = 370;
+const MAX_FILTER_IDS = 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const COLLECTION_SEARCH_TERMS = ['инкассац', 'инкасац', 'inkass', 'incass', 'collection'] as const;
+
+const collectionCandidateFilters: Prisma.CashEntryWhereInput[] = COLLECTION_SEARCH_TERMS.flatMap((term) => [
+    { note: { contains: term, mode: 'insensitive' } },
+    { expenseCategory: { name: { contains: term, mode: 'insensitive' } } },
+]);
+
+const hotelDirectorySelect = {
+    id: true,
+    name: true,
+    address: true,
+    country: true,
+    timezone: true,
+    currency: true,
+} as const;
+
+const hotelConfigurationSelect = {
+    ...hotelDirectorySelect,
+    usesExtranets: true,
+    extranetNames: true,
+    hasMealPlan: true,
+    allowGroupStays: true,
+    allowPostpaidStays: true,
+    allowOnlinePayments: true,
+    guestQrEnabled: true,
+    showInGuestListing: true,
+    guestDescription: true,
+    guestAmenities: true,
+    guestPhotoUrls: true,
+    guestMapUrl: true,
+    financialCycleStartDay: true,
+    managerSharePct: true,
+    monthlyPayrollCost: true,
+    monthlyRentCost: true,
+    monthlyUtilitiesCost: true,
+    monthlySuppliesCost: true,
+    monthlyOtherCost: true,
+    notes: true,
+    cleaningChatId: true,
+} as const;
 
 const cleaningChatIdSchema = z
     .string()
@@ -29,12 +79,15 @@ const createHotelSchema = z.object({
     usesExtranets: z.boolean().optional(),
     extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
     hasMealPlan: z.boolean().optional(),
+    allowGroupStays: z.boolean().optional(),
     allowPostpaidStays: z.boolean().optional(),
+    allowOnlinePayments: z.boolean().optional(),
     guestQrEnabled: z.boolean().optional(),
+    showInGuestListing: z.boolean().optional(),
     guestDescription: z.string().trim().max(800).optional().nullable(),
     guestAmenities: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
-    guestPhotoUrls: z.array(z.string().trim().url().max(500)).max(12).optional(),
-    guestMapUrl: z.string().trim().url().max(500).optional().nullable(),
+    guestPhotoUrls: z.array(httpUrlSchema).max(12).optional(),
+    guestMapUrl: httpUrlSchema.optional().nullable(),
     financialCycleStartDay: z.number().int().min(1).max(31).optional(),
     managerSharePct: z.number().int().min(0).max(100).optional(),
     monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -77,58 +130,191 @@ export async function GET(request: NextRequest) {
         const countryConfig = getCountryConfig(country);
         const { searchParams } = new URL(request.url);
 
-        const parseIds = (key: string) => {
-            return searchParams
+        const view = searchParams.get('view') ?? 'directory';
+        if (view !== 'directory' && view !== 'configuration' && view !== 'full') {
+            return new NextResponse('Unknown hotel view', { status: 400 });
+        }
+
+        const parseIds = (key: string) => Array.from(new Set(
+            searchParams
                 .getAll(key)
                 .flatMap((value) => value.split(','))
                 .map((value) => value.trim())
-                .filter(Boolean);
-        };
+                .filter(Boolean)
+        ));
 
         const hotelIds = parseIds('hotelId');
         const managerIds = parseIds('managerId');
-        const startDate = parseInputValue(searchParams.get('startAt'), countryConfig.timezone)
-            ?? parseDateOnly(searchParams.get('startDate'), false, countryConfig.timezone);
-        const endDate = parseInputValue(searchParams.get('endAt'), countryConfig.timezone)
-            ?? parseDateOnly(searchParams.get('endDate'), true, countryConfig.timezone);
+        if (hotelIds.length > MAX_FILTER_IDS || managerIds.length > MAX_FILTER_IDS) {
+            return new NextResponse(`Too many filter values (max ${MAX_FILTER_IDS})`, { status: 400 });
+        }
 
         const hotelWhere: Prisma.HotelWhereInput = {
             country,
             ...(hotelIds.length ? { id: { in: hotelIds } } : {}),
         };
 
-        const ledgerWhere: Prisma.CashEntryWhereInput = {
-            hotel: { country },
-            ...(hotelIds.length ? { hotelId: { in: hotelIds } } : {}),
-            ...(managerIds.length ? { managerId: { in: managerIds } } : {}),
-            ...((startDate || endDate)
-                ? {
-                    recordedAt: {
-                        ...(startDate ? { gte: startDate } : {}),
-                        ...(endDate ? { lte: endDate } : {}),
+        if (view === 'configuration') {
+            const configurationRows = await prisma.hotel.findMany({
+                where: hotelWhere,
+                orderBy: [{ name: 'asc' }, { id: 'asc' }],
+                take: DIRECTORY_HOTEL_LIMIT + 1,
+                select: hotelConfigurationSelect,
+            });
+            const hotelsTruncated = configurationRows.length > DIRECTORY_HOTEL_LIMIT;
+
+            return NextResponse.json(
+                configurationRows.slice(0, DIRECTORY_HOTEL_LIMIT),
+                {
+                    headers: {
+                        'X-Result-Truncated': String(hotelsTruncated),
+                        'X-Directory-Hotel-Limit': String(DIRECTORY_HOTEL_LIMIT),
                     },
                 }
-                : {}),
+            );
+        }
+
+        if (view === 'directory') {
+            const directoryRows = await prisma.hotel.findMany({
+                where: hotelWhere,
+                orderBy: [{ name: 'asc' }, { id: 'asc' }],
+                take: DIRECTORY_HOTEL_LIMIT + 1,
+                select: hotelDirectorySelect,
+            });
+            const hotelsTruncated = directoryRows.length > DIRECTORY_HOTEL_LIMIT;
+            const directoryHotels = directoryRows.slice(0, DIRECTORY_HOTEL_LIMIT);
+            const directoryHotelIds = directoryHotels.map((hotel) => hotel.id);
+            const assignmentRows = directoryHotelIds.length
+                ? await prisma.hotelAssignment.findMany({
+                    where: {
+                        hotelId: { in: directoryHotelIds },
+                        isActive: true,
+                    },
+                    orderBy: [{ hotelId: 'asc' }, { createdAt: 'asc' }],
+                    take: DIRECTORY_ASSIGNMENT_LIMIT + 1,
+                    select: {
+                        hotelId: true,
+                        role: true,
+                        user: {
+                            select: {
+                                id: true,
+                                displayName: true,
+                                username: true,
+                            },
+                        },
+                    },
+                })
+                : [];
+            const assignmentsTruncated = assignmentRows.length > DIRECTORY_ASSIGNMENT_LIMIT;
+            const managerMap = new Map<string, Array<{
+                id: string;
+                displayName: string | null;
+                username: string | null;
+                role: string;
+            }>>();
+
+            for (const assignment of assignmentRows.slice(0, DIRECTORY_ASSIGNMENT_LIMIT)) {
+                const managers = managerMap.get(assignment.hotelId) ?? [];
+                managers.push({
+                    id: assignment.user.id,
+                    displayName: assignment.user.displayName,
+                    username: assignment.user.username,
+                    role: assignment.role,
+                });
+                managerMap.set(assignment.hotelId, managers);
+            }
+
+            return NextResponse.json(
+                directoryHotels.map((hotel) => ({
+                    ...hotel,
+                    managers: managerMap.get(hotel.id) ?? [],
+                })),
+                {
+                    headers: {
+                        'X-Result-Truncated': String(hotelsTruncated || assignmentsTruncated),
+                        'X-Directory-Hotel-Limit': String(DIRECTORY_HOTEL_LIMIT),
+                    },
+                }
+            );
+        }
+
+        const parsedStartDate = parseInputValue(searchParams.get('startAt'), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get('startDate'), false, countryConfig.timezone);
+        const parsedEndDate = parseInputValue(searchParams.get('endAt'), countryConfig.timezone)
+            ?? parseDateOnly(searchParams.get('endDate'), true, countryConfig.timezone);
+        const endDate = parsedEndDate ?? new Date();
+        const startDate = parsedStartDate ?? new Date(endDate.getTime() - FULL_REPORT_DEFAULT_DAYS * DAY_MS);
+
+        if (startDate.getTime() > endDate.getTime()) {
+            return new NextResponse('Start date must not be after end date', { status: 400 });
+        }
+        if (endDate.getTime() - startDate.getTime() > FULL_REPORT_MAX_DAYS * DAY_MS) {
+            return new NextResponse(`Report range must not exceed ${FULL_REPORT_MAX_DAYS} days`, { status: 400 });
+        }
+
+        const hotelRows = await prisma.hotel.findMany({
+            where: hotelWhere,
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: DIRECTORY_HOTEL_LIMIT + 1,
+            select: {
+                ...hotelConfigurationSelect,
+                _count: {
+                    select: { rooms: true },
+                },
+                shifts: {
+                    where: { status: ShiftStatus.OPEN },
+                    orderBy: { openedAt: 'desc' },
+                    take: 1,
+                    select: {
+                        openedAt: true,
+                        openingCash: true,
+                        number: true,
+                        manager: {
+                            select: { displayName: true },
+                        },
+                    },
+                },
+                assignments: {
+                    where: { isActive: true },
+                    orderBy: { createdAt: 'asc' },
+                    take: FULL_MANAGERS_PER_HOTEL_LIMIT,
+                    select: {
+                        role: true,
+                        pinCode: true,
+                        pinHash: true,
+                        shiftPayAmount: true,
+                        revenueSharePct: true,
+                        user: {
+                            select: {
+                                id: true,
+                                displayName: true,
+                                telegramId: true,
+                                loginName: true,
+                                username: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        const hotelsTruncated = hotelRows.length > DIRECTORY_HOTEL_LIMIT;
+        const hotels = hotelRows.slice(0, DIRECTORY_HOTEL_LIMIT);
+        const scopedHotelIds = hotels.map((hotel) => hotel.id);
+
+        const ledgerWhere: Prisma.CashEntryWhereInput = {
+            hotelId: { in: scopedHotelIds },
+            ...(managerIds.length ? { managerId: { in: managerIds } } : {}),
+            recordedAt: {
+                gte: startDate,
+                lte: endDate,
+            },
         };
 
-        const [hotels, ledgerGroups, collectionEntries, recentExpenseEntries] = await Promise.all([
-            prisma.hotel.findMany({
-                where: hotelWhere,
-                include: {
-                    rooms: true,
-                    shifts: {
-                        where: { status: ShiftStatus.OPEN },
-                        orderBy: { openedAt: 'desc' },
-                        take: 1,
-                        include: {
-                            manager: true
-                        }
-                    },
-                    assignments: {
-                        where: { isActive: true },
-                        include: { user: true }
-                    }
-                }
+        const [roomStatusGroups, ledgerGroups, collectionEntries, recentExpenseEntries] = await Promise.all([
+            prisma.room.groupBy({
+                by: ['hotelId', 'status'],
+                where: { hotelId: { in: scopedHotelIds } },
+                _count: { _all: true },
             }),
             prisma.cashEntry.groupBy({
                 by: ['hotelId', 'entryType', 'method'],
@@ -139,6 +325,7 @@ export async function GET(request: NextRequest) {
                 where: {
                     ...ledgerWhere,
                     entryType: LedgerEntryType.CASH_OUT,
+                    OR: collectionCandidateFilters,
                 },
                 select: {
                     hotelId: true,
@@ -180,6 +367,13 @@ export async function GET(request: NextRequest) {
             })
         ]);
 
+        const occupiedRoomMap = new Map<string, number>();
+        for (const group of roomStatusGroups) {
+            if (group.status === RoomStatus.OCCUPIED) {
+                occupiedRoomMap.set(group.hotelId, group._count._all);
+            }
+        }
+
         const createBreakdown = () => ({ total: 0, cash: 0, card: 0 });
         const defaultLedger = () => ({
             [LedgerEntryType.CASH_IN]: createBreakdown(),
@@ -206,10 +400,15 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        const collectionTotalsMap = new Map<string, number>();
         for (const entry of collectionEntries) {
             if (!isCollectionLedgerEntry(entry)) {
                 continue;
             }
+            collectionTotalsMap.set(
+                entry.hotelId,
+                (collectionTotalsMap.get(entry.hotelId) ?? 0) + entry.amount
+            );
             const summary = ledgerMap.get(entry.hotelId) ?? (() => {
                 const fresh = defaultLedger();
                 ledgerMap.set(entry.hotelId, fresh);
@@ -262,8 +461,11 @@ export async function GET(request: NextRequest) {
             usesExtranets: hotel.usesExtranets,
             extranetNames: hotel.extranetNames,
             hasMealPlan: hotel.hasMealPlan,
+            allowGroupStays: hotel.allowGroupStays,
             allowPostpaidStays: hotel.allowPostpaidStays,
+            allowOnlinePayments: hotel.allowOnlinePayments,
             guestQrEnabled: hotel.guestQrEnabled,
+            showInGuestListing: hotel.showInGuestListing,
             guestDescription: hotel.guestDescription,
             guestAmenities: hotel.guestAmenities,
             guestPhotoUrls: hotel.guestPhotoUrls,
@@ -277,8 +479,8 @@ export async function GET(request: NextRequest) {
             monthlyOtherCost: hotel.monthlyOtherCost,
             notes: hotel.notes,
             cleaningChatId: hotel.cleaningChatId,
-            roomCount: hotel.rooms.length,
-            occupiedRooms: hotel.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
+            roomCount: hotel._count.rooms,
+            occupiedRooms: occupiedRoomMap.get(hotel.id) ?? 0,
             managers: hotel.assignments.map((assignment) => ({
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
@@ -286,7 +488,7 @@ export async function GET(request: NextRequest) {
                 loginName: assignment.user.loginName,
                 username: assignment.user.username,
                 role: assignment.role,
-                pinCode: assignment.pinCode,
+                hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct
             })),
@@ -309,15 +511,19 @@ export async function GET(request: NextRequest) {
                     cashInBreakdown: toBreakdown(LedgerEntryType.CASH_IN),
                     cashOut: summary[LedgerEntryType.CASH_OUT].total,
                     cashOutBreakdown: toBreakdown(LedgerEntryType.CASH_OUT),
-                    collections: collectionEntries
-                        .filter((entry) => entry.hotelId === hotel.id && isCollectionLedgerEntry(entry))
-                        .reduce((total, entry) => total + entry.amount, 0)
+                    collections: collectionTotalsMap.get(hotel.id) ?? 0
                 };
             })(),
             recentExpenses: recentExpensesMap.get(hotel.id) ?? []
         }));
 
-        return NextResponse.json(payload);
+        return NextResponse.json(payload, {
+            headers: {
+                'X-Result-Truncated': String(hotelsTruncated),
+                'X-Report-Start': startDate.toISOString(),
+                'X-Report-End': endDate.toISOString(),
+            },
+        });
     } catch (error) {
         return handleApiError(error, 'Failed to load hotels');
     }
@@ -342,8 +548,11 @@ export async function POST(request: NextRequest) {
                 usesExtranets: payload.usesExtranets ?? false,
                 extranetNames: sanitizeExtranetNames(payload.extranetNames ?? []),
                 hasMealPlan: payload.hasMealPlan ?? false,
+                allowGroupStays: payload.allowGroupStays ?? true,
                 allowPostpaidStays: payload.allowPostpaidStays ?? false,
+                allowOnlinePayments: payload.allowOnlinePayments ?? true,
                 guestQrEnabled: payload.guestQrEnabled ?? false,
+                showInGuestListing: payload.showInGuestListing ?? true,
                 guestDescription: payload.guestDescription || null,
                 guestAmenities: sanitizeUniqueTextList(payload.guestAmenities ?? [], 60, 40),
                 guestPhotoUrls: sanitizeUniqueTextList(payload.guestPhotoUrls ?? [], 500, 12),

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma, ShiftStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
-import { assertHotelAccess } from '@/lib/permissions';
-import { ensureNoActiveShift } from '@/lib/shifts';
-import { handleApiError } from '@/lib/server/errors';
-import { verifyPin } from '@/lib/pin';
+import { assertHotelOperatorAccess, assertOperationalRole } from '@/lib/permissions';
+import { handleApiError, SessionError } from '@/lib/server/errors';
+import { upgradeLegacyPin, verifyPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
         const session = await getSessionUser(request);
         const payload = openShiftSchema.parse(body);
 
-        assertHotelAccess(session, payload.hotelId);
-        await ensureNoActiveShift(payload.hotelId);
+        assertHotelOperatorAccess(session, payload.hotelId);
 
         if (session.role !== 'MANAGER' && !payload.pinCode) {
             return new NextResponse('Введите код менеджера для открытия смены', { status: 400 });
@@ -46,10 +45,31 @@ export async function POST(request: NextRequest) {
                 return new NextResponse('Неверный код менеджера', { status: 401 });
             }
 
+            await upgradeLegacyPin(payload.pinCode, assignment);
+
             managerId = assignment.userId;
         }
 
         const shift = await prisma.$transaction(async (tx) => {
+            const lockedHotel = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                SELECT "id"
+                FROM "Hotel"
+                WHERE "id" = ${payload.hotelId}
+                FOR UPDATE
+            `);
+
+            if (lockedHotel.length !== 1) {
+                throw new SessionError('Объект не найден', 404);
+            }
+
+            const activeShift = await tx.shift.findFirst({
+                where: { hotelId: payload.hotelId, status: ShiftStatus.OPEN },
+                select: { id: true }
+            });
+            if (activeShift) {
+                throw new SessionError('На этой точке уже есть активная смена. Завершите её перед открытием новой.', 409);
+            }
+
             const nextNumberResult = await tx.shift.aggregate({
                 where: { hotelId: payload.hotelId },
                 _max: { number: true }
@@ -84,7 +104,12 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
+        assertOperationalRole(session);
         const hotelId = request.nextUrl.searchParams.get('hotelId');
+
+        if (hotelId) {
+            assertHotelOperatorAccess(session, hotelId);
+        }
 
         const shifts = await prisma.shift.findMany({
             where: {

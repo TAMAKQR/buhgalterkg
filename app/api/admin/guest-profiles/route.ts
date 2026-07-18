@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { getSessionUser } from '@/lib/server/session';
+import { getCountryFromRequest } from '@/lib/server/request-country';
+import { getDatabaseActorUserId } from '@/lib/server/audit-actor';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +18,7 @@ const guestProfilesQuerySchema = z.object({
 });
 
 const createGuestProfileSchema = z.object({
-    hotelId: z.string().cuid().optional().nullable(),
+    hotelId: z.string().cuid(),
     fullName: z.string().trim().min(2).max(120),
     phone: z.string().trim().max(40).optional().nullable(),
     telegramId: z.string().trim().max(64).optional().nullable(),
@@ -180,6 +182,7 @@ export async function GET(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const searchParams = request.nextUrl.searchParams;
         const query = guestProfilesQuerySchema.parse({
@@ -192,6 +195,7 @@ export async function GET(request: NextRequest) {
         const search = query.search?.trim();
         const profiles = await prisma.guestProfile.findMany({
             where: {
+                hotel: { country },
                 ...(query.hotelId ? { hotelId: query.hotelId } : {}),
                 ...(query.status ? { verificationStatus: query.status } : {}),
                 ...(search
@@ -226,26 +230,29 @@ export async function POST(request: NextRequest) {
     try {
         const session = await getSessionUser(request);
         assertAdmin(session);
+        const country = getCountryFromRequest(request);
 
         const payload = createGuestProfileSchema.parse(await request.json());
         if (!payload.consentAccepted) {
             return new NextResponse('Personal data consent is required', { status: 400 });
         }
 
-        const hotelId = payload.hotelId ?? null;
-        if (hotelId) {
-            const hotel = await prisma.hotel.findUnique({
-                where: { id: hotelId },
-                select: { id: true }
-            });
-            if (!hotel) {
-                return new NextResponse('Hotel not found', { status: 404 });
-            }
+        const hotelId = payload.hotelId;
+        const hotel = await prisma.hotel.findFirst({
+            where: { id: hotelId, country },
+            select: { id: true }
+        });
+        if (!hotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
         }
 
         const consentAcceptedAt = new Date();
-        const consentVersion = normalizeOptionalText(payload.consentVersion) ?? CURRENT_CONSENT_VERSION;
+        const consentVersion = CURRENT_CONSENT_VERSION;
         const shouldVerify = payload.verificationStatus === 'VERIFIED' && Boolean(normalizeOptionalText(payload.documentNumber));
+        if (payload.verificationStatus === 'VERIFIED' && !shouldVerify) {
+            return new NextResponse('Document number is required before verification', { status: 400 });
+        }
+        const actorUserId = getDatabaseActorUserId(session);
 
         const profile = await prisma.$transaction(async (tx) => {
             const created = await tx.guestProfile.create({
@@ -257,7 +264,7 @@ export async function POST(request: NextRequest) {
                     documentNumber: normalizeOptionalText(payload.documentNumber),
                     verificationStatus: shouldVerify ? 'VERIFIED' : payload.verificationStatus,
                     verifiedAt: shouldVerify ? new Date() : null,
-                    verifiedById: shouldVerify ? session.id : null,
+                    verifiedById: shouldVerify ? actorUserId : null,
                     verifiedHotelId: shouldVerify ? hotelId : null,
                     notes: normalizeOptionalText(payload.notes),
                     consentAcceptedAt,
@@ -270,7 +277,7 @@ export async function POST(request: NextRequest) {
                 data: {
                     guestProfileId: created.id,
                     hotelId,
-                    actorUserId: session.id,
+                    actorUserId,
                     actorType: 'ADMIN',
                     actorLabel: session.displayName,
                     action: 'PROFILE_CREATED',
@@ -294,7 +301,7 @@ export async function POST(request: NextRequest) {
                     data: {
                         guestProfileId: created.id,
                         hotelId,
-                        actorUserId: session.id,
+                        actorUserId,
                         actorType: 'ADMIN',
                         actorLabel: session.displayName,
                         action: 'DOCUMENT_VERIFIED',

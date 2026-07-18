@@ -37,8 +37,11 @@ model Hotel {
   usesExtranets   Boolean           @default(false) @map("uses_extranets")
   extranetNames   String[]          @default([]) @map("extranet_names")
   hasMealPlan     Boolean           @default(false) @map("has_meal_plan")
+  allowGroupStays Boolean           @default(true) @map("allow_group_stays")
   allowPostpaidStays Boolean        @default(false) @map("allow_postpaid_stays")
+  allowOnlinePayments Boolean       @default(true) @map("allow_online_payments")
   guestQrEnabled  Boolean           @default(true) @map("guest_qr_enabled")
+  showInGuestListing Boolean        @default(true) @map("show_in_guest_listing")
   guestDescription String?          @map("guest_description")
   guestAmenities  String[]          @default([]) @map("guest_amenities")
   guestPhotoUrls  String[]          @default([]) @map("guest_photo_urls")
@@ -93,6 +96,7 @@ model GuestProfile {
   @@index([hotelId])
   @@index([phone])
   @@index([telegramId])
+  @@unique([hotelId, telegramId])
   @@index([verificationStatus])
   @@index([verifiedById])
   @@index([verifiedHotelId])
@@ -146,11 +150,14 @@ model HotelAssignment {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /// Legacy compatibility only. New and reset PIN values are stored in pinHash.
   pinCode   String?  @map("pin_code") @db.VarChar(6)
   pinHash   String?  @map("pin_hash")
   shiftPayAmount Int? @map("shift_pay_amount")
   revenueSharePct Int? @map("revenue_share_pct")
+  canEditBookings Boolean @default(false) @map("can_edit_bookings")
   canEditStayPayments Boolean @default(false) @map("can_edit_stay_payments")
+  canCancelBookings Boolean @default(false) @map("can_cancel_bookings")
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
@@ -168,14 +175,30 @@ model Room {
   currentStayId String?    @unique
   notes         String?
   createdAt     DateTime   @default(now())
+  archivedAt    DateTime?  @map("archived_at")
+  activityTrackedFrom DateTime @default(now()) @map("activity_tracking_started_at")
   updatedAt     DateTime   @updatedAt
   currentStay   RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
   hotel         Hotel      @relation(fields: [hotelId], references: [id])
   stays         RoomStay[] @relation("RoomStayHistory")
   transfersFrom StayTransfer[] @relation("StayTransferFromRoom")
   transfersTo   StayTransfer[] @relation("StayTransferToRoom")
+  ledgerEntries CashEntry[]
+  activityPeriods RoomActivityPeriod[]
 
-  @@index([hotelId, label])
+  @@unique([hotelId, label])
+  @@index([hotelId, archivedAt])
+}
+
+model RoomActivityPeriod {
+  id         String    @id @default(cuid())
+  roomId     String    @map("room_id")
+  activeFrom DateTime  @map("active_from")
+  activeTo   DateTime? @map("active_to")
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, activeFrom, activeTo])
+  @@map("room_activity_periods")
 }
 
 model RoomStay {
@@ -206,6 +229,10 @@ model RoomStay {
   tariffPending     Boolean        @default(false) @map("tariff_pending")
   mealPlan          String[]       @default([]) @map("meal_plan")
   groupRef          String?        @map("group_ref")
+  cancellationPaymentAction CancellationPaymentAction? @map("cancellation_payment_action")
+  cancellationAmount Int?          @map("cancellation_amount")
+  cancelledAt       DateTime?      @map("cancelled_at")
+  cancelledById     String?        @map("cancelled_by_id")
   ledgerEntries     CashEntry[]
   currentRoom       Room?          @relation("RoomCurrentStay")
   guestProfile      GuestProfile?  @relation(fields: [guestProfileId], references: [id], onDelete: SetNull)
@@ -216,6 +243,9 @@ model RoomStay {
 
   @@index([hotelId, groupRef])
   @@index([guestProfileId])
+  @@index([roomId, status, scheduledCheckIn, scheduledCheckOut])
+  @@index([hotelId, status, scheduledCheckIn])
+  @@index([shiftId])
 }
 
 model StayTransfer {
@@ -265,12 +295,14 @@ model Shift {
 
   @@unique([hotelId, number])
   @@index([hotelId, status])
+  @@index([hotelId, openedAt])
 }
 
 model CashEntry {
   id         String          @id @default(cuid())
   shiftId    String?
   stayId     String?         @map("stay_id")
+  roomId     String?         @map("room_id")
   hotelId    String
   managerId  String?
   categoryId String?         @map("expense_category_id")
@@ -282,14 +314,32 @@ model CashEntry {
   exchangeRate Int?        @map("exchange_rate")
   note       String?
   meta       Json?
+  clientOperationId String?       @unique @map("client_operation_id")
   recordedAt DateTime        @default(now())
   expenseCategory ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   stay       RoomStay?       @relation(fields: [stayId], references: [id], onDelete: SetNull)
+  room       Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
   hotel      Hotel           @relation(fields: [hotelId], references: [id])
   manager    User?           @relation(fields: [managerId], references: [id])
   shift      Shift?          @relation(fields: [shiftId], references: [id])
 
   @@index([stayId])
+  @@index([roomId, recordedAt])
+  @@index([hotelId, recordedAt])
+  @@index([shiftId, recordedAt])
+  @@index([hotelId, entryType, recordedAt])
+}
+
+model RequestRateLimit {
+  keyHash         String   @id @map("key_hash") @db.VarChar(64)
+  attempts        Int      @default(0)
+  windowStartedAt DateTime @default(now()) @map("window_started_at")
+  expiresAt       DateTime @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("request_rate_limits")
 }
 
 model ExpenseCategory {
@@ -341,6 +391,11 @@ enum RoomStatus {
   OCCUPIED
   DIRTY
   HOLD
+}
+
+enum CancellationPaymentAction {
+  REFUND
+  RETAIN
 }
 
 enum GuestVerificationStatus {

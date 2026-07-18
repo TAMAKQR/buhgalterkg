@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
 import type { SessionUser } from "@/lib/types";
 import { createManualSession, manualSessionAvailable } from "@/lib/server/manual-session";
@@ -31,11 +31,8 @@ const passwordStrongEnough = (password: string) => {
 };
 
 const safeCompare = (input: string, expected: string) => {
-    const left = Buffer.from(input);
-    const right = Buffer.from(expected);
-    if (left.length !== right.length) {
-        return false;
-    }
+    const left = createHash('sha256').update(input, 'utf8').digest();
+    const right = createHash('sha256').update(expected, 'utf8').digest();
     return timingSafeEqual(left, right);
 };
 
@@ -62,7 +59,9 @@ export const verifyManualAdminCredentials = (username: string, password: string)
     if (!manualAuthConfigured()) {
         return false;
     }
-    return safeCompare(username, ADMIN_LOGIN as string) && safeCompare(password, ADMIN_PASSWORD as string);
+    const loginMatches = safeCompare(username, ADMIN_LOGIN as string);
+    const passwordMatches = safeCompare(password, ADMIN_PASSWORD as string);
+    return loginMatches && passwordMatches;
 };
 
 export const createManualAdminSession = (): { token: string; user: SessionUser } => {

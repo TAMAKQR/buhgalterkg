@@ -4,7 +4,8 @@ import { Prisma, RoomStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
+import { lockRoomsForStayMutation } from '@/lib/server/room-stay-lock';
 export const dynamic = 'force-dynamic';
 
 const createRoomsSchema = z.object({
@@ -42,6 +43,146 @@ const updateRoomSchema = z
             typeof values.isActive === 'boolean'
         );
     }, 'Не переданы поля для обновления');
+
+const archiveRoom = (roomId: string, extraData: Prisma.RoomUpdateInput = {}) =>
+    prisma.$transaction(async (tx) => {
+        await lockRoomsForStayMutation(tx, [roomId]);
+        const lockedRoom = await tx.room.findUnique({
+            where: { id: roomId },
+            select: {
+                id: true,
+                currentStayId: true,
+                isActive: true,
+                createdAt: true,
+                updatedAt: true,
+                archivedAt: true,
+            },
+        });
+        if (!lockedRoom) {
+            throw new SessionError('Номер не найден', 404);
+        }
+        if (lockedRoom.currentStayId) {
+            throw new SessionError('Нельзя архивировать номер с активным гостем', 409);
+        }
+
+        const requestedAt = new Date();
+        const futureBooking = await tx.roomStay.findFirst({
+            where: {
+                roomId,
+                status: 'SCHEDULED',
+                scheduledCheckOut: { gt: requestedAt },
+            },
+            select: { id: true },
+        });
+        if (futureBooking) {
+            throw new SessionError('Сначала перенесите или отмените будущие брони этого номера', 409);
+        }
+
+        let archivedAt = lockedRoom.archivedAt ?? requestedAt;
+        if (lockedRoom.isActive) {
+            const [openPeriod, latestClosedPeriod] = await Promise.all([
+                tx.roomActivityPeriod.findFirst({
+                    where: { roomId, activeTo: null },
+                    orderBy: { activeFrom: 'desc' },
+                    select: { id: true, activeFrom: true },
+                }),
+                tx.roomActivityPeriod.findFirst({
+                    where: { roomId, activeTo: { not: null } },
+                    orderBy: { activeTo: 'desc' },
+                    select: { activeTo: true },
+                }),
+            ]);
+
+            if (openPeriod) {
+                archivedAt = new Date(Math.max(requestedAt.getTime(), openPeriod.activeFrom.getTime() + 1));
+                await tx.roomActivityPeriod.update({
+                    where: { id: openPeriod.id },
+                    data: { activeTo: archivedAt },
+                });
+            } else {
+                const fallbackStartMs = Math.max(
+                    lockedRoom.createdAt.getTime(),
+                    lockedRoom.updatedAt.getTime(),
+                    latestClosedPeriod?.activeTo?.getTime() ?? Number.NEGATIVE_INFINITY,
+                );
+                const fallbackStart = new Date(fallbackStartMs);
+                archivedAt = new Date(Math.max(requestedAt.getTime(), fallbackStartMs + 1));
+                await tx.roomActivityPeriod.create({
+                    data: { roomId, activeFrom: fallbackStart, activeTo: archivedAt },
+                });
+            }
+        }
+
+        return tx.room.update({
+            where: { id: roomId },
+            data: {
+                ...extraData,
+                isActive: false,
+                status: RoomStatus.HOLD,
+                archivedAt,
+            },
+        });
+    });
+
+const reactivateRoom = (roomId: string, extraData: Prisma.RoomUpdateInput = {}) =>
+    prisma.$transaction(async (tx) => {
+        await lockRoomsForStayMutation(tx, [roomId]);
+        const lockedRoom = await tx.room.findUnique({
+            where: { id: roomId },
+            select: { id: true, isActive: true, status: true, archivedAt: true },
+        });
+        if (!lockedRoom) {
+            throw new SessionError('Номер не найден', 404);
+        }
+
+        if (!lockedRoom.isActive) {
+            const latestClosedPeriod = await tx.roomActivityPeriod.findFirst({
+                where: { roomId, activeTo: { not: null } },
+                orderBy: { activeTo: 'desc' },
+                select: { activeTo: true },
+            });
+            const activeFrom = new Date(Math.max(
+                Date.now(),
+                lockedRoom.archivedAt?.getTime() ?? Number.NEGATIVE_INFINITY,
+                latestClosedPeriod?.activeTo?.getTime() ?? Number.NEGATIVE_INFINITY,
+            ));
+            await tx.roomActivityPeriod.create({
+                data: { roomId, activeFrom },
+            });
+        }
+
+        const hasExplicitStatus = Object.prototype.hasOwnProperty.call(extraData, 'status');
+        return tx.room.update({
+            where: { id: roomId },
+            data: {
+                ...extraData,
+                isActive: true,
+                archivedAt: null,
+                ...(!lockedRoom.isActive && !hasExplicitStatus && lockedRoom.status === RoomStatus.HOLD
+                    ? { status: RoomStatus.AVAILABLE }
+                    : {}),
+            },
+        });
+    });
+
+const updateRoomDetails = (
+    roomId: string,
+    extraData: Prisma.RoomUpdateInput,
+    changesStatus: boolean,
+) => prisma.$transaction(async (tx) => {
+    await lockRoomsForStayMutation(tx, [roomId]);
+    const lockedRoom = await tx.room.findUnique({
+        where: { id: roomId },
+        select: { id: true, isActive: true },
+    });
+    if (!lockedRoom) {
+        throw new SessionError('Номер не найден', 404);
+    }
+    if (changesStatus && !lockedRoom.isActive) {
+        throw new SessionError('Сначала восстановите номер из архива', 409);
+    }
+    return tx.room.update({ where: { id: roomId }, data: extraData });
+});
 
 export async function POST(request: NextRequest) {
     try {
@@ -97,9 +238,30 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ created: 0, skipped: candidateLabels.length });
         }
 
-        const result = await prisma.room.createMany({
-            data: roomsToCreate,
-            skipDuplicates: true
+        const result = await prisma.$transaction(async (tx) => {
+            const created = await tx.room.createMany({
+                data: roomsToCreate,
+                skipDuplicates: true,
+            });
+            const roomsMissingActivity = await tx.room.findMany({
+                where: {
+                    hotelId: payload.hotelId,
+                    label: { in: candidateLabels },
+                    isActive: true,
+                    activityPeriods: { none: {} },
+                },
+                select: { id: true, createdAt: true },
+            });
+            if (roomsMissingActivity.length) {
+                await tx.roomActivityPeriod.createMany({
+                    data: roomsMissingActivity.map((room) => ({
+                        roomId: room.id,
+                        activeFrom: room.createdAt,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+            return created;
         });
 
         return NextResponse.json({ created: result.count, skipped: candidateLabels.length - result.count });
@@ -124,21 +286,14 @@ export async function DELETE(request: NextRequest) {
             return new NextResponse('Room not found', { status: 404 });
         }
 
-        if (room.currentStayId) {
-            return new NextResponse('Нельзя удалить номер с активным гостем', { status: 400 });
-        }
+        await archiveRoom(room.id);
 
-        await prisma.$transaction(async (tx) => {
-            await tx.roomStay.deleteMany({ where: { roomId: room.id } });
-            await tx.room.delete({ where: { id: room.id } });
-        });
-
-        return NextResponse.json({ success: true, roomId: room.id });
+        return NextResponse.json({ success: true, archived: true, roomId: room.id });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        return handleApiError(error, 'Failed to delete room');
+        return handleApiError(error, 'Failed to archive room');
     }
 }
 
@@ -201,15 +356,19 @@ export async function PATCH(request: NextRequest) {
             return new NextResponse('Не переданы поля для обновления', { status: 400 });
         }
 
-        const updatedRoom = await prisma.room.update({
-            where: { id: payload.roomId },
-            data: updateData
-        });
+        const updatedRoom = payload.isActive === false
+            ? await archiveRoom(payload.roomId, updateData)
+            : payload.isActive === true
+                ? await reactivateRoom(payload.roomId, updateData)
+            : await updateRoomDetails(payload.roomId, updateData, Boolean(payload.status));
 
         return NextResponse.json({ success: true, room: updatedRoom });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return new NextResponse('Номер с таким названием уже существует', { status: 409 });
         }
         return handleApiError(error, 'Failed to update room');
     }

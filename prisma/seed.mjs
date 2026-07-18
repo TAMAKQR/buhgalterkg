@@ -1,4 +1,5 @@
 import pkg from '@prisma/client';
+import { randomBytes, scryptSync } from 'node:crypto';
 
 const {
     PrismaClient,
@@ -12,12 +13,31 @@ const prisma = new PrismaClient();
 
 const minor = (kgs) => Math.round(kgs * 100);
 
+const hashPin = (pinCode) => {
+    const salt = randomBytes(16);
+    const cost = 16_384;
+    const blockSize = 8;
+    const parallelization = 1;
+    const hash = scryptSync(pinCode, salt, 32, {
+        N: cost,
+        r: blockSize,
+        p: parallelization,
+        maxmem: 64 * 1024 * 1024
+    });
+    return ['scrypt', cost, blockSize, parallelization, salt.toString('hex'), hash.toString('hex')].join('$');
+};
+
 const checkoutDate = (dateString) => new Date(dateString);
+const SEED_OPERATIONAL_START = checkoutDate('2025-12-29T00:00:00+06:00');
 
 async function resetData() {
     await prisma.$transaction([
         prisma.cashEntry.deleteMany(),
         prisma.roomStay.deleteMany(),
+        prisma.guestQrToken.deleteMany(),
+        prisma.guestProfileAuditLog.deleteMany(),
+        prisma.guestProfile.deleteMany(),
+        prisma.requestRateLimit.deleteMany(),
         prisma.shift.deleteMany(),
         prisma.room.deleteMany(),
         prisma.hotelAssignment.deleteMany(),
@@ -35,7 +55,10 @@ async function createRooms(hotelId, rooms) {
                 label: room.label,
                 floor: room.floor ?? null,
                 status: room.status ?? RoomStatus.AVAILABLE,
-                notes: room.notes ?? null
+                notes: room.notes ?? null,
+                activityPeriods: {
+                    create: { activeFrom: SEED_OPERATIONAL_START }
+                }
             }
         });
         map.set(room.label, record);
@@ -90,6 +113,7 @@ async function main() {
             telegramId: 'tg-janara',
             displayName: 'Жанара',
             username: 'janara.manager',
+            loginName: 'janara',
             role: 'MANAGER'
         }
     });
@@ -99,6 +123,7 @@ async function main() {
             telegramId: 'tg-bermet',
             displayName: 'Бермет',
             username: 'bermet.manager',
+            loginName: 'bermet',
             role: 'MANAGER'
         }
     });
@@ -108,6 +133,7 @@ async function main() {
             telegramId: 'tg-aidana',
             displayName: 'Айдана',
             username: 'aidana.manager',
+            loginName: 'aidana',
             role: 'MANAGER'
         }
     });
@@ -117,6 +143,7 @@ async function main() {
             telegramId: 'tg-timur',
             displayName: 'Тимур',
             username: 'timur.manager',
+            loginName: 'timur',
             role: 'MANAGER'
         }
     });
@@ -147,7 +174,8 @@ async function main() {
                 hotelId: castleHotel.id,
                 userId: janara.id,
                 role: 'MANAGER',
-                pinCode: '123456',
+                pinCode: null,
+                pinHash: hashPin('123456'),
                 shiftPayAmount: minor(2000),
                 revenueSharePct: 5
             },
@@ -155,7 +183,8 @@ async function main() {
                 hotelId: castleHotel.id,
                 userId: bermet.id,
                 role: 'MANAGER',
-                pinCode: '654321',
+                pinCode: null,
+                pinHash: hashPin('654321'),
                 shiftPayAmount: minor(1800),
                 revenueSharePct: 4
             },
@@ -163,7 +192,8 @@ async function main() {
                 hotelId: skyHotel.id,
                 userId: aidana.id,
                 role: 'MANAGER',
-                pinCode: '111222',
+                pinCode: null,
+                pinHash: hashPin('111222'),
                 shiftPayAmount: minor(1700),
                 revenueSharePct: 6
             },
@@ -171,7 +201,8 @@ async function main() {
                 hotelId: skyHotel.id,
                 userId: timur.id,
                 role: 'MANAGER',
-                pinCode: '333444',
+                pinCode: null,
+                pinHash: hashPin('333444'),
                 shiftPayAmount: minor(1600),
                 revenueSharePct: 5
             }

@@ -15,8 +15,9 @@ const updateTierSchema = z.object({
 });
 
 /** PATCH /api/admin/bonus-tiers/[tierId] */
-export async function PATCH(request: NextRequest, { params }: { params: { tierId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
     try {
+        const { tierId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -24,13 +25,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { tierId
 
         const payload = updateTierSchema.parse(body);
 
-        const tier = await prisma.bonusTier.findFirst({ where: { id: params.tierId, hotel: { country } } });
+        const tier = await prisma.bonusTier.findFirst({ where: { id: tierId, hotel: { country } } });
         if (!tier) {
             return new NextResponse('Tier not found', { status: 404 });
         }
 
         const updated = await prisma.bonusTier.update({
-            where: { id: params.tierId },
+            where: { id: tierId },
             data: {
                 ...(payload.threshold != null && { threshold: payload.threshold }),
                 ...(payload.bonus != null && { bonus: payload.bonus }),
@@ -48,18 +49,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { tierId
 }
 
 /** DELETE /api/admin/bonus-tiers/[tierId] */
-export async function DELETE(request: NextRequest, { params }: { params: { tierId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
     try {
+        const { tierId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
-        const tier = await prisma.bonusTier.findFirst({ where: { id: params.tierId, hotel: { country } } });
+        const tier = await prisma.bonusTier.findFirst({ where: { id: tierId, hotel: { country } } });
         if (!tier) {
             return new NextResponse('Tier not found', { status: 404 });
         }
 
-        await prisma.bonusTier.delete({ where: { id: params.tierId } });
+        await prisma.bonusTier.delete({ where: { id: tierId } });
 
         return NextResponse.json({ success: true });
     } catch (error) {

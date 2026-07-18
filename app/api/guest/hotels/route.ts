@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const hotels = await prisma.hotel.findMany({
-            where: { guestQrEnabled: true },
+            where: { showInGuestListing: true },
             orderBy: { name: 'asc' },
             select: {
                 id: true,
@@ -18,7 +18,8 @@ export async function GET() {
                 guestDescription: true,
                 guestAmenities: true,
                 guestPhotoUrls: true,
-                guestMapUrl: true
+                guestMapUrl: true,
+                guestQrEnabled: true
             }
         });
 
@@ -32,8 +33,13 @@ export async function GET() {
                 guestDescription: hotel.guestDescription,
                 guestAmenities: hotel.guestAmenities,
                 guestPhotoUrls: hotel.guestPhotoUrls,
-                guestMapUrl: hotel.guestMapUrl
+                guestMapUrl: hotel.guestMapUrl,
+                guestQrEnabled: hotel.guestQrEnabled
             }))
+        }, {
+            headers: {
+                'Cache-Control': 'public, max-age=30, stale-while-revalidate=60'
+            }
         });
     } catch (error) {
         return handleApiError(error, 'Failed to load guest hotels');

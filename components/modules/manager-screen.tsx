@@ -11,21 +11,26 @@ import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import type { SessionUser } from '@/lib/types';
-import { useCookieApi } from '@/hooks/useCookieApi';
-import { formatDateKey, formatDateTime, formatInputValue, parseInputValue, formatMoney } from '@/lib/timezone';
+import { useApi } from '@/hooks/useApi';
+import { formatDateKey, formatDateTime, formatInputValue, parseDateOnly, parseInputValue, formatMoney } from '@/lib/timezone';
+import { useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { MEAL_PLAN_OPTIONS, mealPlanLabels } from '@/lib/meal-plan';
 import {
     cacheManagerState,
+    clearCachedManagerState,
+    clearLegacyManagerOfflineData,
+    createManagerOperationId,
     enqueueManagerOfflineOperation,
     flushManagerOfflineQueue,
     getManagerQueueChangeEvent,
     isLikelyOfflineError,
     readCachedManagerState,
     readManagerOfflineQueue,
+    type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, CalendarPlus, Camera, LogIn, LogOut, Pencil, QrCode, Sparkles, Users } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -49,15 +54,6 @@ type ManagerRoomStay = {
     bookingNumber?: string | null;
     mealPlan?: string[] | null;
     notes?: string | null;
-    guestProfile?: {
-        id: string;
-        fullName: string;
-        phone?: string | null;
-        telegramId?: string | null;
-        documentNumber?: string | null;
-        verificationStatus?: GuestVerificationStatus | null;
-        verifiedAt?: string | null;
-    } | null;
 };
 
 interface ManagerStateResponse {
@@ -70,7 +66,9 @@ interface ManagerStateResponse {
         usesExtranets?: boolean;
         extranetNames?: string[];
         hasMealPlan?: boolean;
+        allowGroupStays?: boolean;
         allowPostpaidStays?: boolean;
+        allowOnlinePayments?: boolean;
         guestQrEnabled?: boolean;
     };
     shift?: {
@@ -117,6 +115,7 @@ interface ManagerStateResponse {
         } | null;
         recordedAt: string;
     }> | null;
+    shiftLedgerTruncated?: boolean;
     expenseCategories?: Array<{
         id: string;
         name: string;
@@ -132,7 +131,9 @@ interface ManagerStateResponse {
     compensation?: {
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
+        canEditBookings?: boolean | null;
         canEditStayPayments?: boolean | null;
+        canCancelBookings?: boolean | null;
         expectedPayout?: number | null;
         paidPayout?: number | null;
         pendingPayout?: number | null;
@@ -151,7 +152,7 @@ interface ManagerProfileResponse {
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
         createdAt?: string;
-        pinCode?: string | null;
+        hasPin?: boolean;
     } | null;
     shifts: Array<{
         id: string;
@@ -213,6 +214,7 @@ interface CheckInModalState {
     checkIn: string;
     currentCheckOut?: string;
     checkOut: string;
+    nextBookingCheckIn?: string;
     cashAmount: string;
     cashCurrency: CashCurrencyCode;
     cashExchangeRate: string;
@@ -356,6 +358,15 @@ type RoomViewMode = 'cards' | 'board';
 type BoardListPopupKind = 'scheduled' | 'checkedIn' | 'overdue' | 'freeDates';
 
 const managerBoardDayCount = 14;
+const managerBoardMaxOffset = managerBoardDayCount * 26;
+
+const getRoomStays = (room: ManagerStateResponse['rooms'][number]) => {
+    const secondaryStays = room.stays ?? [];
+    if (!room.stay || secondaryStays.some((stay) => stay.id === room.stay?.id)) {
+        return secondaryStays;
+    }
+    return [room.stay, ...secondaryStays];
+};
 
 const formatShareDate = (value: string, timeZone?: string) => {
     const date = new Date(value);
@@ -400,16 +411,14 @@ const startOfLocalDay = (value: Date) => {
 };
 
 const addDays = (value: Date, days: number) => {
-    const copy = new Date(value);
-    copy.setDate(copy.getDate() + days);
-    return copy;
+    return new Date(value.getTime() + days * 86_400_000);
 };
 
-const formatBoardDay = (value: Date) =>
-    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(value).replace('.', '');
+const formatBoardDay = (value: Date, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', timeZone: timezone }).format(value).replace('.', '');
 
-const formatBoardWeekday = (value: Date) =>
-    new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(value).replace('.', '');
+const formatBoardWeekday = (value: Date, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: timezone }).format(value).replace('.', '');
 
 const tariffPendingBoardClass = 'border-violet-300/70 bg-violet-500/24 text-violet-50 ring-1 ring-violet-200/25 shadow-violet-950/20';
 
@@ -436,6 +445,17 @@ const stayStatusLabel = (status: string) => {
     return 'Отменён';
 };
 
+const escapeReceiptHtml = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (character) => {
+    const entities: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    };
+    return entities[character] ?? character;
+});
+
 const boardSectionKey = (floor?: string | null) => floor?.trim() || '__without_floor';
 
 const boardSectionLabel = (floor?: string | null) => {
@@ -445,37 +465,65 @@ const boardSectionLabel = (floor?: string | null) => {
 };
 
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
-    const { get, request } = useCookieApi();
+    const { get, request } = useApi();
     const hotelId = user.hotels[0]?.id;
+    const offlineScope = useMemo<ManagerOfflineScope | null>(
+        () => hotelId ? { userId: user.id, hotelId } : null,
+        [hotelId, user.id]
+    );
     const syncInFlightRef = useRef(false);
+    const offlineReplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flushOfflineOperationsRef = useRef<() => Promise<void>>(async () => undefined);
     const [cachedState, setCachedState] = useState<ManagerStateResponse | null>(null);
     const [cachedAt, setCachedAt] = useState<string | null>(null);
     const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
     const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
     const [isSyncingOffline, setIsSyncingOffline] = useState(false);
     const [offlineSyncError, setOfflineSyncError] = useState<string | null>(null);
+    const [offlineRejectedNotice, setOfflineRejectedNotice] = useState<string | null>(null);
+    const [roomBoardStartOffset, setRoomBoardStartOffset] = useState(0);
 
     const handleLogout = async () => {
-        await fetch('/api/session/logout', { method: 'POST' });
-        if (onLogout) {
-            // Pass null to immediately clear the cache
-            onLogout();
+        if (offlineScope) {
+            clearCachedManagerState(offlineScope);
         }
+        if (onLogout) {
+            await onLogout();
+            return;
+        }
+        await fetch('/api/session/logout', { method: 'POST' });
     };
 
     const { data: liveData, mutate, isLoading, error, isValidating } = useSWR<ManagerStateResponse>(
-        hotelId ? ['manager-state', hotelId] : null,
-        ([, hotelId]) => get(`/api/manager/state?hotelId=${hotelId}`),
-        { refreshInterval: isOnline ? 30_000 : 0, revalidateOnReconnect: true }
+        hotelId ? ['manager-state', user.id, hotelId, roomBoardStartOffset] : null,
+        ([, , targetHotelId, targetBoardOffset]) => get(
+            `/api/manager/state?hotelId=${targetHotelId}&boardOffset=${targetBoardOffset}`
+        ),
+        {
+            refreshInterval: () => (
+                typeof document !== 'undefined' && document.visibilityState === 'visible'
+                    ? 60_000
+                    : 0
+            ),
+            refreshWhenOffline: false,
+            refreshWhenHidden: false,
+            revalidateOnReconnect: true,
+            revalidateOnFocus: true,
+            focusThrottleInterval: 30_000,
+            onSuccess: () => setIsOnline(true)
+        }
     );
 
     const data = liveData ?? cachedState;
     const isUsingCachedState = !liveData && Boolean(cachedState);
 
     const hotelTz = data?.hotel?.timezone;
+    const hotelTodayKey = useHotelToday(hotelTz);
     const hotelCur = data?.hotel?.currency ?? 'KGS';
     const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
+    const canUseGroupStays = data?.hotel?.allowGroupStays !== false;
     const canUsePostpaidStays = Boolean(data?.hotel?.allowPostpaidStays);
+    const canUseOnlinePayments = data?.hotel?.allowOnlinePayments !== false;
     const canUseGuestQr = Boolean(data?.hotel?.guestQrEnabled);
     const formatKgs = useCallback((amount?: number | null) => formatMoney(typeof amount === 'number' ? amount : 0, hotelCur), [hotelCur]);
     const formatCurrencyAmount = useCallback((amount?: number | null, currency?: string | null) => (
@@ -492,8 +540,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [checkInError, setCheckInError] = useState<string | null>(null);
     const [activePanel, setActivePanel] = useState<PanelKey>('rooms');
     const [roomViewMode, setRoomViewMode] = useState<RoomViewMode>('cards');
-    const [roomBoardStartOffset, setRoomBoardStartOffset] = useState(0);
     const [collapsedBoardSections, setCollapsedBoardSections] = useState<Record<string, boolean>>({});
+    const [isBoardPortraitPhone, setIsBoardPortraitPhone] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [selectedShiftId, setSelectedShiftId] = useState<string>('');
     const [historyStatus, setHistoryStatus] = useState<'ALL' | 'OPEN' | 'CLOSED'>('ALL');
@@ -525,28 +573,80 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         stay: ManagerRoomStay;
     } | null>(null);
     const [isCancellingBooking, setIsCancellingBooking] = useState(false);
+    const [isCancelBookingOpen, setIsCancelBookingOpen] = useState(false);
+    const [cancellationPaymentAction, setCancellationPaymentAction] = useState<'REFUND' | 'RETAIN' | null>(null);
+    const [cancelBookingError, setCancelBookingError] = useState<string | null>(null);
     const [updatingCleaningRoomId, setUpdatingCleaningRoomId] = useState<string | null>(null);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
     const { toast } = useToast();
     const refreshOfflineQueueCount = useCallback(() => {
-        setPendingOfflineCount(readManagerOfflineQueue().length);
+        setPendingOfflineCount(offlineScope ? readManagerOfflineQueue(offlineScope).length : 0);
+    }, [offlineScope]);
+
+    const openBoardView = useCallback(() => {
+        setRoomViewMode('board');
+        setBoardDayAction(null);
+        setBoardListPopup(null);
+
+        if (typeof document !== 'undefined' && !document.fullscreenElement) {
+            void document.documentElement.requestFullscreen?.().catch(() => undefined);
+        }
+    }, []);
+
+    const closeBoardView = useCallback(() => {
+        setRoomViewMode('cards');
+        setBoardDayAction(null);
+        setBoardListPopup(null);
+
+        if (typeof document !== 'undefined' && document.fullscreenElement) {
+            void document.exitFullscreen?.().catch(() => undefined);
+        }
     }, []);
 
     useEffect(() => {
-        if (!hotelId) return;
-        const cached = readCachedManagerState<ManagerStateResponse>(hotelId);
+        if (roomViewMode !== 'board' || typeof window === 'undefined') {
+            setIsBoardPortraitPhone(false);
+            return;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const updateOrientationHint = () => {
+            setIsBoardPortraitPhone(window.innerWidth < 768 && window.innerHeight > window.innerWidth);
+        };
+
+        document.body.style.overflow = 'hidden';
+        updateOrientationHint();
+        window.addEventListener('resize', updateOrientationHint);
+        window.addEventListener('orientationchange', updateOrientationHint);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('resize', updateOrientationHint);
+            window.removeEventListener('orientationchange', updateOrientationHint);
+        };
+    }, [roomViewMode]);
+
+    useEffect(() => {
+        clearLegacyManagerOfflineData();
+    }, []);
+
+    useEffect(() => {
+        if (!offlineScope) return;
+        const cached = readCachedManagerState<ManagerStateResponse>(offlineScope);
         if (cached) {
             setCachedState(cached.state);
             setCachedAt(cached.cachedAt);
         }
-    }, [hotelId]);
+    }, [offlineScope]);
 
     useEffect(() => {
-        if (!hotelId || !liveData) return;
-        cacheManagerState(hotelId, liveData);
+        // The offline cache represents the default/current board. A future or
+        // historical page is intentionally not allowed to replace it.
+        if (!offlineScope || !liveData || roomBoardStartOffset !== 0) return;
+        cacheManagerState(offlineScope, liveData);
         setCachedState(liveData);
         setCachedAt(new Date().toISOString());
-    }, [hotelId, liveData]);
+    }, [liveData, offlineScope, roomBoardStartOffset]);
 
     useEffect(() => {
         refreshOfflineQueueCount();
@@ -574,13 +674,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         isLoading: isProfileLoading,
         error: profileError
     } = useSWR<ManagerProfileResponse>(
-        isProfileOpen || activePanel === 'history' ? 'manager-profile' : null,
+        isProfileOpen || activePanel === 'history' ? ['manager-profile', user.id, hotelId] : null,
         () => get<ManagerProfileResponse>('/api/manager/profile')
     );
 
     const flushOfflineOperations = useCallback(async () => {
-        if (!isOnline || syncInFlightRef.current || readManagerOfflineQueue().length === 0) {
+        if (!offlineScope || !isOnline || syncInFlightRef.current || readManagerOfflineQueue(offlineScope).length === 0) {
             return;
+        }
+
+        if (offlineReplayTimerRef.current) {
+            clearTimeout(offlineReplayTimerRef.current);
+            offlineReplayTimerRef.current = null;
         }
 
         syncInFlightRef.current = true;
@@ -588,59 +693,116 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         setOfflineSyncError(null);
 
         try {
-            const result = await flushManagerOfflineQueue((operation: OfflineOperation) =>
+            const result = await flushManagerOfflineQueue(offlineScope, (operation: OfflineOperation) =>
                 request(operation.path, operation.options)
             );
-            refreshOfflineQueueCount();
 
-            if (result.synced > 0) {
+            if (result.synced > 0 && result.deferred === 0) {
                 toast(`Синхронизировано операций: ${result.synced}`, 'success');
+            }
+
+            if (result.rejected.length > 0) {
+                const labels = [...new Set(result.rejected.map((operation) => operation.label))].join(', ');
+                const firstRejection = result.rejected[0];
+                const rejectedCountLabel = result.rejected.length === 1
+                    ? 'операцию'
+                    : `операции (${result.rejected.length})`;
+                setOfflineRejectedNotice(
+                    `${labels}: сервер отклонил ${rejectedCountLabel}. Проверьте актуальное состояние. ${firstRejection.error}`
+                );
+                toast('Офлайн-операция отклонена сервером — проверьте состояние', 'error');
+            }
+
+            if ((result.synced > 0 || result.rejected.length > 0) && result.deferred === 0) {
                 await mutate();
             }
 
-            if (result.remaining > 0) {
-                setOfflineSyncError(result.firstError ?? 'Часть операций не синхронизирована');
+            if (result.firstError) {
+                setOfflineSyncError(result.firstError);
+            } else if (result.deferred > 0) {
+                // Replay is intentionally batched by offline.ts. Continue after
+                // a short pause instead of treating deferred work as an error
+                // or spinning through the queue in a tight loop.
+                offlineReplayTimerRef.current = setTimeout(() => {
+                    offlineReplayTimerRef.current = null;
+                    void flushOfflineOperationsRef.current();
+                }, 750);
             }
+            refreshOfflineQueueCount();
         } finally {
             syncInFlightRef.current = false;
             setIsSyncingOffline(false);
         }
-    }, [isOnline, mutate, refreshOfflineQueueCount, request, toast]);
+    }, [isOnline, mutate, offlineScope, refreshOfflineQueueCount, request, toast]);
 
     useEffect(() => {
-        if (isOnline && pendingOfflineCount > 0) {
+        flushOfflineOperationsRef.current = flushOfflineOperations;
+    }, [flushOfflineOperations]);
+
+    useEffect(() => {
+        if (isOnline && pendingOfflineCount > 0 && !offlineSyncError && !offlineReplayTimerRef.current) {
             void flushOfflineOperations();
         }
-    }, [flushOfflineOperations, isOnline, pendingOfflineCount]);
+    }, [flushOfflineOperations, isOnline, offlineSyncError, pendingOfflineCount]);
+
+    useEffect(() => () => {
+        if (offlineReplayTimerRef.current) {
+            clearTimeout(offlineReplayTimerRef.current);
+            offlineReplayTimerRef.current = null;
+        }
+    }, []);
 
     const sendManagerRequest = useCallback(
-        async <T,>(path: string, options: { method?: string; body?: unknown } | undefined, label: string) => {
+        async <T,>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string> } | undefined, label: string) => {
+            if (!offlineScope) {
+                throw new Error('Менеджер не привязан к объекту');
+            }
+            const operationId = createManagerOperationId();
+            const operationOptions = {
+                ...options,
+                headers: {
+                    ...options?.headers,
+                    'Idempotency-Key': operationId
+                }
+            };
+            const enqueueOfflineOperation = () => {
+                try {
+                    enqueueManagerOfflineOperation({ scope: offlineScope, operationId, path, options: operationOptions, label });
+                    refreshOfflineQueueCount();
+                } catch (queueError) {
+                    const message = queueError instanceof Error
+                        ? queueError.message
+                        : 'Не удалось сохранить операцию в офлайн-очереди';
+                    setOfflineSyncError(message);
+                    toast(message, 'error');
+                    throw queueError;
+                }
+            };
             if (!isOnline) {
-                enqueueManagerOfflineOperation({ path, options, label });
-                refreshOfflineQueueCount();
+                enqueueOfflineOperation();
                 toast(`${label}: нет интернета, сохранено локально`, 'error');
                 return null as T | null;
             }
 
             try {
-                return await request<T>(path, options);
+                return await request<T>(path, operationOptions);
             } catch (requestError) {
                 if (isLikelyOfflineError(requestError)) {
                     setIsOnline(false);
-                    enqueueManagerOfflineOperation({ path, options, label });
-                    refreshOfflineQueueCount();
+                    enqueueOfflineOperation();
                     toast(`${label}: нет связи, сохранено локально`, 'error');
                     return null as T | null;
                 }
                 throw requestError;
             }
         },
-        [isOnline, refreshOfflineQueueCount, request, toast]
+        [isOnline, offlineScope, refreshOfflineQueueCount, request, toast]
     );
 
     const refreshManagerState = useCallback(async () => {
         try {
             await mutate();
+            setIsOnline(true);
         } catch (refreshError) {
             if (isLikelyOfflineError(refreshError)) {
                 setIsOnline(false);
@@ -680,13 +842,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const shiftTotalBalance = shiftBalances?.total ?? shiftCashValue + shiftCardValue;
     const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
     const shiftLedger = data?.shiftLedger ?? [];
+    const shiftLedgerTruncated = Boolean(data?.shiftLedgerTruncated);
     const shiftCashByCurrency = useMemo(() => data?.shiftCashByCurrency ?? [], [data?.shiftCashByCurrency]);
     const expenseCategories = data?.expenseCategories ?? [];
     const selectedExpenseEntryType = expenseForm.watch('entryType');
     const selectedExpenseMethod = expenseForm.watch('method');
     const selectedExpenseCurrency = expenseForm.watch('currency');
     const compensation = data?.compensation ?? null;
+    const canEditBookings = Boolean(compensation?.canEditBookings);
     const canEditStayPayments = Boolean(compensation?.canEditStayPayments);
+    const canCancelBookings = Boolean(compensation?.canCancelBookings);
     const managerName = user.displayName?.trim() || user.username?.trim() || 'Менеджер';
     const shiftPayDisplay = typeof compensation?.shiftPayAmount === 'number' ? formatKgs(compensation.shiftPayAmount) : null;
     const shareDisplay = typeof compensation?.revenueSharePct === 'number' ? `${compensation.revenueSharePct}%` : null;
@@ -698,10 +863,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
         : null;
     const cachedAtLabel = cachedAt ? formatDateTime(cachedAt, hotelTz) : null;
-    const showOfflineStatus = !isOnline || isUsingCachedState || pendingOfflineCount > 0 || Boolean(offlineSyncError) || isSyncingOffline;
-    const offlineStatusTitle = offlineSyncError
-        ? 'Синхронизация не прошла'
-        : !isOnline
+    const showOfflineStatus = !isOnline || isUsingCachedState || pendingOfflineCount > 0 || Boolean(offlineSyncError) || Boolean(offlineRejectedNotice) || isSyncingOffline;
+    const offlineStatusTitle = offlineRejectedNotice
+        ? 'Операция отклонена'
+        : offlineSyncError
+            ? 'Синхронизация не прошла'
+            : !isOnline
             ? 'Нет интернета'
             : isSyncingOffline
                 ? 'Синхронизация'
@@ -711,7 +878,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         ? 'Локальный снимок'
                         : 'Синхронизировано';
     const offlineStatusDetail = [
-        offlineSyncError || !isOnline ? 'Проверьте интернет: операция не дошла до сервера' : null,
+        offlineRejectedNotice,
+        !isOnline ? 'Проверьте интернет: операция не дошла до сервера' : null,
+        offlineSyncError ? 'Синхронизация приостановлена; порядок операций сохранён' : null,
         isUsingCachedState && cachedAtLabel ? `данные от ${cachedAtLabel}` : null,
         pendingOfflineCount > 0 ? `${pendingOfflineCount} операций в очереди` : null,
         offlineSyncError ? `детали: ${offlineSyncError}` : null,
@@ -722,7 +891,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
 
         return (
-            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineSyncError || !isOnline
+            <div className={`rounded-xl border px-3 py-2 text-xs shadow-sm ${offlineRejectedNotice || offlineSyncError || !isOnline
                 ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
                 : isUsingCachedState
                     ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100'
@@ -735,16 +904,27 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             <p className="mt-0.5 break-words opacity-80">{offlineStatusDetail}</p>
                         ) : null}
                     </div>
-                    {isOnline && pendingOfflineCount > 0 ? (
-                        <button
-                            type="button"
-                            onClick={() => void flushOfflineOperations()}
-                            disabled={isSyncingOffline}
-                            className="min-w-0 max-w-full shrink-0 rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
-                        >
-                            {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
-                        </button>
-                    ) : null}
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                        {isOnline && pendingOfflineCount > 0 ? (
+                            <button
+                                type="button"
+                                onClick={() => void flushOfflineOperations()}
+                                disabled={isSyncingOffline}
+                                className="min-w-0 max-w-full rounded-lg border border-current/20 px-2 py-1 text-center font-semibold leading-tight break-words transition [overflow-wrap:anywhere] hover:bg-white/30 disabled:opacity-50"
+                            >
+                                {isSyncingOffline ? 'Синхронизация...' : 'Синхронизировать'}
+                            </button>
+                        ) : null}
+                        {offlineRejectedNotice ? (
+                            <button
+                                type="button"
+                                onClick={() => setOfflineRejectedNotice(null)}
+                                className="rounded-lg border border-current/20 px-2 py-1 font-semibold transition hover:bg-white/30"
+                            >
+                                Понятно
+                            </button>
+                        ) : null}
+                    </div>
                 </div>
             </div>
         );
@@ -791,6 +971,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         if (!receiptWindow) {
             return;
         }
+        receiptWindow.opener = null;
 
         const printTimestamp = new Date().toISOString();
         const body = `<!doctype html>
@@ -816,32 +997,33 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 <div class="ticket">
     <h1>Итог смены</h1>
     <h2>№${data.shift.number}</h2>
-    <p class="brand">${primaryHotel.name}</p>
-    <p>${primaryHotel.address}</p>
+    <p class="brand">${escapeReceiptHtml(primaryHotel.name)}</p>
+    <p>${escapeReceiptHtml(primaryHotel.address)}</p>
     <ul>
-        <li><span>На смене</span><strong>${managerName}</strong></li>
-        <li><span>Открыта</span><strong>${formatDateTime(data.shift.openedAt, hotelTz)}</strong></li>
-        <li><span>Печать</span><strong>${formatDateTime(printTimestamp, hotelTz)}</strong></li>
-        <li><span>На начало смены</span><strong>${formatKgs(data.shift.openingCash)}</strong></li>
-        <li><span>Поступления за смену</span><strong>${formatKgs(shiftRevenueTotal)}</strong></li>
-        <li><span>Из заселений</span><strong>${formatKgs(shiftStayRevenue)}</strong></li>
-        <li><span>Прочие поступления</span><strong>${formatKgs(shiftOtherReceipts)}</strong></li>
-        <li><span>Поступило наличными</span><strong>${formatKgs(shiftRevenueCash)}</strong></li>
-        <li><span>Поступило безналом</span><strong>${formatKgs(shiftRevenueCard)}</strong></li>
-        <li><span>Расходы за смену</span><strong>${formatKgs(shiftExpensesTotal)} (${formatKgs(shiftExpensesCash)} / ${formatKgs(shiftExpensesCard)})</strong></li>
+        <li><span>На смене</span><strong>${escapeReceiptHtml(managerName)}</strong></li>
+        <li><span>Открыта</span><strong>${escapeReceiptHtml(formatDateTime(data.shift.openedAt, hotelTz))}</strong></li>
+        <li><span>Печать</span><strong>${escapeReceiptHtml(formatDateTime(printTimestamp, hotelTz))}</strong></li>
+        <li><span>На начало смены</span><strong>${escapeReceiptHtml(formatKgs(data.shift.openingCash))}</strong></li>
+        <li><span>Поступления за смену</span><strong>${escapeReceiptHtml(formatKgs(shiftRevenueTotal))}</strong></li>
+        <li><span>Из заселений</span><strong>${escapeReceiptHtml(formatKgs(shiftStayRevenue))}</strong></li>
+        <li><span>Прочие поступления</span><strong>${escapeReceiptHtml(formatKgs(shiftOtherReceipts))}</strong></li>
+        <li><span>Поступило наличными</span><strong>${escapeReceiptHtml(formatKgs(shiftRevenueCash))}</strong></li>
+        <li><span>Поступило безналом</span><strong>${escapeReceiptHtml(formatKgs(shiftRevenueCard))}</strong></li>
+        <li><span>Расходы за смену</span><strong>${escapeReceiptHtml(formatKgs(shiftExpensesTotal))} (${escapeReceiptHtml(formatKgs(shiftExpensesCash))} / ${escapeReceiptHtml(formatKgs(shiftExpensesCard))})</strong></li>
     </ul>
     ${shiftLedger.filter(e => e.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(e)).length > 0 ? `
     <ul class="expenses">
         ${shiftLedger.filter(e => e.entryType === 'CASH_OUT' && !isCollectionLedgerEntry(e)).map(e =>
-            `<li><span style="padding-left:16px;color:#64748b">↳ ${[e.category?.name?.trim(), e.note?.trim()].filter(Boolean).join(' · ') || 'Расход'} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${formatKgs(e.amount)}</strong></li>`
+            `<li><span style="padding-left:16px;color:#64748b">↳ ${escapeReceiptHtml([e.category?.name?.trim(), e.note?.trim()].filter(Boolean).join(' · ') || 'Расход')} (${e.method === 'CASH' ? 'нал' : 'безнал'})</span><strong style="color:#dc2626">-${escapeReceiptHtml(formatKgs(e.amount))}</strong></li>`
         ).join('')}
     </ul>` : ''}
+    ${shiftLedgerTruncated ? '<p class="footer">Детализация содержит последние 100 операций; итоговые суммы рассчитаны по всей смене.</p>' : ''}
     <ul>
-        <li><span>Чистый доход</span><strong>${formatKgs(shiftNetIncome)}</strong></li>
-        <li><span>Сейчас в кассе</span><strong>${formatKgs(shiftCashValue)}</strong></li>
-        ${shiftCashByCurrency.filter(item => item.currency === 'USD').map(item => `<li><span>Сейчас USD</span><strong>${formatCurrencyAmount(item.amount, item.currency)}</strong></li>`).join('')}
-        <li><span>Сейчас безналом</span><strong>${formatKgs(shiftCardValue)}</strong></li>
-        <li><span>Сейчас всего</span><strong>${formatKgs(shiftTotalBalance)}</strong></li>
+        <li><span>Чистый доход</span><strong>${escapeReceiptHtml(formatKgs(shiftNetIncome))}</strong></li>
+        <li><span>Сейчас в кассе</span><strong>${escapeReceiptHtml(formatKgs(shiftCashValue))}</strong></li>
+        ${shiftCashByCurrency.filter(item => item.currency === 'USD').map(item => `<li><span>Сейчас USD</span><strong>${escapeReceiptHtml(formatCurrencyAmount(item.amount, item.currency))}</strong></li>`).join('')}
+        <li><span>Сейчас безналом</span><strong>${escapeReceiptHtml(formatKgs(shiftCardValue))}</strong></li>
+        <li><span>Сейчас всего</span><strong>${escapeReceiptHtml(formatKgs(shiftTotalBalance))}</strong></li>
     </ul>
     <p class="footer">Сохраните в PDF через диалог печати браузера.</p>
 </div>
@@ -890,9 +1072,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }, [data?.rooms]);
 
     const roomBoardDays = useMemo(() => {
-        const firstDay = addDays(startOfLocalDay(new Date()), roomBoardStartOffset);
+        const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
+        const firstDay = addDays(hotelToday, roomBoardStartOffset);
         return Array.from({ length: managerBoardDayCount }, (_, index) => addDays(firstDay, index));
-    }, [roomBoardStartOffset]);
+    }, [hotelTodayKey, hotelTz, roomBoardStartOffset]);
 
     const roomBoardRange = useMemo(() => {
         const start = roomBoardDays[0] ?? startOfLocalDay(new Date());
@@ -905,7 +1088,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const now = new Date();
 
         return sortedRooms.map((room) => {
-            const items = (room.stays ?? (room.stay ? [room.stay] : []))
+            const items = getRoomStays(room)
                 .filter((stay) => stay.status === 'SCHEDULED' || stay.status === 'CHECKED_IN')
                 .map((stay) => {
                     const stayStart = Date.parse(stay.scheduledCheckIn);
@@ -1053,10 +1236,24 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         [sortedRooms]
     );
 
-    const availableGroupRooms = useMemo(
-        () => sortedRooms.filter((room) => room.status === 'AVAILABLE' && !room.stay),
-        [sortedRooms]
-    );
+    const availableGroupRooms = useMemo(() => {
+        const requestedStart = groupCheckIn ? parseInputValue(groupCheckIn.checkIn, hotelTz) : null;
+        const requestedEnd = groupCheckIn ? parseInputValue(groupCheckIn.checkOut, hotelTz) : null;
+
+        return sortedRooms.filter((room) => {
+            if (room.status !== 'AVAILABLE') return false;
+            if (!requestedStart || !requestedEnd || requestedEnd <= requestedStart) {
+                return !room.stay;
+            }
+
+            return !getRoomStays(room).some((stay) => {
+                if (stay.status !== 'SCHEDULED' && stay.status !== 'CHECKED_IN') return false;
+                const stayStart = new Date(stay.scheduledCheckIn);
+                const stayEnd = new Date(stay.scheduledCheckOut);
+                return stayStart < requestedEnd && stayEnd > requestedStart;
+            });
+        });
+    }, [groupCheckIn, hotelTz, sortedRooms]);
 
     const groupSelectableRooms = groupCheckIn?.mode === 'edit'
         ? sortedRooms.filter((room) => groupCheckIn.roomIds.includes(room.id))
@@ -1094,11 +1291,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return sortedRooms.filter((room) => room.status === 'OCCUPIED' && isPastDate(room.stay?.scheduledCheckOut, now)).length;
     }, [sortedRooms]);
 
-    const panelTabs: Array<{ id: PanelKey; label: string; hint?: string }> = [
-        { id: 'rooms', label: 'Номера', hint: `${occupiedCount}/${sortedRooms.length}` },
-        { id: 'shift', label: data?.shift ? `Смена №${data.shift.number}` : 'Принять смену' },
-        { id: 'cash', label: 'Касса' },
-        { id: 'history', label: 'История' }
+    const panelTabs: Array<{ id: PanelKey; label: string; hint?: string; icon: typeof BedDouble }> = [
+        { id: 'rooms', label: 'Номера', hint: `${occupiedCount}/${sortedRooms.length}`, icon: BedDouble },
+        { id: 'shift', label: data?.shift ? `Смена №${data.shift.number}` : 'Принять смену', icon: ClipboardCheck },
+        { id: 'cash', label: 'Касса', icon: WalletCards },
+        { id: 'history', label: 'История', icon: History }
     ];
     const panelMeta: Record<PanelKey, { description: string }> = {
         rooms: { description: 'Номера и брони' },
@@ -1543,7 +1740,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
 
         const startDate = new Date();
-        const endDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const nextScheduledBooking = getRoomStays(room)
+            .filter((stay) => stay.status === 'SCHEDULED' && Date.parse(stay.scheduledCheckIn) > startDate.getTime())
+            .sort((first, second) => Date.parse(first.scheduledCheckIn) - Date.parse(second.scheduledCheckIn))[0];
+        const defaultEndDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const nextBookingDate = nextScheduledBooking ? new Date(nextScheduledBooking.scheduledCheckIn) : null;
+        const endDate = nextBookingDate && nextBookingDate < defaultEndDate ? nextBookingDate : defaultEndDate;
 
         setCheckInModal({
             mode: 'checkin',
@@ -1562,6 +1764,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             checkIn: formatDateInputValue(startDate),
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
+            nextBookingCheckIn: nextScheduledBooking?.scheduledCheckIn,
             cashAmount: '',
             cashCurrency: localCashCurrency,
             cashExchangeRate: '',
@@ -1872,7 +2075,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         }
 
         const startDate = new Date();
-        const endDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const nextScheduledBooking = getRoomStays(room)
+            .filter((stay) => stay.status === 'SCHEDULED' && Date.parse(stay.scheduledCheckIn) > startDate.getTime())
+            .sort((first, second) => Date.parse(first.scheduledCheckIn) - Date.parse(second.scheduledCheckIn))[0];
+        const defaultEndDate = new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+        const nextBookingDate = nextScheduledBooking ? new Date(nextScheduledBooking.scheduledCheckIn) : null;
+        const endDate = nextBookingDate && nextBookingDate < defaultEndDate ? nextBookingDate : defaultEndDate;
         const guest = guestQrModal.result.guest;
 
         stopGuestQrScanner();
@@ -1895,6 +2103,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             checkIn: formatDateInputValue(startDate),
             currentCheckOut: undefined,
             checkOut: formatDateInputValue(endDate),
+            nextBookingCheckIn: nextScheduledBooking?.scheduledCheckIn,
             cashAmount: '',
             cashCurrency: localCashCurrency,
             cashExchangeRate: '',
@@ -1950,7 +2159,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     };
 
     const handleBoardCellClick = (room: ManagerStateResponse['rooms'][number], selectedDay: Date) => {
-        const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(selectedDay).getTime();
+        const isToday = formatDateKey(selectedDay, hotelTz) === hotelTodayKey;
         if (isToday) {
             setBoardDayAction({ room, selectedDay });
             return;
@@ -2017,8 +2226,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             toast('Нет брони или проживания для редактирования', 'error');
             return;
         }
-        if (!canEditStayPayments) {
-            toast('Редактирование доступно только менеджеру с правом исправлений', 'error');
+        if (!canEditBookings) {
+            toast('У вас нет права редактировать брони', 'error');
             return;
         }
 
@@ -2070,14 +2279,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             showEditBookingDetails();
             return;
         }
-        if (!canEditStayPayments) {
-            toast('Редактирование доступно только менеджеру с правом исправлений', 'error');
+        if (!canEditBookings) {
+            toast('У вас нет права редактировать брони', 'error');
             return;
         }
 
         const groupRooms = sortedRooms
             .map((room) => {
-                const stay = (room.stays ?? []).find((candidate) =>
+                const stay = getRoomStays(room).find((candidate) =>
                     candidate.groupRef === bookingDetails.stay.groupRef &&
                     candidate.status === 'SCHEDULED'
                 );
@@ -2123,32 +2332,49 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         setGroupCheckInError(null);
     };
 
+    const openCancelBookingDialog = () => {
+        if (!bookingDetails) return;
+        if (!canCancelBookings) {
+            toast('У вас нет права отменять брони', 'error');
+            return;
+        }
+        setCancellationPaymentAction(null);
+        setCancelBookingError(null);
+        setIsCancelBookingOpen(true);
+    };
+
     const handleCancelBooking = async () => {
         if (!bookingDetails) {
             return;
         }
-        if (!canEditStayPayments) {
-            toast('Отмена доступна только менеджеру с правом исправлений', 'error');
+        if (!canCancelBookings) {
+            setCancelBookingError('У вас нет права отменять брони');
             return;
         }
-        if (typeof window !== 'undefined' && !window.confirm(`Отменить бронь № ${bookingDetails.roomLabel}?`)) {
+        const prepaidAmount = bookingDetails.stay.amountPaid ?? 0;
+        if (prepaidAmount > 0 && !cancellationPaymentAction) {
+            setCancelBookingError('Выберите, что сделать с предоплатой');
             return;
         }
 
         setIsCancellingBooking(true);
+        setCancelBookingError(null);
         try {
             await sendManagerRequest(`/api/rooms/${bookingDetails.roomId}/stay`, {
                 body: {
                     intent: 'cancel-booking',
                     stayId: bookingDetails.stay.id,
+                    shiftId: cancellationPaymentAction === 'REFUND' ? data?.shift?.id : undefined,
+                    cancellationPaymentAction: prepaidAmount > 0 ? cancellationPaymentAction : undefined,
                 }
             }, 'Отмена брони');
-            toast('Бронь отменена', 'success');
+            toast(cancellationPaymentAction === 'REFUND' ? 'Бронь отменена, возврат записан' : 'Бронь отменена', 'success');
+            setIsCancelBookingOpen(false);
             setBookingDetails(null);
             void refreshManagerState();
         } catch (error) {
             console.error(error);
-            toast('Не удалось отменить бронь', 'error');
+            setCancelBookingError(error instanceof Error ? error.message : 'Не удалось отменить бронь');
         } finally {
             setIsCancellingBooking(false);
         }
@@ -2415,6 +2641,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 setCheckInError('Время выезда должно быть позже заселения');
                 return;
             }
+            const nextBookingCheckIn = checkInModal.mode === 'checkin' && checkInModal.nextBookingCheckIn
+                ? new Date(checkInModal.nextBookingCheckIn)
+                : null;
+            if (nextBookingCheckIn && !Number.isNaN(nextBookingCheckIn.getTime()) && scheduledCheckOut > nextBookingCheckIn) {
+                setCheckInError(`Выезд должен быть не позже ${formatDateTime(nextBookingCheckIn, hotelTz)} — после этого начинается следующая бронь`);
+                return;
+            }
         } else {
             const currentCheckOut = checkInModal.currentCheckOut ? parseInputValue(checkInModal.currentCheckOut, hotelTz) : null;
             if (!currentCheckOut) {
@@ -2586,7 +2819,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return (
             <>
                 <ExitButton />
-                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
+                <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-[#0c0f13] sm:px-6">
                     <Card className="max-w-md text-center">
                         <p className="text-light-text dark:text-white/80">Администратор ещё не назначил вас на точку.</p>
                     </Card>
@@ -2597,7 +2830,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     if (!data && isLoading) {
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-night sm:px-6">
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg px-2 py-4 text-center dark:bg-[#0c0f13] sm:px-6">
                 <div className="flex w-full max-w-md justify-end">
                     <ExitButton />
                 </div>
@@ -2696,9 +2929,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }
 
     return (
-        <div className="min-h-screen bg-[#eef2f6] text-slate-800 dark:bg-[#10141b] dark:text-slate-200">
+        <div className="min-h-screen bg-[#f4f6f8] text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200">
             <div className="lg:grid lg:min-h-screen lg:grid-cols-[16rem_minmax(0,1fr)]">
-                <aside className="hidden border-r border-slate-200/80 bg-[#f7f9fb] px-5 py-5 text-slate-600 shadow-[12px_0_34px_-34px_rgba(15,23,42,0.34)] dark:border-slate-700/45 dark:bg-[#111821] dark:text-slate-300 dark:shadow-[12px_0_34px_-34px_rgba(0,0,0,0.8)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+                <aside className="hidden border-r border-slate-200/80 bg-white px-4 py-5 text-slate-600 dark:border-white/[0.07] dark:bg-[#111418] dark:text-slate-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
                     <div className="border-b border-slate-200/80 pb-4 dark:border-slate-700/45">
                         <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{primaryHotel.name}</p>
                         <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{managerName}</p>
@@ -2721,12 +2954,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActivePanel(tab.id)}
-                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active
-                                        ? 'border border-slate-300/80 bg-slate-200/80 text-slate-900 shadow-[0_12px_26px_-24px_rgba(15,23,42,0.32)] dark:border-slate-600/55 dark:bg-slate-700/45 dark:text-slate-100 dark:shadow-[0_14px_32px_-26px_rgba(0,0,0,0.8)]'
-                                        : 'border border-transparent text-slate-600 hover:bg-slate-100/80 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/55 dark:hover:text-slate-200'
+                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active
+                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
+                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-slate-200'
                                         }`}
                                 >
-                                    <span className={`h-2 w-2 shrink-0 rounded-full ${active ? 'bg-slate-700 dark:bg-slate-200' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                                    <tab.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                                     <span className="min-w-0 flex-1">
                                         <span className="block truncate text-sm font-semibold">{tab.label}</span>
                                         <span className={`block truncate text-[11px] ${active ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}>{panelMeta[tab.id].description}</span>
@@ -2780,7 +3013,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     </div>
                 </aside>
 
-                <main className="min-w-0 bg-[#eef2f6] px-3 pb-16 pt-3 dark:bg-[#10141b] sm:px-5 lg:px-6 lg:py-6 xl:px-8">
+                <main className="workspace-page min-w-0 bg-[#f4f6f8] pb-16 pt-3 dark:bg-[#0c0f13] lg:py-5">
+                    <div className="w-full min-w-0">
                     <header className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.42)] dark:border-slate-700/55 dark:bg-slate-800/35 lg:hidden">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -2842,7 +3076,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         </div>
                     </header>
 
-                    <div className="sticky top-0 z-40 -mx-3 mb-3 bg-[#eef2f6]/94 px-3 py-2 backdrop-blur-md dark:bg-[#10141b]/94 sm:-mx-5 sm:px-5 lg:hidden">
+                    <div className="sticky top-0 z-40 -mx-3 mb-3 bg-[#f4f6f8]/94 px-3 py-2 backdrop-blur-md dark:bg-[#0c0f13]/94 sm:-mx-5 sm:px-5 lg:hidden">
                         <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700/55 dark:bg-slate-800/35">
                             <div className="flex gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
                                 {panelTabs.map((tab) => (
@@ -2850,12 +3084,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         key={tab.id}
                                         type="button"
                                         onClick={() => setActivePanel(tab.id)}
-                                        className={`min-w-0 flex-1 rounded-md px-2 py-1.5 transition-all ${activePanel === tab.id
-                                            ? 'bg-slate-200/90 text-slate-900 shadow-sm dark:bg-slate-700/60 dark:text-slate-100'
+                                        className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md px-1 py-1.5 transition-colors ${activePanel === tab.id
+                                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
                                             : 'hover:text-slate-800 dark:hover:text-slate-200'
                                             }`}
                                     >
-                                        <span className="block truncate">{tab.label}</span>
+                                        <tab.icon className="h-4 w-4" aria-hidden="true" />
+                                        <span className="block max-w-full truncate text-[11px]">{tab.id === 'shift' ? 'Смена' : tab.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -2920,7 +3155,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </div>
                                         </div>
                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:justify-end">
-                                        <Button
+                                        {canUseGroupStays && <Button
                                             type="button"
                                             size="sm"
                                             variant="secondary"
@@ -2932,7 +3167,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         >
                                             <Users className="h-4 w-4" aria-hidden="true" />
                                             <span className="hidden sm:inline">Групповой заезд</span>
-                                        </Button>
+                                        </Button>}
                                         <div className="flex rounded-lg border border-slate-200/80 bg-white p-1 text-xs font-medium text-slate-600 shadow-sm dark:border-slate-700/55 dark:bg-slate-900/25 dark:text-slate-400">
                                             <button
                                                 type="button"
@@ -2943,9 +3178,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </button>
                                             <button
                                                 type="button"
-                                                className={`min-w-0 rounded-md px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'board' ? 'bg-slate-200/95 text-slate-900 shadow-sm dark:bg-slate-700/70 dark:text-slate-100' : 'hover:text-slate-800 dark:hover:text-slate-200'}`}
-                                                onClick={() => setRoomViewMode('board')}
+                                                className={`inline-flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'board' ? 'bg-slate-200/95 text-slate-900 shadow-sm dark:bg-slate-700/70 dark:text-slate-100' : 'hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                                onClick={openBoardView}
                                             >
+                                                <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
                                                 Шахматка
                                             </button>
                                         </div>
@@ -2953,8 +3189,20 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
                                 </div>
                                 {roomViewMode === 'board' ? (
-                                    <div className="space-y-3">
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="fixed inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[#f4f6f8] p-3 text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
+                                        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 pb-3 dark:border-white/[0.07]">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-xs text-slate-500 dark:text-white/40">{primaryHotel.name}</p>
+                                                <h2 className="mt-0.5 text-lg font-semibold text-slate-900 dark:text-white">Шахматка</h2>
+                                            </div>
+                                            <div className="flex shrink-0 items-center gap-3">
+                                                <p className="hidden text-xs text-slate-500 dark:text-white/40 sm:block">{formatBoardDay(roomBoardRange.start, hotelTz)} — {formatBoardDay(addDays(roomBoardRange.end, -1), hotelTz)}</p>
+                                                <Button type="button" size="icon" variant="secondary" className="h-9 w-9" onClick={closeBoardView} title="Закрыть шахматку" aria-label="Закрыть шахматку">
+                                                    <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                                             <div className="flex flex-wrap gap-1.5">
                                                 <button
                                                     type="button"
@@ -2991,7 +3239,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     size="sm"
                                                     variant="ghost"
                                                     className="border border-slate-200/80 dark:border-white/15"
-                                                    onClick={() => setRoomBoardStartOffset((current) => current - managerBoardDayCount)}
+                                                    disabled={roomBoardStartOffset <= -managerBoardMaxOffset}
+                                                    onClick={() => setRoomBoardStartOffset((current) => Math.max(current - managerBoardDayCount, -managerBoardMaxOffset))}
                                                 >
                                                     Назад
                                                 </Button>
@@ -3009,14 +3258,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     size="sm"
                                                     variant="ghost"
                                                     className="border border-slate-200/80 dark:border-white/15"
-                                                    onClick={() => setRoomBoardStartOffset((current) => current + managerBoardDayCount)}
+                                                    disabled={roomBoardStartOffset >= managerBoardMaxOffset}
+                                                    onClick={() => setRoomBoardStartOffset((current) => Math.min(current + managerBoardDayCount, managerBoardMaxOffset))}
                                                 >
                                                     Вперёд
                                                 </Button>
                                             </div>
                                         </div>
-                                        <div className="relative">
-                                            <div className="scrollbar-none max-h-[calc(100dvh-15rem)] overflow-auto bg-transparent overscroll-contain">
+                                        <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]">
+                                            <div className="scrollbar-none h-full overflow-auto bg-transparent overscroll-contain">
                                                 <div className="w-max min-w-full">
                                                     <div
                                                         className="sticky top-0 z-30 grid border-y border-slate-200 bg-light-bg text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 dark:border-white/[0.06] dark:bg-night dark:text-white/55"
@@ -3025,8 +3275,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         <div className="sticky left-0 z-40 border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night">Номер</div>
                                                         {roomBoardDays.map((day) => (
                                                             <div key={`manager-board-day-${day.toISOString()}`} className="border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
-                                                                <p>{formatBoardDay(day)}</p>
-                                                                <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day)}</p>
+                                                                <p>{formatBoardDay(day, hotelTz)}</p>
+                                                                <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -3098,7 +3348,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
                                                                                  onClick={() => {
                                                                                      if (item.stay.status === 'CHECKED_IN') {
-                                                                                         if (canEditStayPayments) {
+                                                                                         if (canEditBookings) {
                                                                                              showEditStayModal(room, item.stay);
                                                                                          } else {
                                                                                              showExtendModal(room);
@@ -3122,6 +3372,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-slate-300/70 dark:bg-white/15" />
                                             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-slate-300/70 dark:bg-white/15" />
                                         </div>
+                                        {isBoardPortraitPhone ? (
+                                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0c0f13]/96 px-6 text-center text-white backdrop-blur-sm">
+                                                <div className="max-w-xs">
+                                                    <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-blue-300">
+                                                        <RotateCw className="h-6 w-6" aria-hidden="true" />
+                                                    </span>
+                                                    <h3 className="mt-4 text-lg font-semibold">Поверните телефон</h3>
+                                                    <p className="mt-2 text-sm leading-relaxed text-white/55">Для шахматки нужен горизонтальный экран — так будут видны номера, даты и брони.</p>
+                                                    <Button type="button" variant="secondary" className="mt-5 w-full" onClick={closeBoardView}>Вернуться к карточкам</Button>
+                                                </div>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : (
                                     <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -3249,16 +3511,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 size="icon"
                                                                 variant="secondary"
                                                                 className="h-8 w-8 rounded-lg"
-                                                                disabled={!hasOpenShift || room.status !== 'AVAILABLE' || (hasScheduledBooking && !canCheckInBooking)}
+                                                                disabled={!hasOpenShift || room.status !== 'AVAILABLE'}
                                                                 onClick={() => {
-                                                                    if (scheduledBooking) {
+                                                                    if (scheduledBooking && canCheckInBooking) {
                                                                         showScheduledCheckInModal({ roomId: room.id, roomLabel: room.label, stay: scheduledBooking });
                                                                         return;
                                                                     }
                                                                     showCheckInModal(room);
                                                                 }}
-                                                                title={room.status === 'DIRTY' ? 'Сначала отметьте номер убранным' : hasScheduledBooking ? canCheckInBooking ? 'Заселить по брони' : 'Бронь на будущую дату' : 'Заселить'}
-                                                                aria-label={hasScheduledBooking ? `Заселить по брони номер ${room.label}` : `Заселить номер ${room.label}`}
+                                                                title={room.status === 'DIRTY' ? 'Сначала отметьте номер убранным' : hasScheduledBooking ? canCheckInBooking ? 'Заселить по брони' : 'Заселить до будущей брони' : 'Заселить'}
+                                                                aria-label={hasScheduledBooking && canCheckInBooking ? `Заселить по брони номер ${room.label}` : `Заселить номер ${room.label}`}
                                                             >
                                                                 <LogIn className="h-4 w-4" aria-hidden="true" />
                                                             </Button>
@@ -3274,7 +3536,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 showBookingDetails(room, room.stay);
                                                                 return;
                                                             }
-                                                            if (canEditStayPayments) {
+                                                            if (canEditBookings) {
                                                                 showEditStayModal(room, room.stay);
                                                             } else {
                                                                 showExtendModal(room);
@@ -3315,7 +3577,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         )}
 
                         {activePanel === 'shift' && (
-                            <Card>
+                            <Card className="w-full lg:p-5">
                                 <CardHeader title="Закрытие смены" />
                                 {isLoading && <p className="text-sm text-slate-600 dark:text-white/60">Загружаем...</p>}
                                 {error && <p className="text-sm text-rose-300">{String(error)}</p>}
@@ -3422,7 +3684,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         )}
 
                         {activePanel === 'cash' && (
-                            <Card className="max-w-6xl">
+                            <Card className="w-full lg:p-5">
                                 <CardHeader title="Касса" />
                                 <form className="grid gap-3 lg:grid-cols-12" onSubmit={handleExpense}>
                                     <Input className="lg:col-span-2" type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
@@ -3470,7 +3732,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         >
                                             <div>
                                                 <h3 className="text-sm font-semibold">Последние операции</h3>
-                                                <p className="text-xs text-slate-500 dark:text-white/60">{shiftLedger.length} записей</p>
+                                                <p className="text-xs text-slate-500 dark:text-white/60">
+                                                    {shiftLedgerTruncated ? `Последние ${shiftLedger.length} операций` : `${shiftLedger.length} записей`}
+                                                </p>
                                             </div>
                                             <span className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 dark:border-white/20 dark:text-white/80">
                                                 {isCashLedgerOpen ? 'Скрыть' : 'Показать'}
@@ -3529,7 +3793,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         )}
 
                         {activePanel === 'history' && (
-                            <Card>
+                            <Card className="w-full lg:p-5">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <CardHeader title="История смен" />
                                     <Button type="button" size="sm" variant="ghost" onClick={() => refreshProfile()} disabled={isProfileLoading}>
@@ -3583,7 +3847,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     <p className="mt-4 text-sm text-slate-600 dark:text-white/60">Нет смен, подходящих под фильтр.</p>
                                 )}
                                 {filteredProfileShifts.length > 1 && (
-                                    <div className="mt-4 max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                                    <div className="mt-4 grid max-h-[360px] gap-2 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
                                         {filteredProfileShifts.map((shift) => (
                                             <button
                                                 key={shift.id}
@@ -3605,6 +3869,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 )}
                             </Card>
                         )}
+                    </div>
                     {isProfileOpen && (
                         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-2 sm:p-4">
                             <div className="relative w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
@@ -3663,7 +3928,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     <div className="rounded-xl bg-white/[0.04] p-3">
                                                         <p className="text-xs uppercase tracking-widest text-white/40">PIN</p>
                                                         <p className="text-base font-semibold text-white">
-                                                            {profileData.assignment?.pinCode ?? '—'}
+                                                            {profileData.assignment?.hasPin ? 'Настроен' : 'Не задан'}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -3983,8 +4248,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             >
                                                 <option value="CASH">Наличными</option>
                                                 <option value="CARD">Картой / терминал</option>
-                                                <option value="SITE">Оплачено на сайте</option>
-                                                <option value="PENDING_TRANSFER">Банковский перевод</option>
+                                                {canUseOnlinePayments && <option value="SITE">Оплачено на сайте</option>}
+                                                {canUseOnlinePayments && <option value="PENDING_TRANSFER">Банковский перевод</option>}
                                                 {canUsePostpaidStays && groupCheckIn.mode === 'checkin' ? (
                                                     <>
                                                         <option value="POSTPAY">Оплата после проживания</option>
@@ -4232,8 +4497,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 {guestQrModal.isVerifyingProfile ? 'Проверяем...' : 'Подтвердить'}
                                                             </Button>
                                                         ) : null}
-                                                        <Button type="button" size="sm" variant="secondary" onClick={startGuestProfileEdit}>
-                                                            Изменить
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="h-8 w-8"
+                                                            onClick={startGuestProfileEdit}
+                                                            title="Изменить данные гостя"
+                                                            aria-label="Изменить данные гостя"
+                                                        >
+                                                            <Pencil className="h-4 w-4" aria-hidden="true" />
                                                         </Button>
                                                     </div>
                                                 </div>
@@ -4523,12 +4796,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             id="modal-checkout"
                                                             type="datetime-local"
                                                             value={checkInModal.checkOut}
+                                                            max={checkInModal.mode === 'checkin' && checkInModal.nextBookingCheckIn ? formatDateInputValue(new Date(checkInModal.nextBookingCheckIn)) : undefined}
                                                             onChange={(event) =>
                                                                 setCheckInModal((prev) => (prev ? { ...prev, checkOut: event.target.value } : prev))
                                                             }
                                                             className={modalDateTimeInputClass}
                                                         />
                                                     </div>
+                                                    {checkInModal.mode === 'checkin' && checkInModal.nextBookingCheckIn ? (
+                                                        <p className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-relaxed text-cyan-100/75 sm:col-span-2">
+                                                            Следующая бронь начинается {formatDateTime(checkInModal.nextBookingCheckIn, hotelTz)}. Текущего гостя можно заселить до этого времени.
+                                                        </p>
+                                                    ) : null}
                                                 </div>
                                             ) : (
                                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
@@ -4635,7 +4914,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             className="text-white"
                                                         />
                                                     </div>
-                                                    <div>
+                                                    {(canUseOnlinePayments || Number(checkInModal.onlineAmount || 0) > 0) && <div>
                                                         <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'book' ? 'Предоплата сайт' : checkInModal.mode === 'extend' ? 'Доплата сайт' : 'На сайте'}</label>
                                                         <Input
                                                             id="modal-online"
@@ -4650,8 +4929,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             }
                                                             placeholder="0"
                                                             className="text-white"
+                                                            disabled={!canUseOnlinePayments}
                                                         />
-                                                    </div>
+                                                    </div>}
                                                 </div>
                                             ) : null}
                                         </>
@@ -4686,7 +4966,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     ? 'Просрочено'
                                     : 'Свободные даты';
                         const count = isFreeDatesPopup ? boardFreeDateItems.length : stayItems.length;
-                        const periodLabel = `${formatBoardDay(roomBoardRange.start)} - ${formatBoardDay(addDays(roomBoardRange.end, -1))}`;
+                        const periodLabel = `${formatBoardDay(roomBoardRange.start, hotelTz)} - ${formatBoardDay(addDays(roomBoardRange.end, -1), hotelTz)}`;
 
                         return (
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
@@ -4709,8 +4989,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     {boardFreeDateItems.map((item) => {
                                                         const lastFreeDay = addDays(item.endDate, -1);
                                                         const rangeLabel = item.startIndex + 1 === item.endIndex
-                                                            ? formatBoardDay(item.startDate)
-                                                            : `${formatBoardDay(item.startDate)} - ${formatBoardDay(lastFreeDay)}`;
+                                                            ? formatBoardDay(item.startDate, hotelTz)
+                                                            : `${formatBoardDay(item.startDate, hotelTz)} - ${formatBoardDay(lastFreeDay, hotelTz)}`;
 
                                                         return (
                                                             <button
@@ -4905,7 +5185,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         type="button"
                                         size="icon"
                                         variant="secondary"
-                                        disabled={!canEditStayPayments}
+                                        disabled={!canEditBookings}
                                         onClick={bookingDetails.stay.groupRef ? showEditGroupBookingDetails : showEditBookingDetails}
                                         title={bookingDetails.stay.groupRef ? 'Редактировать группу' : 'Редактировать бронь'}
                                         aria-label={bookingDetails.stay.groupRef ? 'Редактировать группу' : 'Редактировать бронь'}
@@ -4937,16 +5217,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         type="button"
                                         size="icon"
                                         variant="danger"
-                                        disabled={isCancellingBooking || !canEditStayPayments}
-                                        onClick={handleCancelBooking}
+                                        disabled={isCancellingBooking || !canCancelBookings}
+                                        onClick={openCancelBookingDialog}
                                         title="Отменить бронь"
                                         aria-label="Отменить бронь"
                                     >
                                         {isCancellingBooking ? '...' : '×'}
                                     </Button>
                                 </div>
-                                {!canEditStayPayments ? (
-                                    <p className="text-center text-[11px] text-white/40">Отмена доступна только менеджеру с правом исправлений.</p>
+                                {!canEditBookings && !canEditStayPayments && !canCancelBookings ? (
+                                    <p className="text-center text-[11px] text-white/40">Для изменения брони обратитесь к администратору.</p>
                                 ) : null}
                                 {!canCheckInScheduledStay(bookingDetails.stay) ? (
                                     <p className="text-center text-[11px] text-white/40">Заселение будет доступно в день заезда.</p>
@@ -4957,6 +5237,79 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 {hasOpenShift && boardDayAction?.room.status === 'DIRTY' ? (
                                     <p className="text-center text-[11px] text-white/40">Сначала отметьте номер убранным.</p>
                                 ) : null}
+                            </Card>
+                        </div>
+                    )}
+
+                    {bookingDetails && isCancelBookingOpen && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-3 py-4 backdrop-blur-sm">
+                            <Card className="w-full max-w-md space-y-4 border-white/[0.08] bg-ink p-4 text-white shadow-2xl dark:bg-ink sm:p-5">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] uppercase tracking-[0.2em] text-rose-200/55">Отмена брони</p>
+                                        <h3 className="mt-1 text-lg font-semibold">Номер {bookingDetails.roomLabel}</h3>
+                                        <p className="mt-1 truncate text-xs text-white/45">{bookingDetails.stay.guestName?.trim() || 'Гость'}</p>
+                                    </div>
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={isCancellingBooking} onClick={() => setIsCancelBookingOpen(false)} aria-label="Закрыть">
+                                        ×
+                                    </Button>
+                                </div>
+
+                                {(bookingDetails.stay.amountPaid ?? 0) > 0 ? (
+                                    <div className="space-y-3">
+                                        <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2.5">
+                                            <p className="text-[11px] uppercase tracking-[0.16em] text-amber-100/55">Получена предоплата</p>
+                                            <p className="mt-1 text-lg font-semibold text-amber-100">{formatKgs(bookingDetails.stay.amountPaid ?? 0)}</p>
+                                            <p className="mt-1 text-xs text-amber-100/65">
+                                                {[
+                                                    (bookingDetails.stay.cashPaid ?? 0) > 0 ? `нал ${formatKgs(bookingDetails.stay.cashPaid ?? 0)}` : null,
+                                                    (bookingDetails.stay.cardPaid ?? 0) > 0 ? `б/н ${formatKgs(bookingDetails.stay.cardPaid ?? 0)}` : null,
+                                                    (bookingDetails.stay.onlinePaid ?? 0) > 0 ? `сайт ${formatKgs(bookingDetails.stay.onlinePaid ?? 0)}` : null
+                                                ].filter(Boolean).join(' · ')}
+                                            </p>
+                                        </div>
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <button
+                                                type="button"
+                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'REFUND' ? 'border-emerald-300/60 bg-emerald-400/12 text-emerald-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
+                                                onClick={() => setCancellationPaymentAction('REFUND')}
+                                            >
+                                                <span className="block text-sm font-semibold">Вернуть гостю</span>
+                                                <span className="mt-1 block text-xs opacity-65">Возврат пройдет расходом текущей смены.</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'RETAIN' ? 'border-amber-300/60 bg-amber-400/12 text-amber-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
+                                                onClick={() => setCancellationPaymentAction('RETAIN')}
+                                            >
+                                                <span className="block text-sm font-semibold">Удержать</span>
+                                                <span className="mt-1 block text-xs opacity-65">Предоплата останется в учете как удержанная.</span>
+                                            </button>
+                                        </div>
+                                        {cancellationPaymentAction === 'REFUND' && ((bookingDetails.stay.cashPaid ?? 0) > 0 || (bookingDetails.stay.cardPaid ?? 0) > 0) && !hasOpenShift ? (
+                                            <p className="text-xs text-amber-200">Для возврата наличных или безналичных сначала откройте смену.</p>
+                                        ) : null}
+                                    </div>
+                                ) : (
+                                    <p className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-sm text-white/65">Предоплаты нет. Бронь будет отменена без финансовой операции.</p>
+                                )}
+
+                                {cancelBookingError ? <p className="text-xs text-rose-300">{cancelBookingError}</p> : null}
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                    <Button type="button" variant="secondary" disabled={isCancellingBooking} onClick={() => setIsCancelBookingOpen(false)}>Не отменять</Button>
+                                    <Button
+                                        type="button"
+                                        variant="danger"
+                                        disabled={
+                                            isCancellingBooking ||
+                                            ((bookingDetails.stay.amountPaid ?? 0) > 0 && !cancellationPaymentAction) ||
+                                            (cancellationPaymentAction === 'REFUND' && ((bookingDetails.stay.cashPaid ?? 0) > 0 || (bookingDetails.stay.cardPaid ?? 0) > 0) && !hasOpenShift)
+                                        }
+                                        onClick={() => void handleCancelBooking()}
+                                    >
+                                        {isCancellingBooking ? 'Отменяем…' : 'Подтвердить отмену'}
+                                    </Button>
+                                </div>
                             </Card>
                         </div>
                     )}
@@ -5052,7 +5405,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             className="text-white"
                                         />
                                     </div>
-                                    <div>
+                                    {(canUseOnlinePayments || Number(paymentAdjust.onlineAmount || 0) > 0) && <div>
                                         <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-online">На сайте</label>
                                         <Input
                                             id="payment-adjust-online"
@@ -5067,8 +5420,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             }
                                             placeholder="0"
                                             className="text-white"
+                                            disabled={!canUseOnlinePayments}
                                         />
-                                    </div>
+                                    </div>}
                                 </div>
 
                                 <p className="text-[11px] text-white/40">Введите итоговые суммы по проживанию. Наличные и безнал обновят записи кассы.</p>

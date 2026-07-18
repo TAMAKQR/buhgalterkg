@@ -8,13 +8,14 @@ import { getCountryFromRequest } from '@/lib/server/request-country';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest, { params }: { params: { shiftId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
     try {
+        const { shiftId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
-        const analysis = await buildShiftAnalysis(params.shiftId, 'admin', session, country);
+        const analysis = await buildShiftAnalysis(shiftId, 'admin', session, country);
         if (!analysis) {
             return new NextResponse('Shift not found', { status: 404 });
         }

@@ -5,7 +5,6 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { handleApiError } from '@/lib/server/errors';
 import { parseDateOnly } from '@/lib/timezone';
-import { isCollectionLedgerEntry } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +23,77 @@ const toDateKeyInTimeZone = (date: Date, timeZone: string) => {
     }).formatToParts(date);
     const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
     return `${pick('year')}-${pick('month')}-${pick('day')}`;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_RANGE_DAYS = 30;
+const MAX_CUSTOM_RANGE_DAYS = 366;
+
+type ObserverLedgerAggregate = {
+    date: string;
+    entryType: LedgerEntryType;
+    method: PaymentMethod;
+    isCollection: boolean;
+    amount: bigint;
+};
+
+const resolveTimeZone = (value?: string | null) => {
+    const timeZone = value || 'Asia/Bishkek';
+    try {
+        new Intl.DateTimeFormat('en-CA', { timeZone }).format();
+        return timeZone;
+    } catch {
+        return 'Asia/Bishkek';
+    }
+};
+
+const parseRangeDate = (value: string | null, endOfDay: boolean, timeZone: string) => {
+    const normalized = value?.trim() ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        return undefined;
+    }
+    const parsed = parseDateOnly(normalized, endOfDay, timeZone);
+    return parsed && toDateKeyInTimeZone(parsed, timeZone) === normalized ? parsed : undefined;
+};
+
+const resolveDateRange = (rawStart: string | null, rawEnd: string | null, timeZone: string) => {
+    const hasStart = Boolean(rawStart?.trim());
+    const hasEnd = Boolean(rawEnd?.trim());
+    const requestedStart = hasStart ? parseRangeDate(rawStart, false, timeZone) : undefined;
+    const requestedEnd = hasEnd ? parseRangeDate(rawEnd, true, timeZone) : undefined;
+
+    if ((hasStart && !requestedStart) || (hasEnd && !requestedEnd)) {
+        return { error: 'Некорректная дата периода' } as const;
+    }
+
+    const now = new Date();
+    const todayKey = toDateKeyInTimeZone(now, timeZone);
+    const todayEnd = parseDateOnly(todayKey, true, timeZone)!;
+
+    let startDate = requestedStart;
+    let endDate = requestedEnd;
+
+    if (!startDate && !endDate) {
+        endDate = todayEnd;
+        const startAnchor = new Date(now.getTime() - (DEFAULT_RANGE_DAYS - 1) * DAY_MS);
+        startDate = parseDateOnly(toDateKeyInTimeZone(startAnchor, timeZone), false, timeZone)!;
+    } else if (startDate && !endDate) {
+        endDate = startDate <= todayEnd
+            ? todayEnd
+            : parseDateOnly(toDateKeyInTimeZone(startDate, timeZone), true, timeZone)!;
+    } else if (!startDate && endDate) {
+        const startAnchor = new Date(endDate.getTime() - (DEFAULT_RANGE_DAYS - 1) * DAY_MS);
+        startDate = parseDateOnly(toDateKeyInTimeZone(startAnchor, timeZone), false, timeZone)!;
+    }
+
+    if (!startDate || !endDate || startDate > endDate) {
+        return { error: 'Начало периода должно быть раньше окончания' } as const;
+    }
+    if (endDate.getTime() - startDate.getTime() > MAX_CUSTOM_RANGE_DAYS * DAY_MS) {
+        return { error: `Период не может превышать ${MAX_CUSTOM_RANGE_DAYS} дней` } as const;
+    }
+
+    return { startDate, endDate } as const;
 };
 
 export async function GET(request: NextRequest) {
@@ -57,44 +127,60 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Нет назначенного объекта', { status: 403 });
         }
 
-        /* ── Parse query params ── */
+        const hotel = await prisma.hotel.findUnique({
+            where: { id: hotelId },
+            select: {
+                id: true,
+                name: true,
+                address: true,
+                timezone: true,
+                currency: true,
+            },
+        });
+        if (!hotel) {
+            return new NextResponse('Отель не найден', { status: 404 });
+        }
+
+        /* ── Parse and bound query params ── */
         const { searchParams } = new URL(request.url);
-        const startDate = parseDateOnly(searchParams.get('startDate'));
-        const endDate = parseDateOnly(searchParams.get('endDate'), true);
-        const shiftNumber = searchParams.get('shiftNumber')
-            ? Number(searchParams.get('shiftNumber'))
-            : undefined;
+        const timeZone = resolveTimeZone(hotel.timezone);
+        const range = resolveDateRange(
+            searchParams.get('startDate'),
+            searchParams.get('endDate'),
+            timeZone,
+        );
+        if ('error' in range) {
+            return new NextResponse(range.error, { status: 400 });
+        }
+        const { startDate, endDate } = range;
+
+        const rawShiftNumber = searchParams.get('shiftNumber')?.trim() ?? '';
+        const shiftNumber = rawShiftNumber ? Number(rawShiftNumber) : undefined;
+        if (shiftNumber !== undefined && (!Number.isSafeInteger(shiftNumber) || shiftNumber <= 0)) {
+            return new NextResponse('Некорректный номер смены', { status: 400 });
+        }
 
         /* ── Build where clauses ── */
-        const ledgerWhere: Prisma.CashEntryWhereInput = { hotelId };
-        if (startDate || endDate) {
-            ledgerWhere.recordedAt = {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-            };
-        }
+        const ledgerWhere: Prisma.CashEntryWhereInput = {
+            hotelId,
+            recordedAt: { gte: startDate, lte: endDate },
+        };
         if (shiftNumber) {
             ledgerWhere.shift = { number: shiftNumber };
         }
 
-        const shiftWhere: Prisma.ShiftWhereInput = { hotelId };
-        if (startDate || endDate) {
-            shiftWhere.openedAt = {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-            };
-        }
+        const shiftWhere: Prisma.ShiftWhereInput = {
+            hotelId,
+            openedAt: { gte: startDate, lte: endDate },
+        };
         if (shiftNumber) {
             shiftWhere.number = shiftNumber;
         }
 
-        const stayWhere: Prisma.RoomStayWhereInput = { hotelId };
-        if (startDate || endDate) {
-            stayWhere.scheduledCheckIn = {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-            };
-        }
+        const stayWhere: Prisma.RoomStayWhereInput = {
+            hotelId,
+            scheduledCheckIn: { gte: startDate, lte: endDate },
+        };
 
         const staySelect = {
             id: true,
@@ -117,36 +203,49 @@ export async function GET(request: NextRequest) {
             room: { select: { label: true } },
         } as const;
 
-        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shifts, stays, rooms] = await prisma.$transaction([
-            prisma.hotel.findUnique({
-                where: { id: hotelId },
-                select: {
-                    id: true,
-                    name: true,
-                    address: true,
-                    timezone: true,
-                    currency: true,
-                },
-            }),
-            prisma.cashEntry.groupBy({
-                by: ['entryType', 'method'],
-                orderBy: { entryType: 'asc' },
-                where: ledgerWhere,
-                _sum: { amount: true },
-            }),
-            prisma.cashEntry.findMany({
-                where: {
-                    ...ledgerWhere,
-                    entryType: LedgerEntryType.CASH_OUT,
-                },
-                select: {
-                    amount: true,
-                    method: true,
-                    note: true,
-                    entryType: true,
-                    expenseCategory: { select: { name: true } },
-                },
-            }),
+        const shiftJoin = shiftNumber
+            ? Prisma.sql`INNER JOIN "Shift" AS "shift" ON "shift"."id" = "entry"."shiftId"`
+            : Prisma.sql``;
+        const shiftFilter = shiftNumber
+            ? Prisma.sql`AND "shift"."number" = ${shiftNumber}`
+            : Prisma.sql``;
+
+        const [ledgerAggregates, ledgerEntries, shifts, stays, rooms, allShifts] = await prisma.$transaction([
+            prisma.$queryRaw<ObserverLedgerAggregate[]>(Prisma.sql`
+                SELECT
+                    TO_CHAR(
+                        (("entry"."recordedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone})::date,
+                        'YYYY-MM-DD'
+                    ) AS "date",
+                    "entry"."entryType"::text AS "entryType",
+                    "entry"."method"::text AS "method",
+                    (
+                        "entry"."entryType"::text = 'CASH_OUT'
+                        AND (
+                            COALESCE("category"."name", '') ILIKE '%инкассац%'
+                            OR COALESCE("category"."name", '') ILIKE '%инкасац%'
+                            OR COALESCE("category"."name", '') ILIKE '%inkass%'
+                            OR COALESCE("category"."name", '') ILIKE '%incass%'
+                            OR COALESCE("category"."name", '') ILIKE '%collection%'
+                            OR COALESCE("entry"."note", '') ILIKE '%инкассац%'
+                            OR COALESCE("entry"."note", '') ILIKE '%инкасац%'
+                            OR COALESCE("entry"."note", '') ILIKE '%inkass%'
+                            OR COALESCE("entry"."note", '') ILIKE '%incass%'
+                            OR COALESCE("entry"."note", '') ILIKE '%collection%'
+                        )
+                    ) AS "isCollection",
+                    SUM("entry"."amount")::bigint AS "amount"
+                FROM "CashEntry" AS "entry"
+                LEFT JOIN "ExpenseCategory" AS "category"
+                    ON "category"."id" = "entry"."expense_category_id"
+                ${shiftJoin}
+                WHERE "entry"."hotelId" = ${hotelId}
+                    AND "entry"."recordedAt" >= ${startDate}
+                    AND "entry"."recordedAt" <= ${endDate}
+                    ${shiftFilter}
+                GROUP BY 1, 2, 3, 4
+                ORDER BY 1 ASC
+            `),
             prisma.cashEntry.findMany({
                 where: ledgerWhere,
                 orderBy: { recordedAt: 'desc' },
@@ -184,11 +283,13 @@ export async function GET(request: NextRequest) {
                     floor: true,
                 },
             }),
+            prisma.shift.findMany({
+                where: { hotelId },
+                orderBy: { number: 'desc' },
+                take: 50,
+                select: { number: true, status: true, openedAt: true },
+            }),
         ]);
-
-        if (!hotel) {
-            return new NextResponse('Отель не найден', { status: 404 });
-        }
 
         const stayRecords = stays as ObserverStayRecord[];
 
@@ -201,72 +302,42 @@ export async function GET(request: NextRequest) {
             [LedgerEntryType.ADJUSTMENT]: createBreakdown(),
         };
 
-        for (const group of ledgerGroups) {
-            const amount = group._sum?.amount ?? 0;
-            const bucket = ledgerTotals[group.entryType];
-            bucket.total += amount;
-            if (group.method === PaymentMethod.CASH) bucket.cash += amount;
-            else if (group.method === PaymentMethod.CARD) bucket.card += amount;
-        }
         const collectionTotals = createBreakdown();
-        for (const entry of collectionEntries) {
-            if (!isCollectionLedgerEntry(entry)) {
-                continue;
+        const dayMap = new Map<string, { cashIn: number; cashOut: number; collections: number }>();
+        for (const row of ledgerAggregates) {
+            const amount = Number(row.amount);
+            const day = dayMap.get(row.date) ?? { cashIn: 0, cashOut: 0, collections: 0 };
+
+            if (row.isCollection) {
+                collectionTotals.total += amount;
+                if (row.method === PaymentMethod.CASH) collectionTotals.cash += amount;
+                else if (row.method === PaymentMethod.CARD) collectionTotals.card += amount;
+                day.collections += amount;
+            } else {
+                const bucket = ledgerTotals[row.entryType];
+                if (bucket) {
+                    bucket.total += amount;
+                    if (row.method === PaymentMethod.CASH) bucket.cash += amount;
+                    else if (row.method === PaymentMethod.CARD) bucket.card += amount;
+                }
+
+                if (row.entryType === LedgerEntryType.CASH_IN) {
+                    day.cashIn += amount;
+                } else if (
+                    row.entryType === LedgerEntryType.CASH_OUT
+                    || row.entryType === LedgerEntryType.MANAGER_PAYOUT
+                ) {
+                    day.cashOut += amount;
+                }
             }
-            const bucket = ledgerTotals[LedgerEntryType.CASH_OUT];
-            bucket.total -= entry.amount;
-            collectionTotals.total += entry.amount;
-            if (entry.method === PaymentMethod.CASH) {
-                bucket.cash -= entry.amount;
-                collectionTotals.cash += entry.amount;
-            } else if (entry.method === PaymentMethod.CARD) {
-                bucket.card -= entry.amount;
-                collectionTotals.card += entry.amount;
-            }
+            dayMap.set(row.date, day);
         }
 
         const occupiedCount = rooms.filter((r) => r.status === 'OCCUPIED').length;
 
-        /* ── Daily series for line chart ── */
-        const tz = hotel.timezone || 'Asia/Almaty';
-        const dailyEntries = await prisma.cashEntry.findMany({
-            where: ledgerWhere,
-            orderBy: { recordedAt: 'asc' },
-            select: {
-                entryType: true,
-                amount: true,
-                method: true,
-                note: true,
-                recordedAt: true,
-                expenseCategory: { select: { name: true } },
-            },
-        });
-
-        const dayMap = new Map<string, { cashIn: number; cashOut: number; collections: number }>();
-        for (const row of dailyEntries) {
-            const day = toDateKeyInTimeZone(row.recordedAt, tz);
-            const entry = dayMap.get(day) ?? { cashIn: 0, cashOut: 0, collections: 0 };
-            if (row.entryType === LedgerEntryType.CASH_IN) {
-                entry.cashIn += row.amount;
-            } else if (isCollectionLedgerEntry(row)) {
-                entry.collections += row.amount;
-            } else if (row.entryType === LedgerEntryType.CASH_OUT || row.entryType === LedgerEntryType.MANAGER_PAYOUT) {
-                entry.cashOut += row.amount;
-            }
-            dayMap.set(day, entry);
-        }
-
         const dailySeries = Array.from(dayMap.entries())
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, values]) => ({ date, ...values }));
-
-        /* ── Shift numbers list for filter dropdown ── */
-        const allShifts = await prisma.shift.findMany({
-            where: { hotelId },
-            orderBy: { number: 'desc' },
-            take: 50,
-            select: { number: true, status: true, openedAt: true },
-        });
 
         return NextResponse.json({
             hotel,

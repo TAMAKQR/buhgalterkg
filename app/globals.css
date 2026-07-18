@@ -3,29 +3,31 @@
 @tailwind utilities;
 
 :root {
-    /* Light theme */
-    --bg-primary: #edf2f7;
-    --bg-secondary: #edf2f7;
+    --bg-primary: #f7f8fa;
+    --bg-secondary: #f4f6f8;
     --bg-surface: #ffffff;
-    --bg-hover: #e2e8f0;
-    --text-primary: #111827;
-    --text-secondary: #1f2937;
-    --text-tertiary: #475569;
-    --border-color: #c5cfdd;
-    --shadow: rgba(15, 23, 42, 0.14);
+    --bg-hover: #eef1f4;
+    --text-primary: #17202a;
+    --text-secondary: #344054;
+    --text-tertiary: #667085;
+    --border-color: #e4e7ec;
+    --shadow: rgba(16, 24, 40, 0.08);
+    --accent: #2563eb;
+    --workspace-gutter: clamp(0.75rem, 1vw, 1.25rem);
+    --workspace-gap: 1rem;
 }
 
 .dark {
-    /* Dark theme - мягкие цвета без резкого контраста */
-    --bg-primary: #1a1a24;
-    --bg-secondary: #0f0f18;
-    --bg-surface: #252532;
-    --bg-hover: #2d2d3d;
-    --text-primary: #e2e8f0;
-    --text-secondary: #cbd5e0;
-    --text-tertiary: #a0aec0;
+    --bg-primary: #111418;
+    --bg-secondary: #0c0f13;
+    --bg-surface: #171b21;
+    --bg-hover: #20252d;
+    --text-primary: #f1f3f5;
+    --text-secondary: #c9ced6;
+    --text-tertiary: #8f98a6;
     --border-color: rgba(255, 255, 255, 0.08);
-    --shadow: rgba(0, 0, 0, 0.3);
+    --shadow: rgba(0, 0, 0, 0.24);
+    --accent: #60a5fa;
 }
 
 * {
@@ -34,24 +36,56 @@
 
 body {
     margin: 0;
-    font-family: var(--font-sans), 'Space Grotesk', system-ui, sans-serif;
+    font-family: var(--font-sans), 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
     background-color: var(--bg-secondary);
     background-image: none;
     color: var(--text-primary);
-    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .dark body {
-    background-image:
-        radial-gradient(circle at top left, rgba(56, 189, 248, 0.06), transparent 24%),
-        radial-gradient(circle at top right, rgba(168, 85, 247, 0.05), transparent 20%);
+    background-image: none;
 }
 
-/* Desktop layout - на всю ширину */
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+button, a, input, textarea, select { touch-action: manipulation; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Единая оболочка рабочих экранов: без искусственного max-width. */
 .desktop-container {
     width: 100%;
+}
+
+.workspace-page {
+    width: 100%;
+    min-width: 0;
+    margin-inline: 0;
+    padding-inline: var(--workspace-gutter);
+}
+
+.workspace-stack {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: var(--workspace-gap);
+}
+
+@media (min-width: 1024px) {
+    :root {
+        --workspace-gap: 1.25rem;
+    }
 }
 
 @media (min-width: 1024px) {

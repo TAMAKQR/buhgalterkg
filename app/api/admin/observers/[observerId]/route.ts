@@ -14,8 +14,9 @@ const updateSchema = z.object({
 });
 
 // PATCH /api/admin/observers/[observerId] — update observer
-export async function PATCH(request: NextRequest, { params }: { params: { observerId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ observerId: string }> }) {
     try {
+        const { observerId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
@@ -25,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { observ
 
         const observer = await prisma.user.findFirst({
             where: {
-                id: params.observerId,
+                id: observerId,
                 role: 'OBSERVER',
                 assignments: {
                     some: {
@@ -48,7 +49,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { observ
         }
 
         const updated = await prisma.user.update({
-            where: { id: params.observerId },
+            where: { id: observerId },
             data,
             select: { id: true, displayName: true, loginName: true },
         });
@@ -63,15 +64,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { observ
 }
 
 // DELETE /api/admin/observers/[observerId] — delete observer
-export async function DELETE(request: NextRequest, { params }: { params: { observerId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ observerId: string }> }) {
     try {
+        const { observerId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
         const observer = await prisma.user.findFirst({
             where: {
-                id: params.observerId,
+                id: observerId,
                 role: 'OBSERVER',
                 assignments: {
                     some: {
@@ -95,18 +97,18 @@ export async function DELETE(request: NextRequest, { params }: { params: { obser
         await prisma.$transaction(async (tx) => {
             await tx.hotelAssignment.deleteMany({
                 where: {
-                    userId: params.observerId,
+                    userId: observerId,
                     hotel: { country },
                 },
             });
 
             const activeAssignmentsCount = await tx.hotelAssignment.count({
-                where: { userId: params.observerId, isActive: true },
+                where: { userId: observerId, isActive: true },
             });
 
             if (activeAssignmentsCount === 0) {
-                await tx.hotelAssignment.deleteMany({ where: { userId: params.observerId } });
-                await tx.user.delete({ where: { id: params.observerId } });
+                await tx.hotelAssignment.deleteMany({ where: { userId: observerId } });
+                await tx.user.delete({ where: { id: observerId } });
             }
         });
 

@@ -4,9 +4,11 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { detectStayPaymentMethod, sumStayPayments } from '@/lib/stays';
+import { lockRoomsForStayMutation } from '@/lib/server/room-stay-lock';
+import { lockShiftsForLedgerMutation } from '@/lib/server/shift-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +33,56 @@ const normalizeNote = (value?: string | null) => {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
 };
+
+type LockedLedgerEntry = {
+    id: string;
+    hotelId: string;
+    shiftId: string | null;
+    stayId: string | null;
+    managerId: string | null;
+    categoryId: string | null;
+    entryType: LedgerEntryType;
+    method: PaymentMethod;
+    amount: number;
+    recordedAt: Date;
+    note: string | null;
+};
+
+const lockLedgerEntry = async (tx: Prisma.TransactionClient, entryId: string) => {
+    const entries = await tx.$queryRaw<LockedLedgerEntry[]>(Prisma.sql`
+        SELECT
+            "id",
+            "hotelId",
+            "shiftId",
+            "stay_id" AS "stayId",
+            "managerId",
+            "expense_category_id" AS "categoryId",
+            "entryType",
+            "method",
+            "amount",
+            "recordedAt",
+            "note"
+        FROM "CashEntry"
+        WHERE "id" = ${entryId}
+        FOR UPDATE
+    `);
+
+    return entries[0] ?? null;
+};
+
+const sameLedgerSnapshot = (left: LockedLedgerEntry, right: LockedLedgerEntry) => (
+    left.id === right.id &&
+    left.hotelId === right.hotelId &&
+    left.shiftId === right.shiftId &&
+    left.stayId === right.stayId &&
+    left.managerId === right.managerId &&
+    left.categoryId === right.categoryId &&
+    left.entryType === right.entryType &&
+    left.method === right.method &&
+    left.amount === right.amount &&
+    left.recordedAt.getTime() === right.recordedAt.getTime() &&
+    left.note === right.note
+);
 
 const syncStayPaymentsFromLedger = async (
     tx: Prisma.TransactionClient,
@@ -83,8 +135,9 @@ const syncStayPaymentsFromLedger = async (
     });
 };
 
-export async function PATCH(request: NextRequest, { params }: { params: { entryId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ entryId: string }> }) {
     try {
+        const { entryId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -93,12 +146,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { entryI
         const payload = updateLedgerEntrySchema.parse(body);
         const entry = await prisma.cashEntry.findFirst({
             where: {
-                id: params.entryId,
+                id: entryId,
                 hotel: { country }
             },
             include: {
-                shift: { select: { id: true, managerId: true } },
-                stay: { select: { id: true } }
+                stay: { select: { id: true, roomId: true } }
             }
         });
 
@@ -106,87 +158,68 @@ export async function PATCH(request: NextRequest, { params }: { params: { entryI
             return new NextResponse('Операция не найдена', { status: 404 });
         }
 
-        const nextEntryType = payload.entryType ?? entry.entryType;
-        if (payload.categoryId && nextEntryType !== LedgerEntryType.CASH_OUT) {
-            return new NextResponse('Категорию можно указать только для расходов', { status: 400 });
-        }
+        if (payload.categoryId) {
+            const category = await prisma.expenseCategory.findFirst({
+                where: {
+                    id: payload.categoryId,
+                    hotelId: entry.hotelId
+                },
+                select: { id: true }
+            });
 
-        let nextShiftManagerId: string | null | undefined;
-        const data: Prisma.CashEntryUpdateInput = {};
-
-        if (Object.prototype.hasOwnProperty.call(payload, 'shiftId')) {
-            if (payload.shiftId) {
-                const shift = await prisma.shift.findFirst({
-                    where: {
-                        id: payload.shiftId,
-                        hotelId: entry.hotelId,
-                        hotel: { country }
-                    },
-                    select: {
-                        id: true,
-                        managerId: true
-                    }
-                });
-
-                if (!shift) {
-                    return new NextResponse('Смена не найдена для этого отеля', { status: 400 });
-                }
-
-                data.shift = { connect: { id: shift.id } };
-                nextShiftManagerId = shift.managerId;
-            } else {
-                data.shift = { disconnect: true };
-                nextShiftManagerId = null;
+            if (!category) {
+                return new NextResponse('Категория расходов не найдена', { status: 400 });
             }
-        }
-
-        if (Object.prototype.hasOwnProperty.call(payload, 'categoryId')) {
-            if (payload.categoryId) {
-                const category = await prisma.expenseCategory.findFirst({
-                    where: {
-                        id: payload.categoryId,
-                        hotelId: entry.hotelId
-                    },
-                    select: { id: true }
-                });
-
-                if (!category) {
-                    return new NextResponse('Категория расходов не найдена', { status: 400 });
-                }
-
-                data.expenseCategory = { connect: { id: category.id } };
-            } else {
-                data.expenseCategory = { disconnect: true };
-            }
-        } else if (payload.entryType && payload.entryType !== LedgerEntryType.CASH_OUT) {
-            data.expenseCategory = { disconnect: true };
-        }
-
-        if (payload.entryType) {
-            data.entryType = payload.entryType;
-        }
-        if (payload.method) {
-            data.method = payload.method;
-        }
-        if (payload.amount !== undefined) {
-            data.amount = payload.amount;
-        }
-        if (payload.recordedAt) {
-            data.recordedAt = new Date(payload.recordedAt);
-        }
-
-        const note = normalizeNote(payload.note);
-        if (note !== undefined) {
-            data.note = note;
-        }
-
-        if (nextShiftManagerId !== undefined) {
-            data.manager = nextShiftManagerId
-                ? { connect: { id: nextShiftManagerId } }
-                : { disconnect: true };
         }
 
         const updated = await prisma.$transaction(async (tx) => {
+            if (entry.stay?.roomId) {
+                await lockRoomsForStayMutation(tx, [entry.stay.roomId]);
+            }
+
+            const hasShiftUpdate = Object.prototype.hasOwnProperty.call(payload, 'shiftId');
+            const nextShiftId = hasShiftUpdate ? payload.shiftId ?? null : entry.shiftId;
+            const lockedShifts = await lockShiftsForLedgerMutation(
+                tx,
+                [entry.shiftId, nextShiftId],
+                {
+                    hotelId: entry.hotelId,
+                    actorId: session.id,
+                    actorRole: session.role,
+                    // This is an explicit admin history correction. Closed shifts
+                    // are allowed only while every affected shift row is locked.
+                    allowClosedForAdmin: true,
+                },
+            );
+
+            const lockedEntry = await lockLedgerEntry(tx, entry.id);
+            if (!lockedEntry || !sameLedgerSnapshot(entry, lockedEntry)) {
+                throw new SessionError('Операция уже изменилась. Обновите данные', 409);
+            }
+
+            const nextEntryType = payload.entryType ?? lockedEntry.entryType;
+            if (payload.categoryId && nextEntryType !== LedgerEntryType.CASH_OUT) {
+                throw new SessionError('Категорию можно указать только для расходов', 400);
+            }
+
+            const data: Prisma.CashEntryUncheckedUpdateInput = {};
+            if (hasShiftUpdate) {
+                data.shiftId = nextShiftId;
+                data.managerId = nextShiftId ? lockedShifts.get(nextShiftId)!.managerId : null;
+            }
+            if (Object.prototype.hasOwnProperty.call(payload, 'categoryId')) {
+                data.categoryId = payload.categoryId ?? null;
+            } else if (payload.entryType && payload.entryType !== LedgerEntryType.CASH_OUT) {
+                data.categoryId = null;
+            }
+            if (payload.entryType) data.entryType = payload.entryType;
+            if (payload.method) data.method = payload.method;
+            if (payload.amount !== undefined) data.amount = payload.amount;
+            if (payload.recordedAt) data.recordedAt = new Date(payload.recordedAt);
+
+            const note = normalizeNote(payload.note);
+            if (note !== undefined) data.note = note;
+
             const result = await tx.cashEntry.update({
                 where: { id: entry.id },
                 data,
@@ -201,7 +234,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { entryI
                 await syncStayPaymentsFromLedger(
                     tx,
                     entry.stayId,
-                    Object.prototype.hasOwnProperty.call(payload, 'shiftId') ? payload.shiftId ?? null : undefined
+                    hasShiftUpdate ? nextShiftId : undefined
                 );
             }
 
@@ -217,18 +250,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { entryI
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { entryId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ entryId: string }> }) {
     try {
+        const { entryId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
         const entry = await prisma.cashEntry.findFirst({
             where: {
-                id: params.entryId,
+                id: entryId,
                 hotel: { country }
             },
-            select: { id: true, stayId: true }
+            include: {
+                stay: { select: { roomId: true } }
+            }
         });
 
         if (!entry) {
@@ -236,6 +272,22 @@ export async function DELETE(request: NextRequest, { params }: { params: { entry
         }
 
         await prisma.$transaction(async (tx) => {
+            if (entry.stay?.roomId) {
+                await lockRoomsForStayMutation(tx, [entry.stay.roomId]);
+            }
+
+            await lockShiftsForLedgerMutation(tx, [entry.shiftId], {
+                hotelId: entry.hotelId,
+                actorId: session.id,
+                actorRole: session.role,
+                allowClosedForAdmin: true,
+            });
+
+            const lockedEntry = await lockLedgerEntry(tx, entry.id);
+            if (!lockedEntry || !sameLedgerSnapshot(entry, lockedEntry)) {
+                throw new SessionError('Операция уже изменилась. Обновите данные', 409);
+            }
+
             await tx.cashEntry.delete({ where: { id: entry.id } });
             if (entry.stayId) {
                 await syncStayPaymentsFromLedger(tx, entry.stayId);

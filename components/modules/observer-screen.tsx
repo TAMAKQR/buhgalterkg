@@ -152,10 +152,16 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
         return `/api/observer/state${qs ? `?${qs}` : ''}`;
     }, [filters]);
 
-    const { data, isLoading } = useSWR<ObserverStateResponse>(
+    const { data, error, isLoading } = useSWR<ObserverStateResponse>(
         swrKey,
         get,
-        { refreshInterval: 30_000 },
+        {
+            refreshInterval: 60_000,
+            refreshWhenHidden: false,
+            refreshWhenOffline: false,
+            revalidateOnFocus: true,
+            shouldRetryOnError: false,
+        },
     );
 
     const tz = data?.hotel?.timezone;
@@ -173,18 +179,35 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
     ];
 
     /* ── Loading ── */
+    if (error && !data) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#0c0f13] px-4 text-center">
+                <p className="text-sm text-rose-300">
+                    {error instanceof Error ? error.message : 'Не удалось загрузить данные'}
+                </p>
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setFilters({ startDate: '', endDate: '', shiftNumber: '' })}
+                >
+                    Сбросить фильтры
+                </Button>
+            </div>
+        );
+    }
+
     if (isLoading || !data) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-night text-white/40 text-sm">
+            <div className="flex min-h-screen items-center justify-center bg-[#0c0f13] text-sm text-white/40">
                 Загрузка…
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-night text-white">
+        <div className="min-h-screen bg-[#0c0f13] text-white">
             {/* Header */}
-            <header className="sticky top-0 z-30 flex items-center justify-between bg-night/90 backdrop-blur px-4 py-3 border-b border-white/[0.06]">
+            <header className="workspace-page sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.06] bg-[#0c0f13]/90 py-3 backdrop-blur">
                 <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{data.hotel.name}</h1>
                     <p className="text-[11px] text-white/40 truncate">{user.displayName} · наблюдатель</p>
@@ -195,7 +218,7 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
             </header>
 
             {/* Filters */}
-            <div className="px-4 pt-3 pb-1 space-y-2">
+            <div className="workspace-page space-y-2 pb-1 pt-3">
                 <div className="grid grid-cols-2 gap-2 xs:grid-cols-3">
                     <Input
                         type="date"
@@ -232,10 +255,13 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
                         ✕ Сбросить фильтры
                     </button>
                 )}
+                {!filters.startDate && !filters.endDate && (
+                    <p className="text-[11px] text-white/30">По умолчанию показаны последние 30 дней</p>
+                )}
             </div>
 
             {/* Tabs */}
-            <nav className="flex gap-1 px-4 py-2 overflow-x-auto">
+            <nav className="workspace-page flex gap-1 overflow-x-auto py-2">
                 {tabs.map((t) => (
                     <button
                         key={t.key}
@@ -251,7 +277,7 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
             </nav>
 
             {/* Content */}
-            <main className="px-4 pb-8 space-y-3">
+            <main className="workspace-page space-y-3 pb-8">
                 {tab === 'overview' && <OverviewTab data={data} fmt={fmt} cur={cur} />}
                 {tab === 'stays' && <StaysTab stays={data.stays} fmtDate={fmtDate} fmt={fmt} />}
                 {tab === 'ledger' && <LedgerTab ledger={data.ledger} fmtDate={fmtDate} fmt={fmt} />}
@@ -446,7 +472,7 @@ function OverviewTab({ data, fmt, cur }: { data: ObserverStateResponse; fmt: (v:
             </div>
 
             {/* Charts row */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {/* Flow donut */}
                 <DonutChart
                     segments={[

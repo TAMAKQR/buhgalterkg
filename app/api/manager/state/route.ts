@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
-import { assertHotelAccess } from '@/lib/permissions';
-import { LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
+import { assertHotelOperatorAccess } from '@/lib/permissions';
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { calculateManagerPayout } from '@/lib/manager-payout';
@@ -20,72 +20,132 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Manager is not assigned to a hotel', { status: 400 });
         }
 
-        assertHotelAccess(session, hotelId);
+        assertHotelOperatorAccess(session, hotelId);
 
         const activeBookingCutoff = new Date();
+        const requestedBoardOffset = Number(request.nextUrl.searchParams.get('boardOffset') ?? '0');
+        const boardOffsetDays = Number.isSafeInteger(requestedBoardOffset)
+            ? Math.min(Math.max(requestedBoardOffset, -366), 366)
+            : 0;
+        // The client board displays 14 hotel days. One guard day on each side
+        // keeps timezone/DST boundaries safe without loading every future stay.
+        const boardRangeStart = new Date(activeBookingCutoff.getTime() + (boardOffsetDays - 1) * 86_400_000);
+        const boardRangeEnd = new Date(activeBookingCutoff.getTime() + (boardOffsetDays + 15) * 86_400_000);
 
-        const hotel = await prisma.hotel.findUnique({
-            where: { id: hotelId },
-            include: {
-                expenseCategories: {
-                    orderBy: { name: 'asc' }
-                },
-                rooms: {
-                    include: {
-                        stays: {
-                            where: {
-                                OR: [
-                                    { status: StayStatus.CHECKED_IN },
-                                    {
-                                        status: StayStatus.SCHEDULED,
-                                        scheduledCheckOut: { gte: activeBookingCutoff }
-                                    }
-                                ]
-                            },
-                            orderBy: { scheduledCheckIn: 'asc' },
-                            take: 40,
-                            include: {
-                                guestProfile: {
-                                    select: {
-                                        id: true,
-                                        fullName: true,
-                                        phone: true,
-                                        telegramId: true,
-                                        documentNumber: true,
-                                        verificationStatus: true,
-                                        verifiedAt: true
-                                    }
-                                }
-                            }
-                        }
+        const [nearestScheduledRows, hotel, assignment, bonusTiers, shift] = await Promise.all([
+            prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                SELECT DISTINCT ON ("roomId") "id"
+                FROM "RoomStay"
+                WHERE "hotelId" = ${hotelId}
+                  AND "status" = CAST(${StayStatus.SCHEDULED} AS "StayStatus")
+                  AND "scheduledCheckOut" >= ${activeBookingCutoff}
+                ORDER BY "roomId", "scheduledCheckIn" ASC, "createdAt" ASC
+            `),
+            prisma.hotel.findUnique({
+                where: { id: hotelId },
+                select: {
+                    id: true,
+                    name: true,
+                    address: true,
+                    timezone: true,
+                    currency: true,
+                    usesExtranets: true,
+                    extranetNames: true,
+                    hasMealPlan: true,
+                    allowGroupStays: true,
+                    allowPostpaidStays: true,
+                    allowOnlinePayments: true,
+                    guestQrEnabled: true,
+                    expenseCategories: {
+                        orderBy: { name: 'asc' },
+                        select: { id: true, name: true }
                     },
-                    orderBy: { label: 'asc' }
+                    rooms: {
+                        orderBy: { label: 'asc' },
+                        select: {
+                            id: true,
+                            label: true,
+                            floor: true,
+                            status: true,
+                            currentStayId: true
+                        }
+                    }
                 }
-            }
-        });
+            }),
+            prisma.hotelAssignment.findFirst({
+                where: { hotelId, userId: session.id, isActive: true },
+                select: {
+                    shiftPayAmount: true,
+                    revenueSharePct: true,
+                    canEditBookings: true,
+                    canEditStayPayments: true,
+                    canCancelBookings: true
+                }
+            }),
+            prisma.bonusTier.findMany({
+                where: { hotelId },
+                orderBy: { threshold: 'asc' }
+            }),
+            prisma.shift.findFirst({
+                where: { hotelId, status: ShiftStatus.OPEN },
+                orderBy: { openedAt: 'desc' }
+            })
+        ]);
 
         if (!hotel) {
             return new NextResponse('Hotel not found', { status: 404 });
         }
 
-        const [assignment, bonusTiers] = await Promise.all([
-            prisma.hotelAssignment.findFirst({
-                where: { hotelId, userId: session.id, isActive: true },
-                select: { shiftPayAmount: true, revenueSharePct: true, canEditStayPayments: true }
-            }),
-            prisma.bonusTier.findMany({
-                where: { hotelId },
-                orderBy: { threshold: 'asc' }
-            })
-        ]);
-
-        const shift = await prisma.shift.findFirst({
-            where: { hotelId, status: ShiftStatus.OPEN },
-            orderBy: { openedAt: 'desc' }
-        });
-
         if (shift && shift.managerId !== session.id) {
             return new NextResponse('Смена уже ведётся другим менеджером. Дождитесь закрытия.', { status: 409 });
+        }
+
+        const nearestScheduledIds = nearestScheduledRows.map((row) => row.id);
+        const activeStays = await prisma.roomStay.findMany({
+            where: {
+                hotelId,
+                OR: [
+                    { status: StayStatus.CHECKED_IN },
+                    {
+                        status: StayStatus.SCHEDULED,
+                        scheduledCheckIn: { lt: boardRangeEnd },
+                        scheduledCheckOut: { gt: boardRangeStart }
+                    },
+                    ...(nearestScheduledIds.length ? [{ id: { in: nearestScheduledIds } }] : [])
+                ]
+            },
+            orderBy: [
+                { roomId: 'asc' },
+                { scheduledCheckIn: 'asc' }
+            ],
+            select: {
+                id: true,
+                roomId: true,
+                guestName: true,
+                guestPhone: true,
+                companyName: true,
+                scheduledCheckIn: true,
+                scheduledCheckOut: true,
+                status: true,
+                amountPaid: true,
+                totalAmount: true,
+                paymentMethod: true,
+                cashPaid: true,
+                cardPaid: true,
+                onlinePaid: true,
+                tariffPending: true,
+                groupRef: true,
+                bookingSource: true,
+                bookingNumber: true,
+                mealPlan: true,
+                notes: true
+            }
+        });
+        const staysByRoom = new Map<string, typeof activeStays>();
+        for (const stay of activeStays) {
+            const roomStays = staysByRoom.get(stay.roomId) ?? [];
+            roomStays.push(stay);
+            staysByRoom.set(stay.roomId, roomStays);
         }
 
         let shiftCash = shift ? shift.openingCash : null;
@@ -94,6 +154,8 @@ export async function GET(request: NextRequest) {
         let shiftBalances: { cash: number; card: number; total: number } | null = null;
         let shiftCashByCurrency: Array<{ currency: string; amount: number }> | null = null;
         let managerPayoutTotals: Record<LedgerEntryType, number> | null = null;
+        let shiftStayRevenue = 0;
+        let shiftLedgerTruncated = false;
         let shiftLedger: Array<{
             id: string;
             entryType: LedgerEntryType;
@@ -110,42 +172,49 @@ export async function GET(request: NextRequest) {
             recordedAt: Date;
         }> = [];
         if (shift) {
-            const [ledgerGroups, paymentGroups, ledgerEntries] = await Promise.all([
-                prisma.cashEntry.groupBy({
-                    by: ['entryType'],
-                    where: { shiftId: shift.id },
-                    _sum: { amount: true }
-                }),
-                prisma.cashEntry.groupBy({
-                    by: ['method'],
-                    where: {
-                        shiftId: shift.id,
-                        entryType: { in: [LedgerEntryType.CASH_IN, LedgerEntryType.ADJUSTMENT] }
+            // Keep the UI ledger bounded. Most shifts need one query; only a
+            // shift with more than 100 operations gets a second lightweight
+            // pass so all financial totals remain exact.
+            const ledgerWindow = await prisma.cashEntry.findMany({
+                where: { shiftId: shift.id },
+                orderBy: { recordedAt: 'desc' },
+                take: 101,
+                select: {
+                    id: true,
+                    entryType: true,
+                    method: true,
+                    amount: true,
+                    originalAmount: true,
+                    originalCurrency: true,
+                    exchangeRate: true,
+                    note: true,
+                    expenseCategory: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
                     },
-                    _sum: { amount: true }
-                }),
-                prisma.cashEntry.findMany({
+                    recordedAt: true
+                }
+            });
+            shiftLedgerTruncated = ledgerWindow.length > 100;
+            const ledgerEntries = ledgerWindow.slice(0, 100);
+            const summaryEntries = shiftLedgerTruncated
+                ? await prisma.cashEntry.findMany({
                     where: { shiftId: shift.id },
-                    orderBy: { recordedAt: 'desc' },
                     select: {
-                        id: true,
                         entryType: true,
                         method: true,
                         amount: true,
                         originalAmount: true,
                         originalCurrency: true,
-                        exchangeRate: true,
                         note: true,
                         expenseCategory: {
-                            select: {
-                                id: true,
-                                name: true
-                            }
-                        },
-                        recordedAt: true
+                            select: { name: true }
+                        }
                     }
                 })
-            ]);
+                : ledgerEntries;
 
             const ledgerTotals: Record<LedgerEntryType, number> = {
                 [LedgerEntryType.CASH_IN]: 0,
@@ -153,69 +222,37 @@ export async function GET(request: NextRequest) {
                 [LedgerEntryType.MANAGER_PAYOUT]: 0,
                 [LedgerEntryType.ADJUSTMENT]: 0
             };
-
-            for (const group of ledgerGroups) {
-                ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
-            }
-
             const paymentTotals: Record<PaymentMethod, number> = {
                 [PaymentMethod.CASH]: 0,
                 [PaymentMethod.CARD]: 0
             };
-
-            for (const group of paymentGroups) {
-                paymentTotals[group.method] = group._sum?.amount ?? 0;
-            }
-
-            shiftPayments = {
-                cash: paymentTotals[PaymentMethod.CASH],
-                card: paymentTotals[PaymentMethod.CARD],
-                total: paymentTotals[PaymentMethod.CASH] + paymentTotals[PaymentMethod.CARD]
-            };
-
-            shiftLedger = ledgerEntries.map((entry) => ({
-                id: entry.id,
-                entryType: entry.entryType,
-                method: entry.method,
-                amount: entry.amount,
-                originalAmount: entry.originalAmount,
-                originalCurrency: entry.originalCurrency,
-                exchangeRate: entry.exchangeRate,
-                note: entry.note,
-                category: entry.expenseCategory
-                    ? {
-                        id: entry.expenseCategory.id,
-                        name: entry.expenseCategory.name
-                    }
-                    : null,
-                recordedAt: entry.recordedAt
-            }));
-            shiftExpenses = ledgerEntries.reduce(
-                (totals, entry) => {
-                    if (
-                        (entry.entryType === LedgerEntryType.CASH_OUT && !isCollectionLedgerEntry(entry)) ||
-                        entry.entryType === LedgerEntryType.MANAGER_PAYOUT
-                    ) {
-                        totals.total += entry.amount;
-                        if (entry.method === PaymentMethod.CASH) {
-                            totals.cash += entry.amount;
-                        } else if (entry.method === PaymentMethod.CARD) {
-                            totals.card += entry.amount;
-                        }
-                    }
-                    return totals;
-                },
-                { total: 0, cash: 0, card: 0 }
-            );
-            managerPayoutTotals = ledgerTotals;
-
             const hotelCurrency = normalizeCurrencyCode(hotel.currency, 'KGS');
             const physicalCashBalances: Record<string, number> = {
                 [hotelCurrency]: shift.openingCash,
                 USD: shift.openingCashUsd ?? 0
             };
+            const expenseTotals = { total: 0, cash: 0, card: 0 };
             let cardBalance = 0;
-            for (const entry of ledgerEntries) {
+            for (const entry of summaryEntries) {
+                ledgerTotals[entry.entryType] += entry.amount;
+                if (
+                    entry.entryType === LedgerEntryType.CASH_IN ||
+                    entry.entryType === LedgerEntryType.ADJUSTMENT
+                ) {
+                    paymentTotals[entry.method] += entry.amount;
+                }
+                if (
+                    (entry.entryType === LedgerEntryType.CASH_OUT && !isCollectionLedgerEntry(entry)) ||
+                    entry.entryType === LedgerEntryType.MANAGER_PAYOUT
+                ) {
+                    expenseTotals.total += entry.amount;
+                    if (entry.method === PaymentMethod.CASH) expenseTotals.cash += entry.amount;
+                    else if (entry.method === PaymentMethod.CARD) expenseTotals.card += entry.amount;
+                }
+                if (entry.entryType === LedgerEntryType.CASH_IN && isStayIncomeNote(entry.note)) {
+                    shiftStayRevenue += entry.amount;
+                }
+
                 const signedAmount = (() => {
                     switch (entry.entryType) {
                         case LedgerEntryType.CASH_IN:
@@ -238,6 +275,32 @@ export async function GET(request: NextRequest) {
                 const signedOriginalAmount = signedAmount >= 0 ? originalAmount : -originalAmount;
                 addToCurrencyMap(physicalCashBalances, entry.originalCurrency, signedOriginalAmount);
             }
+
+            shiftPayments = {
+                cash: paymentTotals[PaymentMethod.CASH],
+                card: paymentTotals[PaymentMethod.CARD],
+                total: paymentTotals[PaymentMethod.CASH] + paymentTotals[PaymentMethod.CARD]
+            };
+            shiftExpenses = expenseTotals;
+            managerPayoutTotals = ledgerTotals;
+            shiftLedger = ledgerEntries.map((entry) => ({
+                id: entry.id,
+                entryType: entry.entryType,
+                method: entry.method,
+                amount: entry.amount,
+                originalAmount: entry.originalAmount,
+                originalCurrency: entry.originalCurrency,
+                exchangeRate: entry.exchangeRate,
+                note: entry.note,
+                category: entry.expenseCategory
+                    ? {
+                        id: entry.expenseCategory.id,
+                        name: entry.expenseCategory.name
+                    }
+                    : null,
+                recordedAt: entry.recordedAt
+            }));
+
             const cashBalance = physicalCashBalances[hotelCurrency] ?? 0;
             shiftCash = cashBalance;
             shiftBalances = {
@@ -254,14 +317,6 @@ export async function GET(request: NextRequest) {
             ...entry,
             recordedAt: entry.recordedAt.toISOString()
         }));
-
-        const shiftStayRevenue = shiftLedger.reduce((total, entry) => {
-            if (entry.entryType !== LedgerEntryType.CASH_IN) {
-                return total;
-            }
-
-            return isStayIncomeNote(entry.note) ? total + entry.amount : total;
-        }, 0);
 
         const shiftBonus = shift && shiftStayRevenue > 0
             ? calculateBonusFromTiers(shiftStayRevenue, bonusTiers)
@@ -290,7 +345,9 @@ export async function GET(request: NextRequest) {
                 usesExtranets: hotel.usesExtranets,
                 extranetNames: hotel.extranetNames,
                 hasMealPlan: hotel.hasMealPlan,
+                allowGroupStays: hotel.allowGroupStays,
                 allowPostpaidStays: hotel.allowPostpaidStays,
+                allowOnlinePayments: hotel.allowOnlinePayments,
                 guestQrEnabled: hotel.guestQrEnabled
             },
             expenseCategories: hotel.expenseCategories.map((category) => ({
@@ -305,14 +362,16 @@ export async function GET(request: NextRequest) {
             shiftPayments,
             shiftStayRevenue,
             shiftLedger: serializedLedger,
+            shiftLedgerTruncated,
             rooms: hotel.rooms.map((room) => {
+                const roomStays = staysByRoom.get(room.id) ?? [];
                 const linkedStay = room.currentStayId
-                    ? room.stays.find((stay) => stay.id === room.currentStayId)
+                    ? roomStays.find((stay) => stay.id === room.currentStayId)
                     : null;
-                const checkedInStay = room.stays.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? null;
-                const scheduledStay = room.stays.find((stay) => stay.status === StayStatus.SCHEDULED) ?? null;
-                const primaryStay = (room.status === RoomStatus.OCCUPIED ? linkedStay ?? checkedInStay : null) ?? scheduledStay ?? room.stays[0] ?? null;
-                const serializeStay = (stay: typeof room.stays[number]) => ({
+                const checkedInStay = roomStays.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? null;
+                const scheduledStay = roomStays.find((stay) => stay.status === StayStatus.SCHEDULED) ?? null;
+                const primaryStay = (room.status === RoomStatus.OCCUPIED ? linkedStay ?? checkedInStay : null) ?? scheduledStay ?? roomStays[0] ?? null;
+                const serializeStay = (stay: typeof activeStays[number]) => ({
                     id: stay.id,
                     guestName: stay.guestName,
                     guestPhone: stay.guestPhone,
@@ -331,18 +390,7 @@ export async function GET(request: NextRequest) {
                     bookingSource: stay.bookingSource,
                     bookingNumber: stay.bookingNumber,
                     mealPlan: stay.mealPlan,
-                    notes: stay.notes,
-                    guestProfile: stay.guestProfile
-                        ? {
-                            id: stay.guestProfile.id,
-                            fullName: stay.guestProfile.fullName,
-                            phone: stay.guestProfile.phone,
-                            telegramId: stay.guestProfile.telegramId,
-                            documentNumber: stay.guestProfile.documentNumber,
-                            verificationStatus: stay.guestProfile.verificationStatus,
-                            verifiedAt: stay.guestProfile.verifiedAt?.toISOString() ?? null
-                        }
-                        : null
+                    notes: stay.notes
                 });
 
                 return {
@@ -355,14 +403,20 @@ export async function GET(request: NextRequest) {
                         ...serializeStay(primaryStay)
                     }
                     : null,
-                    stays: room.stays.map(serializeStay)
+                    // `stay` is deliberately not repeated in `stays`; the
+                    // client combines both fields when it needs the board list.
+                    stays: roomStays
+                        .filter((stay) => stay.id !== primaryStay?.id)
+                        .map(serializeStay)
                 };
             }),
             compensation: assignment
                 ? {
                     shiftPayAmount: assignment.shiftPayAmount,
                     revenueSharePct: assignment.revenueSharePct,
+                    canEditBookings: assignment.canEditBookings,
                     canEditStayPayments: assignment.canEditStayPayments,
+                    canCancelBookings: assignment.canCancelBookings,
                     expectedPayout: payoutSummary?.expected ?? null,
                     paidPayout: payoutSummary?.paid ?? null,
                     pendingPayout: payoutSummary?.pending ?? null,

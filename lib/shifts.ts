@@ -1,15 +1,7 @@
-import { ShiftStatus } from '@prisma/client';
 import { prisma } from './db';
 import type { SessionUser } from './types';
 import { assertHotelAccess } from './permissions';
-import { verifyPin } from './pin';
-
-export const ensureNoActiveShift = async (hotelId: string) => {
-    const activeShift = await prisma.shift.findFirst({ where: { hotelId, status: ShiftStatus.OPEN } });
-    if (activeShift) {
-        throw new Error('На этой точке уже есть активная смена. Завершите её перед открытием новой.');
-    }
-};
+import { upgradeLegacyPin, verifyPin } from './pin';
 
 type ShiftOwnershipOptions = {
     pinCode?: string;
@@ -32,6 +24,7 @@ export const ensureShiftOwnership = async (shiftId: string, user: SessionUser, o
         if (!assignment || !verifyPin(options.pinCode, assignment)) {
             throw new Error('Неверный код менеджера');
         }
+        await upgradeLegacyPin(options.pinCode, assignment);
         return shift;
     }
     if (user.role !== 'ADMIN' && shift.managerId !== user.id) {

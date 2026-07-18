@@ -8,7 +8,8 @@ export type TelegramWebAppUser = {
     language_code?: string;
 };
 
-const maxInitDataAgeMs = 7 * 24 * 60 * 60 * 1000;
+const maxInitDataAgeMs = 60 * 60 * 1000;
+const maxClockSkewMs = 5 * 60 * 1000;
 
 const safeEqualHex = (left: string, right: string) => {
     const leftBuffer = Buffer.from(left, 'hex');
@@ -45,7 +46,12 @@ export const verifyTelegramWebAppInitData = (
     const authDateSeconds = authDateRaw ? Number(authDateRaw) : NaN;
     const authDate = Number.isFinite(authDateSeconds) ? new Date(authDateSeconds * 1000) : null;
 
-    if (!authDate || now - authDate.getTime() > maxInitDataAgeMs) {
+    if (
+        !authDate
+        || !Number.isFinite(authDate.getTime())
+        || now - authDate.getTime() > maxInitDataAgeMs
+        || authDate.getTime() - now > maxClockSkewMs
+    ) {
         return null;
     }
 
@@ -55,7 +61,11 @@ export const verifyTelegramWebAppInitData = (
     }
 
     try {
-        return { user: JSON.parse(rawUser) as TelegramWebAppUser, authDate };
+        const user = JSON.parse(rawUser) as TelegramWebAppUser;
+        if (!Number.isSafeInteger(user.id) || user.id <= 0) {
+            return null;
+        }
+        return { user, authDate };
     } catch {
         return null;
     }

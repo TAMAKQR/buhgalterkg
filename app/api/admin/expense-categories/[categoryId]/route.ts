@@ -13,8 +13,9 @@ const updateExpenseCategorySchema = z.object({
     name: z.string().trim().min(1, 'Введите название категории').max(80, 'Название слишком длинное')
 });
 
-export async function PATCH(request: NextRequest, { params }: { params: { categoryId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ categoryId: string }> }) {
     try {
+        const { categoryId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -24,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { catego
 
         const existing = await prisma.expenseCategory.findFirst({
             where: {
-                id: params.categoryId,
+                id: categoryId,
                 hotel: { country }
             },
             select: { id: true }
@@ -51,15 +52,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { catego
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { categoryId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ categoryId: string }> }) {
     try {
+        const { categoryId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
 
         const country = getCountryFromRequest(request);
         const existing = await prisma.expenseCategory.findFirst({
             where: {
-                id: params.categoryId,
+                id: categoryId,
                 hotel: { country }
             },
             select: { id: true }

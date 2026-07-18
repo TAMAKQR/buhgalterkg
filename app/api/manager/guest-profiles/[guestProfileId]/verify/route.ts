@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { getSessionUser } from '@/lib/server/session';
+import { assertHotelAccess, assertOperationalRole } from '@/lib/permissions';
+import { getDatabaseActorUserId } from '@/lib/server/audit-actor';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,12 +27,14 @@ const guestProfileSnapshot = (profile: {
     notes: profile.notes ?? null
 });
 
-export async function POST(request: NextRequest, { params }: { params: { guestProfileId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ guestProfileId: string }> }) {
     try {
+        const { guestProfileId } = await params;
         const session = await getSessionUser(request);
+        assertOperationalRole(session);
 
         const profile = await prisma.guestProfile.findUnique({
-            where: { id: params.guestProfileId },
+            where: { id: guestProfileId },
             select: {
                 id: true,
                 hotelId: true,
@@ -42,12 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: { guestPr
                 verifiedById: true,
                 verifiedHotelId: true,
                 notes: true,
-                qrTokens: {
-                    where: { revokedAt: null },
-                    orderBy: { createdAt: 'desc' },
-                    take: 5,
-                    select: { hotelId: true }
-                }
+                updatedAt: true
             }
         });
 
@@ -59,46 +58,37 @@ export async function POST(request: NextRequest, { params }: { params: { guestPr
             return new NextResponse('Document number is required before verification', { status: 400 });
         }
 
-        const accessibleHotelIds = new Set<string>();
-        if (profile.hotelId) {
-            accessibleHotelIds.add(profile.hotelId);
-        }
-        for (const token of profile.qrTokens) {
-            if (token.hotelId) {
-                accessibleHotelIds.add(token.hotelId);
-            }
-        }
-
-        if (!accessibleHotelIds.size) {
+        if (!profile.hotelId) {
             return new NextResponse('Guest profile is not assigned to a hotel', { status: 403 });
         }
-
-        const verifiedHotelId = (() => {
-            if (session.role === 'ADMIN') {
-                return profile.hotelId && accessibleHotelIds.has(profile.hotelId)
-                    ? profile.hotelId
-                    : [...accessibleHotelIds][0];
-            }
-
-            const sessionHotelIds = new Set(session.hotels.map((hotel) => hotel.id));
-            return [...accessibleHotelIds].find((hotelId) => sessionHotelIds.has(hotelId)) ?? null;
-        })();
-
-        if (!verifiedHotelId) {
-            return new NextResponse('You are not assigned to this hotel', { status: 403 });
-        }
+        assertHotelAccess(session, profile.hotelId);
+        const verifiedHotelId = profile.hotelId;
 
         const beforeSnapshot = guestProfileSnapshot(profile);
+        const actorUserId = getDatabaseActorUserId(session);
 
         const result = await prisma.$transaction(async (tx) => {
-            const nextProfile = await tx.guestProfile.update({
-                where: { id: profile.id },
+            const updateResult = await tx.guestProfile.updateMany({
+                where: {
+                    id: profile.id,
+                    hotelId: profile.hotelId,
+                    updatedAt: profile.updatedAt,
+                    documentNumber: profile.documentNumber
+                },
                 data: {
                     verificationStatus: 'VERIFIED',
                     verifiedAt: new Date(),
-                    verifiedById: session.id,
+                    verifiedById: actorUserId,
                     verifiedHotelId
-                },
+                }
+            });
+
+            if (updateResult.count !== 1) {
+                throw new SessionError('Профиль уже изменён. Обновите данные и повторите', 409);
+            }
+
+            const nextProfile = await tx.guestProfile.findUniqueOrThrow({
+                where: { id: profile.id },
                 select: {
                     id: true,
                     fullName: true,
@@ -127,7 +117,7 @@ export async function POST(request: NextRequest, { params }: { params: { guestPr
                 data: {
                     guestProfileId: nextProfile.id,
                     hotelId: verifiedHotelId,
-                    actorUserId: session.id,
+                    actorUserId,
                     actorType: session.role === 'ADMIN' ? 'ADMIN' : 'MANAGER',
                     actorLabel: session.displayName,
                     action: 'DOCUMENT_VERIFIED',

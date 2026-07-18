@@ -5,8 +5,10 @@ import { Prisma, ShiftStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { getCountryFromRequest } from '@/lib/server/request-country';
+import { lockRoomsForStayMutation } from '@/lib/server/room-stay-lock';
+import { lockShiftsForLedgerMutation } from '@/lib/server/shift-lock';
 
 const updateShiftSchema = z
     .object({
@@ -47,8 +49,19 @@ function normalizeDate(value?: string | null, allowNull = false) {
     return new Date(value);
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { shiftId: string } }) {
+const referencedRoomIds = (
+    stays: Array<{ roomId: string }>,
+    transfers: Array<{ fromRoomId: string; toRoomId: string }>,
+    ledgerEntries: Array<{ stay: { roomId: string } | null }>,
+) => Array.from(new Set([
+    ...stays.map((stay) => stay.roomId),
+    ...transfers.flatMap((transfer) => [transfer.fromRoomId, transfer.toRoomId]),
+    ...ledgerEntries.flatMap((entry) => entry.stay ? [entry.stay.roomId] : []),
+]));
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
     try {
+        const { shiftId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -57,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         const payload = updateShiftSchema.parse(body);
 
         const shift = await prisma.shift.findFirst({
-            where: { id: params.shiftId, hotel: { country } },
+            where: { id: shiftId, hotel: { country } },
         });
         if (!shift) {
             return new NextResponse('Shift not found', { status: 404 });
@@ -124,17 +137,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         let closedAt = normalizeDate(payload.closedAt, true);
         if (payload.status) {
             if (payload.status === ShiftStatus.OPEN && shift.status !== ShiftStatus.OPEN) {
-                const otherActiveShift = await prisma.shift.findFirst({
-                    where: {
-                        hotelId: shift.hotelId,
-                        status: ShiftStatus.OPEN,
-                        NOT: { id: shift.id }
-                    },
-                    select: { id: true }
-                });
-                if (otherActiveShift) {
-                    return new NextResponse('На этой точке уже есть активная смена', { status: 409 });
-                }
                 data.status = ShiftStatus.OPEN;
                 data.closedAt = closedAt ?? null;
                 if (!Object.prototype.hasOwnProperty.call(payload, 'closingCash')) {
@@ -162,6 +164,30 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         }
 
         const updated = await prisma.$transaction(async (tx) => {
+            if (payload.status === ShiftStatus.OPEN && shift.status !== ShiftStatus.OPEN) {
+                const lockedHotel = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                    SELECT "id"
+                    FROM "Hotel"
+                    WHERE "id" = ${shift.hotelId}
+                    FOR UPDATE
+                `);
+                if (lockedHotel.length !== 1) {
+                    throw new SessionError('Отель не найден', 404);
+                }
+
+                const otherActiveShift = await tx.shift.findFirst({
+                    where: {
+                        hotelId: shift.hotelId,
+                        status: ShiftStatus.OPEN,
+                        NOT: { id: shift.id }
+                    },
+                    select: { id: true }
+                });
+                if (otherActiveShift) {
+                    throw new SessionError('На этой точке уже есть активная смена', 409);
+                }
+            }
+
             const result = await tx.shift.update({
                 where: { id: shift.id },
                 data,
@@ -183,38 +209,99 @@ export async function PATCH(request: NextRequest, { params }: { params: { shiftI
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return new NextResponse('На этой точке уже есть активная смена', { status: 409 });
+        }
         return handleApiError(error, 'Failed to update shift');
     }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: { shiftId: string } }) {
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
     try {
+        const { shiftId } = await params;
         const session = await getSessionUser(_request);
         assertAdmin(session);
         const country = getCountryFromRequest(_request);
 
         const shift = await prisma.shift.findFirst({
-            where: { id: params.shiftId, hotel: { country } },
-            select: { id: true },
+            where: { id: shiftId, hotel: { country } },
+            select: { id: true, hotelId: true, status: true },
         });
         if (!shift) {
             return new NextResponse('Shift not found', { status: 404 });
         }
+        if (shift.status !== ShiftStatus.CLOSED) {
+            return new NextResponse('Сначала закройте смену', { status: 409 });
+        }
 
-        // Detach related records (keep cash entries and stays, just unlink from shift)
-        await prisma.$transaction([
-            prisma.cashEntry.updateMany({
-                where: { shiftId: params.shiftId },
-                data: { shiftId: null }
+        const [candidateStays, candidateTransfers, candidateLedgerEntries] = await Promise.all([
+            prisma.roomStay.findMany({
+                where: { shiftId: shift.id },
+                select: { roomId: true },
             }),
-            prisma.roomStay.updateMany({
-                where: { shiftId: params.shiftId },
-                data: { shiftId: null }
+            prisma.stayTransfer.findMany({
+                where: { shiftId: shift.id },
+                select: { fromRoomId: true, toRoomId: true },
             }),
-            prisma.shift.delete({
-                where: { id: params.shiftId }
-            })
+            prisma.cashEntry.findMany({
+                where: { shiftId: shift.id, stayId: { not: null } },
+                select: { stay: { select: { roomId: true } } },
+            }),
         ]);
+        const candidateRoomIds = referencedRoomIds(candidateStays, candidateTransfers, candidateLedgerEntries);
+        const lockedRoomIdSet = new Set(candidateRoomIds);
+
+        await prisma.$transaction(async (tx) => {
+            await lockRoomsForStayMutation(tx, candidateRoomIds);
+
+            const lockedShift = (await lockShiftsForLedgerMutation(tx, [shift.id], {
+                hotelId: shift.hotelId,
+                actorId: session.id,
+                actorRole: session.role,
+                allowClosedForAdmin: true,
+            })).get(shift.id)!;
+            if (lockedShift.status !== ShiftStatus.CLOSED) {
+                throw new SessionError('Смена снова открыта и не была удалена', 409);
+            }
+
+            const [currentStays, currentTransfers, currentLedgerEntries] = await Promise.all([
+                tx.roomStay.findMany({
+                    where: { shiftId: shift.id },
+                    select: { roomId: true },
+                }),
+                tx.stayTransfer.findMany({
+                    where: { shiftId: shift.id },
+                    select: { fromRoomId: true, toRoomId: true },
+                }),
+                tx.cashEntry.findMany({
+                    where: { shiftId: shift.id, stayId: { not: null } },
+                    select: { stay: { select: { roomId: true } } },
+                }),
+            ]);
+            const currentRoomIds = referencedRoomIds(currentStays, currentTransfers, currentLedgerEntries);
+            if (currentRoomIds.some((roomId) => !lockedRoomIdSet.has(roomId))) {
+                throw new SessionError('Связанные данные смены изменились. Повторите удаление', 409);
+            }
+
+            await tx.cashEntry.updateMany({
+                where: { shiftId: shift.id },
+                data: { shiftId: null }
+            });
+            await tx.roomStay.updateMany({
+                where: { shiftId: shift.id },
+                data: { shiftId: null }
+            });
+            await tx.stayTransfer.updateMany({
+                where: { shiftId: shift.id },
+                data: { shiftId: null }
+            });
+            const deletedShift = await tx.shift.deleteMany({
+                where: { id: shift.id, status: ShiftStatus.CLOSED }
+            });
+            if (deletedShift.count !== 1) {
+                throw new SessionError('Смена уже изменилась', 409);
+            }
+        });
 
         return NextResponse.json({ ok: true });
     } catch (error) {

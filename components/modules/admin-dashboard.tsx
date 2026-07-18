@@ -8,15 +8,25 @@ import {
     Activity,
     BarChart3,
     Building2,
+    Check,
     ChevronDown,
     CircleDollarSign,
     Download,
+    Globe2,
     Hotel,
+    KeyRound,
+    Link2,
     LogOut,
+    Pencil,
+    Plus,
     Settings2,
     SlidersHorizontal,
+    TrendingDown,
+    TrendingUp,
+    Trash2,
     Trophy,
     Users,
+    X,
     type LucideIcon,
 } from "lucide-react";
 import { useCountryContext } from '@/hooks/useCountryContext';
@@ -29,6 +39,7 @@ import { isCollectionLedgerEntry } from "@/lib/ledger";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, TextArea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -50,6 +61,20 @@ type ExpenseEntry = {
     hotelName?: string;
     currency?: string | null;
     timezone?: string | null;
+};
+
+type ExpensePageMeta = {
+    total: number;
+    offset: number;
+    returned: number;
+    limit: number;
+    hasMore: boolean;
+    truncated: boolean;
+};
+
+type ExpensePageResponse = {
+    recentExpenses: ExpenseEntry[];
+    recentExpensesMeta: ExpensePageMeta;
 };
 
 type HotelRankingItem = {
@@ -96,7 +121,7 @@ type RankingDetailSelection =
     | { kind: "hotel"; item: HotelRankingItem }
     | { kind: "manager"; item: ManagerRankingItem; hotelName?: string };
 
-type AdminHotelSummary = {
+type AdminHotelDirectoryItem = {
     id: string;
     name: string;
     address?: string | null;
@@ -104,8 +129,11 @@ type AdminHotelSummary = {
     usesExtranets?: boolean | null;
     extranetNames?: string[];
     hasMealPlan?: boolean | null;
+    allowGroupStays?: boolean | null;
     allowPostpaidStays?: boolean | null;
+    allowOnlinePayments?: boolean | null;
     guestQrEnabled?: boolean | null;
+    showInGuestListing?: boolean | null;
     guestDescription?: string | null;
     guestAmenities?: string[];
     guestPhotoUrls?: string[];
@@ -121,16 +149,21 @@ type AdminHotelSummary = {
     monthlyUtilitiesCost?: number | null;
     monthlySuppliesCost?: number | null;
     monthlyOtherCost?: number | null;
-    roomCount: number;
-    occupiedRooms: number;
     managers: Array<{
         id: string;
         displayName: string | null;
         telegramId?: string | null;
         username?: string | null;
         role: string;
-        pinCode?: string | null;
+        hasPin?: boolean;
     }>;
+};
+
+type AdminHotelConfigurationItem = Omit<AdminHotelDirectoryItem, 'managers'>;
+
+type AdminHotelSummary = AdminHotelDirectoryItem & {
+    roomCount: number;
+    occupiedRooms: number;
     activeShift: null | {
         manager?: string | null;
         openedAt: string;
@@ -201,6 +234,24 @@ type AdminOverview = {
         onTrack: boolean;
     };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number; collections: number }>;
+    breakdowns?: {
+        shifts: Array<{
+            id: string;
+            number: number;
+            openedAt: string;
+            status: "OPEN" | "CLOSED";
+            hotelId: string;
+            hotelName: string;
+            managerName: string;
+            cashIn: number;
+            cashOut: number;
+            collections: number;
+            payouts: number;
+            adjustments: number;
+            stays: number;
+            net: number;
+        }>;
+    };
     rankings?: {
         period: {
             startAt: string;
@@ -212,6 +263,7 @@ type AdminOverview = {
         managersByHotel?: ManagersByHotelRankingGroup[];
     };
     recentExpenses?: ExpenseEntry[];
+    recentExpensesMeta?: ExpensePageMeta;
 };
 
 type AdminTab = "overview" | "hotels" | "guests" | "manage";
@@ -221,11 +273,23 @@ type OverviewFilters = {
     endDate: string;
     startAt: string;
     endAt: string;
-    hotelId: string;
+    hotelIds: string[];
     managerId: string;
+    shiftIds: string[];
+};
+
+type ShiftFilterOption = {
+    id: string;
+    number: number;
+    status: "OPEN" | "CLOSED";
+    openedAt: string;
+    closedAt?: string | null;
+    hotel: { id: string; name: string };
+    manager: { id: string; displayName: string };
 };
 
 type PeriodPreset = "today" | "week" | "month" | "year";
+type ManageSection = "general" | "features" | "listing" | "integrations" | "finance" | "access";
 
 interface AdminDashboardProps {
     user: SessionUser;
@@ -243,8 +307,11 @@ interface CreateHotelPayload {
     usesExtranets?: boolean;
     extranetNames?: string[];
     hasMealPlan?: boolean;
+    allowGroupStays?: boolean;
     allowPostpaidStays?: boolean;
+    allowOnlinePayments?: boolean;
     guestQrEnabled?: boolean;
+    showInGuestListing?: boolean;
     guestDescription?: string | null;
     guestAmenities?: string[];
     guestPhotoUrls?: string[];
@@ -267,8 +334,11 @@ type HotelFormState = {
     usesExtranets: boolean;
     extranetNames: string;
     hasMealPlan: boolean;
+    allowGroupStays: boolean;
     allowPostpaidStays: boolean;
+    allowOnlinePayments: boolean;
     guestQrEnabled: boolean;
+    showInGuestListing: boolean;
     guestDescription: string;
     guestAmenities: string;
     guestPhotoUrls: string;
@@ -362,8 +432,11 @@ const createEmptyHotelForm = (display: { timezone: string; currency: string }): 
     usesExtranets: false,
     extranetNames: "",
     hasMealPlan: false,
+    allowGroupStays: true,
     allowPostpaidStays: false,
+    allowOnlinePayments: true,
     guestQrEnabled: false,
+    showInGuestListing: true,
     guestDescription: "",
     guestAmenities: "",
     guestPhotoUrls: "",
@@ -494,7 +567,7 @@ const expenseAmountTone = (entry: ExpenseEntry) =>
         ? "text-sky-600 dark:text-sky-300"
         : "text-rose-500 dark:text-rose-300";
 
-const selectClassName = "h-10 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm text-light-text shadow-[0_8px_22px_-22px_rgba(15,23,42,0.32)] transition-[border-color,box-shadow,background-color] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:opacity-40 sm:h-11 sm:rounded-2xl sm:px-3.5 dark:border-white/[0.055] dark:bg-white/[0.05] dark:text-white dark:focus:border-white/15 dark:focus:bg-white/[0.08] dark:focus:ring-white/[0.06]";
+const selectClassName = "h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-light-text transition-[border-color,box-shadow,background-color] focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 disabled:opacity-40 dark:border-white/[0.08] dark:bg-white/[0.045] dark:text-white dark:focus:border-blue-400/50 dark:focus:ring-blue-400/10";
 
 const toDateInputValue = (value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -526,18 +599,19 @@ const createPeriodFilters = (preset: PeriodPreset, timeZone: string): OverviewFi
         endDate: toDateInputValue(endDate, timeZone),
         startAt: "",
         endAt: "",
-        hotelId: "",
+        hotelIds: [],
         managerId: "",
+        shiftIds: [],
     };
 };
 
 function SectionCard({ title, subtitle, actions, className, children }: { title: string; subtitle?: string; actions?: React.ReactNode; className?: string; children: React.ReactNode }) {
     return (
-        <Card className={`!border-slate-200 !bg-white !shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] p-3.5 sm:p-5 lg:!rounded-lg lg:p-4 dark:!border-white/[0.055] dark:!bg-white/[0.04] dark:!shadow-none ${className ?? ""}`}>
-            <div className="mb-3 flex flex-col gap-3 sm:mb-4 sm:flex-row sm:items-start sm:justify-between lg:mb-3">
+        <Card className={`relative !overflow-visible !border-slate-200/80 !bg-white !shadow-sm p-4 dark:!border-white/[0.07] dark:!bg-[#171b21] dark:!shadow-none ${className ?? ""}`}>
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                    {subtitle ? <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">{subtitle}</p> : null}
-                    <h2 className="mt-1 text-base font-semibold text-slate-900 dark:text-white sm:text-lg lg:text-base">{title}</h2>
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-white">{title}</h2>
+                    {subtitle ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{subtitle}</p> : null}
                 </div>
                 {actions}
             </div>
@@ -589,9 +663,9 @@ function CollapsibleSection({
 
 function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
     return (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
-                <label className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-600 dark:text-white/35" htmlFor={htmlFor}>
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400" htmlFor={htmlFor}>
                     {label}
                 </label>
                 {hint ? <span className="text-[11px] text-slate-600 dark:text-white/28">{hint}</span> : null}
@@ -636,7 +710,7 @@ function BusinessTargetCard({
         : "Заполни в управлении объектом ежемесячные ориентиры по зарплатам, аренде, коммуналке, хозтоварам и прочим тратам. Тогда сводка начнет показывать, сколько выручки нужно в месяц и какой темп нужен до конца месяца.";
 
     return (
-        <Card className="col-span-1 lg:col-span-4 overflow-hidden p-4 text-light-text dark:text-white lg:p-5">
+        <Card className="col-span-1 overflow-hidden p-4 text-light-text dark:text-white lg:col-span-4 lg:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 max-w-3xl">
                     <div className="flex items-start gap-2">
@@ -670,7 +744,7 @@ function BusinessTargetCard({
                     ) : null}
                 </div>
                 {hasPlan ? (
-                    <div className={`w-full rounded-2xl border px-4 py-3 text-left sm:max-w-xs sm:self-start sm:text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
+                    <div className={`w-full rounded-xl border px-4 py-3 text-left sm:max-w-xs sm:self-start sm:text-right ${target.onTrack ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-400/10" : "border-amber-200/80 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-400/10"}`}>
                         <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Статус периода</p>
                         <p className={`mt-1 text-base font-semibold ${target.onTrack ? "text-emerald-700 dark:text-emerald-200" : "text-amber-700 dark:text-amber-200"}`}>
                             {target.onTrack ? "Идем по темпу" : "Нужно ускориться"}
@@ -692,12 +766,12 @@ function BusinessTargetCard({
                         <StatPill label="Нужно дальше" value={target.requiredDailyAverage > 0 ? `${formatCurrency(target.requiredDailyAverage, currency)}/день` : "цель закрыта"} />
                     </div>
 
-                    <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                    <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-white/[0.03]">
                         <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                             <span className="text-slate-600 dark:text-white/55">Покрытие плана</span>
                             <span className="font-semibold text-slate-900 dark:text-white">{formatPercentInt(target.coveredPct * 100)}</span>
                         </div>
-                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/[0.08]">
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-white/[0.08]">
                             <div
                                 className="h-full rounded-full bg-emerald-500 shadow-[0_0_14px_rgba(16,185,129,0.45)]"
                                 style={{ width: target.coveredPct > 0 ? `${Math.max(4, Math.min(target.coveredPct * 100, 100))}%` : "0%" }}
@@ -715,17 +789,101 @@ function BusinessTargetCard({
                         )}
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-5">
-                        {breakdown.map((item) => (
-                            <div key={item.label} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-600 dark:text-white/35">{item.label}</p>
-                                <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
-                            </div>
-                        ))}
-                    </div>
+                    <details className="mt-3">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">Состав месячного плана</summary>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                            {breakdown.map((item) => (
+                                <div key={item.label} className="min-w-0 border-l-2 border-slate-200 px-3 py-1 dark:border-white/[0.08]">
+                                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-500">{item.label}</p>
+                                    <p className="mt-1 break-words text-xs font-semibold leading-snug text-slate-900 dark:text-white">{formatCurrency(item.value, currency)}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
                 </>
             ) : null}
         </Card>
+    );
+}
+
+function SettingsGroup({ children }: { children: React.ReactNode }) {
+    return <section className="space-y-4">{children}</section>;
+}
+
+function ToggleRow({
+    title,
+    description,
+    name,
+    checked,
+    disabled,
+    onChange,
+}: {
+    title: string;
+    description: string;
+    name: keyof HotelFormState;
+    checked: boolean;
+    disabled?: boolean;
+    onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+    return (
+        <label className="flex cursor-pointer items-start justify-between gap-5 border-b border-slate-200/70 py-4 last:border-b-0 dark:border-white/[0.055]">
+            <span className="min-w-0">
+                <span className="block text-sm font-medium text-slate-900 dark:text-white/90">{title}</span>
+                <span className="mt-1 block max-w-xl text-xs leading-relaxed text-slate-500 dark:text-white/40">{description}</span>
+            </span>
+            <span className="relative mt-0.5 shrink-0">
+                <input
+                    type="checkbox"
+                    name={name}
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={onChange}
+                    className="peer sr-only"
+                />
+                <span className="block h-6 w-10 rounded-full bg-slate-200 transition peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500/35 peer-focus-visible:ring-offset-2 peer-disabled:opacity-40 dark:bg-white/10 dark:peer-checked:bg-blue-500" />
+                <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+            </span>
+        </label>
+    );
+}
+
+function CheckboxPicker({ label, options, selected, onChange, emptyLabel }: {
+    label: string;
+    options: Array<{ id: string; label: string; description?: string }>;
+    selected: string[];
+    onChange: (ids: string[]) => void;
+    emptyLabel: string;
+}) {
+    const selectedSet = new Set(selected);
+    const buttonLabel = selected.length === 0 ? emptyLabel : selected.length === 1
+        ? options.find((option) => option.id === selected[0])?.label ?? "Выбрано: 1"
+        : `Выбрано: ${selected.length}`;
+
+    return (
+        <details className="group relative open:z-50">
+            <summary className={`${selectClassName} flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden`}>
+                <span className="truncate">{buttonLabel}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="absolute right-0 z-[100] mt-2 max-h-80 w-full min-w-[18rem] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] dark:border-white/[0.1] dark:bg-[#1a1f26]">
+                <div className="mb-1 flex items-center justify-between px-2 py-1.5">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+                    {selected.length > 0 && <button type="button" className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400" onClick={() => onChange([])}>Сбросить</button>}
+                </div>
+                {options.length === 0 ? <p className="px-2 py-3 text-sm text-slate-400">Нет доступных вариантов</p> : options.map((option) => {
+                    const checked = selectedSet.has(option.id);
+                    return (
+                        <label key={option.id} className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.05]">
+                            <input type="checkbox" className="sr-only" checked={checked} onChange={() => onChange(checked ? selected.filter((id) => id !== option.id) : [...selected, option.id])} />
+                            <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border ${checked ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 dark:border-slate-600"}`}>
+                                {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                            </span>
+                            <span className="min-w-0"><span className="block truncate text-sm text-slate-700 dark:text-slate-200">{option.label}</span>{option.description && <span className="block truncate text-xs text-slate-400">{option.description}</span>}</span>
+                        </label>
+                    );
+                })}
+            </div>
+        </details>
     );
 }
 
@@ -789,9 +947,10 @@ function ExpenseFeed({
     );
 }
 
-function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
+function ExpenseReasonSummary({ entries, defaultCurrency, isComplete = true, className }: {
     entries: ExpenseEntry[];
     defaultCurrency?: string;
+    isComplete?: boolean;
     className?: string;
 }) {
     const grouped = useMemo(() => {
@@ -815,7 +974,7 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
     return (
         <Card className={`p-4 ${className ?? ""}`}>
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Структура расходов</p>
-            <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">По категориям</h3>
+            <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{isComplete ? "По категориям" : "По загруженным операциям"}</h3>
             <div className="mt-4 space-y-3">
                 {grouped.length ? grouped.map((item) => {
                     const width = maxAmount > 0 ? Math.max(8, Math.round((item.amount / maxAmount) * 100)) : 0;
@@ -844,8 +1003,9 @@ function ExpenseReasonSummary({ entries, defaultCurrency, className }: {
     );
 }
 
-function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName = false, className }: {
+function ExpenseTable({ entries, totalCount, defaultCurrency, defaultTimezone, showHotelName = false, className }: {
     entries: ExpenseEntry[];
+    totalCount?: number;
     defaultCurrency?: string;
     defaultTimezone?: string;
     showHotelName?: boolean;
@@ -884,8 +1044,10 @@ function ExpenseTable({ entries, defaultCurrency, defaultTimezone, showHotelName
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Журнал операций</p>
-                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Все операции по фильтру</h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">{filteredEntries.length} записей скрыты из статистики, чтобы не забивать экран.</p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Загруженные операции по фильтру</h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">
+                        Загружено {entries.length}{totalCount != null ? ` из ${totalCount}` : ""}; поиск нашёл {filteredEntries.length}.
+                    </p>
                 </div>
                 <div className="flex w-full flex-col gap-2 sm:max-w-md sm:flex-row sm:items-center">
                     <Input
@@ -1516,11 +1678,13 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const { country, withCountry } = useCountryContext();
+    const [activeTab, setActiveTab] = useState<AdminTab>("overview");
     const handleLogout = async () => {
-        await fetch(withCountry('/api/session/logout'), { method: 'POST', cache: 'no-store' });
         if (onLogout) {
-            onLogout();
+            await onLogout();
+            return;
         }
+        await fetch(withCountry('/api/session/logout'), { method: 'POST', cache: 'no-store' });
     };
 
     const fetchWithAuth = useCallback(async (url: string) => {
@@ -1536,7 +1700,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         return response.json();
     }, [withCountry]);
 
-    const { data: hotelDirectory, mutate, isLoading } = useSWR<AdminHotelSummary[]>(['admin-hotels', country], () => fetchWithAuth('/api/hotels'));
+    const { data: hotelDirectory, mutate } = useSWR<AdminHotelDirectoryItem[]>(
+        ['admin-hotel-directory', country],
+        () => fetchWithAuth('/api/hotels?view=directory')
+    );
+    const { data: hotelConfigurations, mutate: mutateHotelConfigurations } = useSWR<AdminHotelConfigurationItem[]>(
+        activeTab === 'manage' ? ['admin-hotel-configurations', country] : null,
+        () => fetchWithAuth('/api/hotels?view=configuration')
+    );
     const [filters, setFilters] = useState<OverviewFilters>(() => createPeriodFilters("month", getDisplaySettings().timezone));
     const [periodPreset, setPeriodPreset] = useState<PeriodPreset | null>("month");
     const [guestFilters, setGuestFilters] = useState<{ hotelId: string; status: string; search: string }>({ hotelId: "", status: "", search: "" });
@@ -1556,17 +1727,28 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         if (filters.endAt) {
             params.set("endAt", filters.endAt);
         }
-        if (filters.hotelId) {
-            params.set("hotelId", filters.hotelId);
+        if (filters.hotelIds.length) {
+            params.set("hotelId", filters.hotelIds.join(","));
         }
         if (filters.managerId) {
             params.set("managerId", filters.managerId);
+        }
+        if (filters.shiftIds.length) {
+            params.set("shiftId", filters.shiftIds.join(","));
         }
         return params.toString();
     }, [filters]);
 
     const overviewUrl = overviewQuery ? `/api/admin/overview?${overviewQuery}` : "/api/admin/overview";
-    const filteredHotelsUrl = overviewQuery ? `/api/hotels?${overviewQuery}` : '/api/hotels';
+    const hotelSummariesUrl = `/api/hotels?view=full${overviewQuery ? `&${overviewQuery}` : ''}`;
+    const shiftOptionsUrl = useMemo(() => {
+        const params = new URLSearchParams();
+        if (filters.startDate) params.set("startDate", filters.startDate);
+        if (filters.endDate) params.set("endDate", filters.endDate);
+        if (filters.hotelIds.length) params.set("hotelId", filters.hotelIds.join(","));
+        if (filters.managerId) params.set("managerId", filters.managerId);
+        return `/api/admin/shifts?${params.toString()}`;
+    }, [filters.endDate, filters.hotelIds, filters.managerId, filters.startDate]);
     const guestsUrl = useMemo(() => {
         const params = new URLSearchParams();
         if (guestFilters.hotelId) {
@@ -1581,12 +1763,26 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         params.set("limit", "120");
         return `/api/admin/guest-profiles?${params.toString()}`;
     }, [deferredGuestSearch, guestFilters.hotelId, guestFilters.status]);
-    const { data: overview } = useSWR<AdminOverview>(['admin-overview', country, overviewUrl], () => fetchWithAuth(overviewUrl));
-    const { data: filteredHotelSummaries } = useSWR<AdminHotelSummary[]>(['admin-filtered-hotels', country, filteredHotelsUrl], () => fetchWithAuth(filteredHotelsUrl));
-    const { data: guestProfilesData, isLoading: isLoadingGuests, mutate: mutateGuests } = useSWR<{ guests: AdminGuestProfile[] }>(['admin-guest-profiles', country, guestsUrl], () => fetchWithAuth(guestsUrl));
+    const { data: overview } = useSWR<AdminOverview>(
+        activeTab === 'overview' ? ['admin-overview', country, overviewUrl] : null,
+        () => fetchWithAuth(overviewUrl)
+    );
+    const { data: shiftOptionsData } = useSWR<{ shifts: ShiftFilterOption[] }>(
+        activeTab === 'overview' ? ['admin-shift-options', country, shiftOptionsUrl] : null,
+        () => fetchWithAuth(shiftOptionsUrl)
+    );
+    const { data: periodHotelSummaries, isLoading: isLoadingHotelSummaries } = useSWR<AdminHotelSummary[]>(
+        activeTab === 'hotels' ? ['admin-period-hotels', country, hotelSummariesUrl] : null,
+        () => fetchWithAuth(hotelSummariesUrl)
+    );
+    const { data: guestProfilesData, isLoading: isLoadingGuests, mutate: mutateGuests } = useSWR<{ guests: AdminGuestProfile[] }>(
+        activeTab === 'guests' ? ['admin-guest-profiles', country, guestsUrl] : null,
+        () => fetchWithAuth(guestsUrl)
+    );
 
     const hotels = useMemo(() => hotelDirectory ?? [], [hotelDirectory]);
-    const overviewHotels = useMemo(() => filteredHotelSummaries ?? hotels, [filteredHotelSummaries, hotels]);
+    const shiftOptions = shiftOptionsData?.shifts ?? [];
+    const hotelSummaries = useMemo(() => periodHotelSummaries ?? [], [periodHotelSummaries]);
     const guestProfiles = guestProfilesData?.guests ?? [];
     const overviewDisplay = useMemo(() => {
         if (overview?.display) {
@@ -1598,17 +1794,33 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     const [selectedHotelId, setSelectedHotelId] = useState("");
     const [editForm, setEditForm] = useState<HotelFormState>(() => createEmptyHotelForm(getDisplaySettings()));
+    const [manageSection, setManageSection] = useState<ManageSection>("general");
+    const [isCreateHotelOpen, setIsCreateHotelOpen] = useState(false);
 
     const [isUpdatingHotel, setIsUpdatingHotel] = useState(false);
     const [isDeletingHotel, setIsDeletingHotel] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [rankingDetail, setRankingDetail] = useState<RankingDetailSelection | null>(null);
+    const [expenseHistoryPage, setExpenseHistoryPage] = useState<{ scope: string; entries: ExpenseEntry[]; total: number } | null>(null);
+    const [isLoadingMoreExpenses, setIsLoadingMoreExpenses] = useState(false);
     const [guestForm, setGuestForm] = useState<GuestFormState | null>(null);
     const [isSavingGuest, setIsSavingGuest] = useState(false);
     const [guestToDelete, setGuestToDelete] = useState<AdminGuestProfile | null>(null);
     const [isDeletingGuest, setIsDeletingGuest] = useState(false);
-    const [activeTab, setActiveTab] = useState<AdminTab>("overview");
     const { toast: notify } = useToast();
+
+    const expenseScope = `${country}:${overviewUrl}`;
+    const expenseEntries = useMemo(() => {
+        const combined = [
+            ...(overview?.recentExpenses ?? []),
+            ...(expenseHistoryPage?.scope === expenseScope ? expenseHistoryPage.entries : []),
+        ];
+        return Array.from(new Map(combined.map((entry) => [entry.id, entry])).values());
+    }, [expenseHistoryPage, expenseScope, overview?.recentExpenses]);
+    const expenseTotal = expenseHistoryPage?.scope === expenseScope
+        ? expenseHistoryPage.total
+        : overview?.recentExpensesMeta?.total ?? expenseEntries.length;
+    const hasMoreExpenses = expenseEntries.length < expenseTotal;
 
     // Observer management state
     type ObserverItem = {
@@ -1618,7 +1830,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         hotels: Array<{ id: string; name: string }>;
     };
     const { data: observers, mutate: mutateObservers } = useSWR<ObserverItem[]>(
-        ['admin-observers', country],
+        activeTab === 'manage' ? ['admin-observers', country] : null,
         () => fetchWithAuth('/api/admin/observers')
     );
     const [newObserver, setNewObserver] = useState({ displayName: '', loginName: '', password: '', hotelId: '' });
@@ -1636,8 +1848,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         setFilters((prev) => ({
             ...prev,
             ...createPeriodFilters(periodPreset, overviewDisplay.timezone),
-            hotelId: prev.hotelId,
+            hotelIds: prev.hotelIds,
             managerId: prev.managerId,
+            shiftIds: prev.shiftIds,
         }));
     }, [overviewDisplay.timezone, periodPreset]);
 
@@ -1730,6 +1943,10 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             notify("Укажите имя гостя", "error");
             return;
         }
+        if (!guestForm.hotelId) {
+            notify("Выберите объект", "error");
+            return;
+        }
         if (!guestForm.consentAccepted) {
             notify("Нужно отметить согласие на обработку данных", "error");
             return;
@@ -1748,7 +1965,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 credentials: "include",
                 cache: "no-store",
                 body: JSON.stringify({
-                    hotelId: guestForm.hotelId || null,
+                    hotelId: guestForm.hotelId,
                     fullName: guestForm.fullName.trim(),
                     phone: guestForm.phone.trim() || null,
                     telegramId: guestForm.telegramId.trim() || null,
@@ -1803,11 +2020,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             return;
         }
 
-        if (!hotelDirectory) {
+        if (!hotelConfigurations) {
             return;
         }
 
-        const target = hotelDirectory.find((hotel) => hotel.id === selectedHotelId);
+        const target = hotelConfigurations.find((hotel) => hotel.id === selectedHotelId);
         if (target) {
             setEditForm({
                 name: target.name ?? "",
@@ -1819,8 +2036,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 usesExtranets: Boolean(target.usesExtranets),
                 extranetNames: (target.extranetNames ?? []).join('\n'),
                 hasMealPlan: Boolean(target.hasMealPlan),
+                allowGroupStays: target.allowGroupStays !== false,
                 allowPostpaidStays: Boolean(target.allowPostpaidStays),
+                allowOnlinePayments: target.allowOnlinePayments !== false,
                 guestQrEnabled: Boolean(target.guestQrEnabled),
+                showInGuestListing: target.showInGuestListing !== false,
                 guestDescription: target.guestDescription ?? "",
                 guestAmenities: (target.guestAmenities ?? []).join('\n'),
                 guestPhotoUrls: (target.guestPhotoUrls ?? []).join('\n'),
@@ -1836,7 +2056,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             setSelectedHotelId("");
             setEditForm(createEmptyHotelForm(overviewDisplay));
         }
-    }, [hotelDirectory, selectedHotelId, overviewDisplay]);
+    }, [hotelConfigurations, selectedHotelId, overviewDisplay]);
 
     const handleEditFieldChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = event.target;
@@ -1864,8 +2084,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             payload.usesExtranets = formData.get('usesExtranets') === 'on';
             payload.extranetNames = parseExtranetNamesText(formData.get('extranetNames') as string | null);
             payload.hasMealPlan = formData.get('hasMealPlan') === 'on';
+            payload.allowGroupStays = formData.get('allowGroupStays') === 'on';
             payload.allowPostpaidStays = formData.get('allowPostpaidStays') === 'on';
+            payload.allowOnlinePayments = formData.get('allowOnlinePayments') === 'on';
             payload.guestQrEnabled = formData.get('guestQrEnabled') === 'on';
+            payload.showInGuestListing = formData.get('showInGuestListing') === 'on';
             payload.guestDescription = ((formData.get('guestDescription') as string | null)?.trim() || undefined);
             payload.guestAmenities = parseGuestShowcaseText(formData.get('guestAmenities') as string | null, 40);
             payload.guestPhotoUrls = parseGuestShowcaseText(formData.get('guestPhotoUrls') as string | null, 12);
@@ -1900,14 +2123,20 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     throw new Error("Не удалось создать отель");
                 }
 
-                await mutate();
+                const createdHotel = await res.json() as { id?: string };
+                await Promise.all([mutate(), mutateHotelConfigurations()]);
+                if (createdHotel.id) {
+                    setSelectedHotelId(createdHotel.id);
+                }
+                setManageSection("general");
+                setIsCreateHotelOpen(false);
                 notify("Отель добавлен", 'success');
             } catch (error) {
                 console.error(error);
                 notify("Ошибка создания", 'error');
             }
         },
-        [mutate, notify, withCountry],
+        [mutate, mutateHotelConfigurations, notify, withCountry],
     );
 
     const handleUpdateHotel = useCallback(
@@ -1942,8 +2171,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     usesExtranets: editForm.usesExtranets,
                     extranetNames: parseExtranetNamesText(editForm.extranetNames),
                     hasMealPlan: editForm.hasMealPlan,
+                    allowGroupStays: editForm.allowGroupStays,
                     allowPostpaidStays: editForm.allowPostpaidStays,
+                    allowOnlinePayments: editForm.allowOnlinePayments,
                     guestQrEnabled: editForm.guestQrEnabled,
+                    showInGuestListing: editForm.showInGuestListing,
                     guestDescription: editForm.guestDescription.trim() || null,
                     guestAmenities: parseGuestShowcaseText(editForm.guestAmenities, 40),
                     guestPhotoUrls: parseGuestShowcaseText(editForm.guestPhotoUrls, 12),
@@ -1968,7 +2200,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     throw new Error("Не удалось обновить отель");
                 }
 
-                await mutate();
+                await Promise.all([mutate(), mutateHotelConfigurations()]);
                 notify("Изменения сохранены", 'success');
             } catch (error) {
                 console.error(error);
@@ -1977,7 +2209,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 setIsUpdatingHotel(false);
             }
         },
-        [editForm, mutate, notify, selectedHotelId, withCountry],
+        [editForm, mutate, mutateHotelConfigurations, notify, selectedHotelId, withCountry],
     );
 
     const handleDeleteHotel = useCallback(async () => {
@@ -2000,7 +2232,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 throw new Error("Не удалось удалить отель");
             }
 
-            await mutate();
+            await Promise.all([mutate(), mutateHotelConfigurations()]);
             setSelectedHotelId("");
             setEditForm(createEmptyHotelForm(overviewDisplay));
             notify("Отель удалён", 'success');
@@ -2010,7 +2242,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         } finally {
             setIsDeletingHotel(false);
         }
-    }, [mutate, notify, overviewDisplay, selectedHotelId, withCountry]);
+    }, [mutate, mutateHotelConfigurations, notify, overviewDisplay, selectedHotelId, withCountry]);
 
     const adminTabs: Array<{ id: AdminTab; label: string; hint?: string; description: string; icon: LucideIcon }> = [
         { id: "overview", label: "Сводка", description: "Финансы, загрузка и темп", icon: BarChart3 },
@@ -2018,9 +2250,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         { id: "guests", label: "Гости", hint: guestProfiles.length ? String(guestProfiles.length) : undefined, description: "Клиенты и проверки", icon: Users },
         { id: "manage", label: "Управление", description: "Настройки и доступы", icon: Settings2 },
     ];
+    const manageSections: Array<{ id: ManageSection; label: string; panelTitle: string; description: string; icon: LucideIcon }> = [
+        { id: "general", label: "Основное", panelTitle: "Основные данные", description: "Название, адрес, локаль и служебные контакты", icon: Building2 },
+        { id: "features", label: "Функции", panelTitle: "Функции объекта", description: "Включайте только возможности, которыми пользуется этот филиал", icon: SlidersHorizontal },
+        { id: "listing", label: "Листинг", panelTitle: "Гостевой листинг", description: "Описание, удобства, фотографии и карта", icon: Globe2 },
+        { id: "integrations", label: "Интеграции", panelTitle: "Экстранеты", description: "Каналы продаж и внешние площадки бронирования", icon: Link2 },
+        { id: "finance", label: "Финансы", panelTitle: "Постоянные расходы", description: "Месячный финансовый ориентир для сводки", icon: CircleDollarSign },
+        { id: "access", label: "Доступы", panelTitle: "Наблюдатели", description: "Доступ сотрудников только к просмотру", icon: Users },
+    ];
+    const activeManageSection = manageSections.find((section) => section.id === manageSection) ?? manageSections[0];
 
     const managerOptions = useMemo(() => {
-        const sourceHotels = filters.hotelId ? hotels.filter((hotel) => hotel.id === filters.hotelId) : hotels;
+        const sourceHotels = filters.hotelIds.length ? hotels.filter((hotel) => filters.hotelIds.includes(hotel.id)) : hotels;
         const unique = new Map<string, string>();
         for (const hotel of sourceHotels) {
             for (const manager of hotel.managers) {
@@ -2034,28 +2275,29 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             }
         }
         return Array.from(unique.entries()).map(([id, label]) => ({ id, label }));
-    }, [filters.hotelId, hotels]);
+    }, [filters.hotelIds, hotels]);
 
     const overviewCurrency = useMemo(() => {
-        if (filters.hotelId) {
-            const h = hotels.find((hotel) => hotel.id === filters.hotelId);
+        if (filters.hotelIds.length === 1) {
+            const h = hotels.find((hotel) => hotel.id === filters.hotelIds[0]);
             return h?.currency ?? overviewDisplay.currency;
         }
-        return overviewHotels.length === 1 ? (overviewHotels[0]?.currency ?? overviewDisplay.currency) : overviewDisplay.currency;
-    }, [filters.hotelId, hotels, overviewDisplay.currency, overviewHotels]);
+        return hotels.length === 1 ? (hotels[0]?.currency ?? overviewDisplay.currency) : overviewDisplay.currency;
+    }, [filters.hotelIds, hotels, overviewDisplay.currency]);
 
     const overviewTimezone = useMemo(() => {
-        if (filters.hotelId) {
-            const h = hotels.find((hotel) => hotel.id === filters.hotelId);
+        if (filters.hotelIds.length === 1) {
+            const h = hotels.find((hotel) => hotel.id === filters.hotelIds[0]);
             return h?.timezone ?? overviewDisplay.timezone;
         }
-        return overviewHotels.length === 1 ? (overviewHotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
-    }, [filters.hotelId, hotels, overviewDisplay.timezone, overviewHotels]);
+        return hotels.length === 1 ? (hotels[0]?.timezone ?? overviewDisplay.timezone) : overviewDisplay.timezone;
+    }, [filters.hotelIds, hotels, overviewDisplay.timezone]);
 
     const overviewHotelLabel = useMemo(() => {
-        if (!filters.hotelId) return "";
-        return hotels.find((hotel) => hotel.id === filters.hotelId)?.name ?? "";
-    }, [filters.hotelId, hotels]);
+        if (filters.hotelIds.length === 0) return "";
+        if (filters.hotelIds.length > 1) return `${filters.hotelIds.length} выбранных объектов`;
+        return hotels.find((hotel) => hotel.id === filters.hotelIds[0])?.name ?? "";
+    }, [filters.hotelIds, hotels]);
 
     const handleFilterInput = (field: keyof OverviewFilters, value: string) => {
         setPeriodPreset(null);
@@ -2066,8 +2308,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         }));
     };
 
-    const handleHotelFilterChange = (value: string) => {
-        setFilters((prev) => ({ ...prev, hotelId: value, managerId: "" }));
+    const handleHotelFilterChange = (hotelIds: string[]) => {
+        setFilters((prev) => ({ ...prev, hotelIds, managerId: "", shiftIds: [] }));
     };
 
     const handlePeriodPreset = (preset: PeriodPreset) => {
@@ -2075,10 +2317,41 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         setFilters((prev) => ({
             ...prev,
             ...createPeriodFilters(preset, overviewTimezone),
-            hotelId: prev.hotelId,
+            hotelIds: prev.hotelIds,
             managerId: prev.managerId,
+            shiftIds: prev.shiftIds,
         }));
     };
+
+    const handleLoadMoreExpenses = useCallback(async () => {
+        if (!overview || !hasMoreExpenses || isLoadingMoreExpenses) return;
+
+        const requestedScope = expenseScope;
+        const params = new URLSearchParams(overviewQuery);
+        params.set("view", "expenses");
+        params.set("expenseOffset", String(expenseEntries.length));
+        params.set("expenseLimit", "50");
+        setIsLoadingMoreExpenses(true);
+
+        try {
+            const page = await fetchWithAuth(`/api/admin/overview?${params.toString()}`) as ExpensePageResponse;
+            setExpenseHistoryPage((current) => {
+                const previousEntries = current?.scope === requestedScope ? current.entries : [];
+                const entries = Array.from(
+                    new Map([...previousEntries, ...page.recentExpenses].map((entry) => [entry.id, entry])).values()
+                );
+                return {
+                    scope: requestedScope,
+                    entries,
+                    total: page.recentExpensesMeta.total,
+                };
+            });
+        } catch (error) {
+            notify(error instanceof Error ? error.message : "Не удалось загрузить историю расходов", "error");
+        } finally {
+            setIsLoadingMoreExpenses(false);
+        }
+    }, [expenseEntries.length, expenseScope, fetchWithAuth, hasMoreExpenses, isLoadingMoreExpenses, notify, overview, overviewQuery]);
 
     const handleExportCSV = useCallback(() => {
         if (!overview) return;
@@ -2113,9 +2386,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     }, [overview, filters.startDate, filters.endDate, overviewCurrency]);
 
     const activeTabConfig = adminTabs.find((tab) => tab.id === activeTab) ?? adminTabs[0];
-    const ActiveTabIcon = activeTabConfig.icon;
-    const visibleHotelCount = filters.hotelId ? 1 : overviewHotels.length;
-    const desktopPeriodLabel = [filters.startDate || "начало", filters.endDate || "сегодня"].join(" - ");
+    const formatPeriodDate = (value: string, fallback: string) => {
+        if (!value) return fallback;
+        const date = new Date(`${value}T12:00:00`);
+        return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(date);
+    };
+    const desktopPeriodLabel = `${formatPeriodDate(filters.startDate, "начало")} — ${formatPeriodDate(filters.endDate, "сегодня")}`;
     const desktopStats = [
         {
             label: "Баланс",
@@ -2124,29 +2400,29 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             tone: overview && overview.totals.netCash < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300",
         },
         {
+            label: "Поступления",
+            value: overview ? formatCurrency(overview.totals.cashIn, overviewCurrency) : "—",
+            icon: TrendingUp,
+            tone: "text-emerald-700 dark:text-emerald-300",
+        },
+        {
+            label: "Расходы",
+            value: overview ? formatCurrency(overview.totals.cashOut + overview.totals.collections + overview.totals.payouts, overviewCurrency) : "—",
+            icon: TrendingDown,
+            tone: "text-rose-600 dark:text-rose-300",
+        },
+        {
             label: "Загрузка",
             value: overview ? formatPercent(overview.occupancy.rate) : "—",
             icon: Activity,
             tone: "text-slate-800 dark:text-white",
         },
-        {
-            label: "Объекты",
-            value: String(visibleHotelCount),
-            icon: Building2,
-            tone: "text-slate-800 dark:text-white",
-        },
-        {
-            label: "Менеджеры",
-            value: String(managerOptions.length),
-            icon: Users,
-            tone: "text-slate-800 dark:text-white",
-        },
     ];
 
     return (
-        <div className="min-h-screen bg-[#f4f6f8] text-light-text dark:bg-[#0f1218]">
-            <div className="lg:grid lg:min-h-screen lg:grid-cols-[17rem_minmax(0,1fr)]">
-                <aside className="hidden border-r border-slate-200 bg-white/94 px-4 py-5 shadow-[12px_0_34px_-34px_rgba(15,23,42,0.48)] dark:border-white/[0.065] dark:bg-[#11151d]/96 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className="min-h-screen bg-[#f6f7f9] text-light-text dark:bg-[#0c0f13]">
+            <div className="lg:grid lg:min-h-screen lg:grid-cols-[15rem_minmax(0,1fr)]">
+                <aside className="hidden border-r border-slate-200/80 bg-white px-4 py-5 dark:border-white/[0.07] dark:bg-[#111418] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
                     <div className="flex items-center gap-3 border-b border-slate-200 pb-5 dark:border-white/[0.06]">
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white dark:bg-white dark:text-slate-950">
                             <Building2 className="h-5 w-5" aria-hidden="true" />
@@ -2157,7 +2433,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                     </div>
 
-                    <nav className="mt-5 space-y-1.5">
+                    <nav className="mt-5 space-y-1">
                         {adminTabs.map((tab) => {
                             const Icon = tab.icon;
                             const active = activeTab === tab.id;
@@ -2166,36 +2442,21 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
-                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active
-                                        ? "bg-slate-950 text-white shadow-[0_14px_30px_-22px_rgba(15,23,42,0.7)] dark:bg-white dark:text-slate-950"
-                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/58 dark:hover:bg-white/[0.055] dark:hover:text-white"
+                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active
+                                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-white"
                                         }`}
                                 >
                                     <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                                     <span className="min-w-0 flex-1">
                                         <span className="block truncate text-sm font-medium">{tab.label}</span>
-                                        <span className={`block truncate text-[11px] ${active ? "text-white/62 dark:text-slate-500" : "text-slate-400 dark:text-white/30"}`}>{tab.description}</span>
+                                        <span className={`block truncate text-[11px] ${active ? "text-blue-500/70 dark:text-blue-300/60" : "text-slate-400 dark:text-slate-600"}`}>{tab.description}</span>
                                     </span>
                                     {tab.hint ? <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/14 text-white dark:bg-slate-900/8 dark:text-slate-500" : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/38"}`}>{tab.hint}</span> : null}
                                 </button>
                             );
                         })}
                     </nav>
-
-                    <div className="mt-6 space-y-2 border-t border-slate-200 pt-5 dark:border-white/[0.06]">
-                        {desktopStats.slice(0, 3).map((item) => {
-                            const Icon = item.icon;
-                            return (
-                                <div key={item.label} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.055] dark:bg-white/[0.035]">
-                                    <Icon className="h-4 w-4 text-slate-400 dark:text-white/32" aria-hidden="true" />
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-white/28">{item.label}</p>
-                                        <p className={`truncate text-sm font-semibold ${item.tone}`}>{item.value}</p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
 
                     <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.06]">
                         <ThemeToggle />
@@ -2249,18 +2510,15 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                     </div>
 
-                    <main className="px-4 pb-16 pt-3 sm:px-5 lg:px-6 lg:py-6 xl:px-8">
-                        <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
+                    <main className="workspace-page w-full pb-16 pt-3 lg:py-5">
+                        <div className="mb-4 hidden items-center justify-between gap-4 lg:flex">
                             <div className="flex min-w-0 items-center gap-3">
-                                <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-800 dark:border-white/[0.06] dark:bg-white/[0.045] dark:text-white">
-                                    <ActiveTabIcon className="h-5 w-5" aria-hidden="true" />
-                                </div>
                                 <div className="min-w-0">
-                                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/32">{activeTabConfig.description}</p>
-                                    <h1 className="truncate text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">{activeTabConfig.label}</h1>
+                                    <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{activeTabConfig.label}</h1>
+                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-500">{activeTabConfig.description}</p>
                                 </div>
                             </div>
-                            <div className="flex min-w-0 items-center gap-2">
+                            {activeTab === "overview" ? <div className="flex min-w-0 items-center gap-2">
                                 <div className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.035] xl:block">
                                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">Период</p>
                                     <p className="text-xs font-medium text-slate-700 dark:text-white/62">{desktopPeriodLabel}</p>
@@ -2271,44 +2529,33 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         CSV
                                     </Button>
                                 ) : null}
-                            </div>
+                            </div> : null}
                         </div>
 
-                        <div className="mb-5 hidden grid-cols-4 gap-3 lg:grid">
+                        {activeTab === "overview" && <div className="mb-4 hidden grid-cols-4 gap-2.5 lg:grid">
                             {desktopStats.map((item) => {
                                 const Icon = item.icon;
                                 return (
-                                    <div key={item.label} className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_28px_-26px_rgba(15,23,42,0.36)] dark:border-white/[0.06] dark:bg-white/[0.035] dark:shadow-none">
+                                    <div key={item.label} className="min-w-0 rounded-lg border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21] dark:shadow-none">
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="truncate text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">{item.label}</p>
                                             <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/32" aria-hidden="true" />
                                         </div>
-                                        <p className={`mt-2 truncate text-lg font-semibold ${item.tone}`}>{item.value}</p>
+                                        <p className={`mt-1.5 truncate text-base font-semibold ${item.tone}`}>{item.value}</p>
                                     </div>
                                 );
                             })}
-                        </div>
+                        </div>}
 
                     {activeTab === "overview" && (
                         <div className="space-y-3">
                             <SectionCard
-                                title="Фильтры обзора"
-                                subtitle="Overview"
-                                className="lg:!rounded-lg lg:p-4"
-                                actions={overview ? (
-                                    <Button type="button" size="sm" variant="secondary" className="w-full gap-2 sm:w-auto" onClick={handleExportCSV}>
-                                        <Download className="h-4 w-4" aria-hidden="true" />
-                                        Скачать CSV
-                                    </Button>
-                                ) : undefined}
+                                title="Период и фильтры"
+                                className="z-40 lg:p-4"
                             >
-                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(12rem,auto)_repeat(4,minmax(0,1fr))] lg:items-end">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-white/[0.055] dark:bg-white/[0.03] dark:text-white/45">
-                                            <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                            <span className="truncate">{desktopPeriodLabel}</span>
-                                        </div>
-                                        <div className="grid grid-cols-4 gap-1.5">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
+                                    <div className="md:col-span-2 xl:col-span-5">
+                                        <div className="flex flex-wrap gap-1.5">
                                             {([
                                                 { id: "today", label: "Сегодня" },
                                                 { id: "week", label: "Неделя" },
@@ -2319,9 +2566,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     key={preset.id}
                                                     type="button"
                                                     onClick={() => handlePeriodPreset(preset.id)}
-                                                    className={`h-9 rounded-md border px-2 text-xs font-medium transition ${periodPreset === preset.id
-                                                        ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-white/20 dark:hover:text-white"
+                                                    className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${periodPreset === preset.id
+                                                        ? "bg-blue-600 text-white dark:bg-blue-500"
+                                                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:bg-white/[0.05] dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
                                                         }`}
                                                 >
                                                     {preset.label}
@@ -2333,7 +2580,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-start"
                                                 type="date"
-                                                className="min-w-0"
+                                                className="h-9 min-w-0 rounded-lg text-[13px] sm:h-9"
                                                 value={filters.startDate}
                                                 onChange={(event) => handleFilterInput("startDate", event.target.value)}
                                                 placeholder="С даты"
@@ -2343,7 +2590,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-end"
                                                 type="date"
-                                                className="min-w-0"
+                                                className="h-9 min-w-0 rounded-lg text-[13px] sm:h-9"
                                                 value={filters.endDate}
                                                 min={filters.startDate || undefined}
                                                 onChange={(event) => handleFilterInput("endDate", event.target.value)}
@@ -2351,17 +2598,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             />
                                         </Field>
                                         <Field label="Объект" htmlFor="overview-hotel">
-                                            <select
-                                                id="overview-hotel"
-                                                value={filters.hotelId}
-                                                onChange={(event) => handleHotelFilterChange(event.target.value)}
-                                                className={selectClassName}
-                                            >
-                                                <option value="">Все объекты</option>
-                                                {hotels.map((hotel) => (
-                                                    <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
-                                                ))}
-                                            </select>
+                                            <CheckboxPicker label="Объекты" emptyLabel="Все объекты" selected={filters.hotelIds} onChange={handleHotelFilterChange} options={hotels.map((hotel) => ({ id: hotel.id, label: hotel.name }))} />
                                         </Field>
                                         <Field label="Менеджер" htmlFor="overview-manager" hint={managerOptions.length ? `${managerOptions.length}` : undefined}>
                                             <select
@@ -2377,6 +2614,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 ))}
                                             </select>
                                         </Field>
+                                        <Field label="Смены" hint={shiftOptions.length ? `${shiftOptions.length}` : undefined}>
+                                            <CheckboxPicker
+                                                label="Смены"
+                                                emptyLabel="Все смены"
+                                                selected={filters.shiftIds}
+                                                onChange={(shiftIds) => setFilters((prev) => ({ ...prev, shiftIds }))}
+                                                options={shiftOptions.map((shift) => ({
+                                                    id: shift.id,
+                                                    label: `${shift.hotel.name} · смена №${shift.number}`,
+                                                    description: `${shift.manager.displayName} · ${new Date(shift.openedAt).toLocaleDateString("ru-RU")}${shift.status === "OPEN" ? " · открыта" : ""}`,
+                                                }))}
+                                            />
+                                        </Field>
                                 </div>
                             </SectionCard>
                             <section className="grid grid-cols-1 gap-3 lg:grid-cols-4 xl:gap-4">
@@ -2387,9 +2637,40 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             currency={overviewCurrency}
                                             hotelLabel={overviewHotelLabel}
                                         />
-                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:!rounded-lg lg:p-4">
+                                        {(filters.hotelIds.length > 0 || filters.shiftIds.length > 0) && (
+                                            <Card className="lg:col-span-4 p-4 sm:p-5">
+                                                <div className="mb-4">
+                                                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">Сравнение выбранного</h3>
+                                                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Каждый объект и смена показаны отдельно</p>
+                                                </div>
+                                                {filters.hotelIds.length > 0 && (
+                                                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                                        {(overview.rankings?.hotels ?? []).map((hotel) => (
+                                                            <div key={hotel.id} className="rounded-xl bg-slate-50 p-3.5 dark:bg-white/[0.035]">
+                                                                <div className="flex items-start justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{hotel.name}</p><span className="text-xs text-slate-400">{formatPercent(hotel.occupancyRate)}</span></div>
+                                                                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{formatCurrency(hotel.net, hotel.currency || overviewCurrency)}</p>
+                                                                <p className="mt-1 text-xs text-slate-500">Выручка {formatCurrency(hotel.revenue, hotel.currency || overviewCurrency)} · смен {hotel.shifts}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {filters.shiftIds.length > 0 && (
+                                                    <div className={`${filters.hotelIds.length > 0 ? "mt-4 border-t border-slate-200 pt-4 dark:border-white/[0.07]" : ""} grid gap-2 md:grid-cols-2 xl:grid-cols-3`}>
+                                                        {(overview.breakdowns?.shifts ?? []).map((shift) => (
+                                                            <div key={shift.id} className="rounded-xl border border-slate-200/80 p-3.5 dark:border-white/[0.07]">
+                                                                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{shift.hotelName} · смена №{shift.number}</p><p className="truncate text-xs text-slate-400">{shift.managerName}</p></div><span className={`h-2 w-2 shrink-0 rounded-full ${shift.status === "OPEN" ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`} /></div>
+                                                                <p className={`mt-2 text-lg font-semibold ${shift.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-slate-900 dark:text-white"}`}>{formatCurrency(shift.net, overviewCurrency)}</p>
+                                                                <p className="mt-1 text-xs text-slate-500">Вход {formatCurrency(shift.cashIn, overviewCurrency)} · выход {formatCurrency(shift.cashOut + shift.collections + shift.payouts, overviewCurrency)} · гостей {shift.stays}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </Card>
+                                        )}
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
                                             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Баланс</p>
-                                            <p className="mt-2 text-lg sm:text-2xl lg:text-[1.75rem] font-semibold tracking-tight truncate">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
+                                            <p className="mt-2 truncate text-lg font-semibold tracking-tight sm:text-xl">{formatCurrency(overview.totals.netCash, overviewCurrency)}</p>
                                             <div className="mt-4 grid grid-cols-2 gap-2">
                                                 <StatPill label="Загрузка" value={formatPercent(overview.occupancy.rate)} />
                                                 <StatPill label="Смены" value={String(overview.shifts.active)} />
@@ -2407,7 +2688,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             valueColor="text-rose-600 dark:text-rose-400"
                                             detail={`расход ${formatCurrency(overview.totals.cashOut, overviewCurrency)} · инкас ${formatCurrency(overview.totals.collections, overviewCurrency)}`}
                                         />
-                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white lg:!rounded-lg">
+                                        <Card className="overflow-hidden p-4 text-light-text dark:text-white">
                                             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Загрузка</p>
                                             <p className="mt-2 text-base sm:text-lg font-semibold">
                                                 {formatPercent(overview.occupancy.rate)}
@@ -2416,6 +2697,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 {overview.occupancy.occupiedRooms}/{overview.occupancy.rooms} · смен {overview.shifts.active}
                                             </p>
                                         </Card>
+                                        </div>
                                         <div className="col-span-1 grid grid-cols-1 gap-3 lg:col-span-4 lg:grid-cols-4">
                                             {overview.dailySeries && overview.dailySeries.length > 0 ? (
                                                 <DailyLineChart data={overview.dailySeries} timeZone={overviewTimezone} />
@@ -2472,26 +2754,47 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         <CollapsibleSection
                                             title="Расходы"
                                             subtitle="Списания и журнал"
-                                            summary={`${overview.recentExpenses?.length ?? 0} операций`}
+                                            summary={`${expenseEntries.length} из ${expenseTotal}`}
                                             className="col-span-1 lg:col-span-4"
                                         >
+                                            <div className="mb-3 flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.025] dark:text-white/45 sm:flex-row sm:items-center sm:justify-between">
+                                                <p>
+                                                    {hasMoreExpenses
+                                                        ? `Показаны последние ${expenseEntries.length} из ${expenseTotal}. Полная история доступна по кнопке.`
+                                                        : `Загружены все операции по выбранному фильтру: ${expenseTotal}.`}
+                                                </p>
+                                                {hasMoreExpenses ? (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        className="shrink-0"
+                                                        disabled={isLoadingMoreExpenses}
+                                                        onClick={handleLoadMoreExpenses}
+                                                    >
+                                                        {isLoadingMoreExpenses ? "Загрузка…" : `Загрузить ещё ${Math.min(50, expenseTotal - expenseEntries.length)}`}
+                                                    </Button>
+                                                ) : null}
+                                            </div>
                                             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                                                 <ExpenseFeed
                                                     title="Последние списания по фильтру"
-                                                    entries={(overview.recentExpenses ?? []).slice(0, 5)}
+                                                    entries={expenseEntries.slice(0, 5)}
                                                     defaultCurrency={overviewCurrency}
                                                     defaultTimezone={overviewTimezone}
-                                                    showHotelName={!filters.hotelId}
+                                                    showHotelName={filters.hotelIds.length === 0}
                                                 />
                                                 <ExpenseReasonSummary
-                                                    entries={overview.recentExpenses ?? []}
+                                                    entries={expenseEntries}
                                                     defaultCurrency={overviewCurrency}
+                                                    isComplete={!hasMoreExpenses}
                                                 />
                                                 <ExpenseTable
-                                                    entries={overview.recentExpenses ?? []}
+                                                    entries={expenseEntries}
+                                                    totalCount={expenseTotal}
                                                     defaultCurrency={overviewCurrency}
                                                     defaultTimezone={overviewTimezone}
-                                                    showHotelName={!filters.hotelId}
+                                                    showHotelName={filters.hotelIds.length === 0}
                                                     className="xl:col-span-2"
                                                 />
                                             </div>
@@ -2506,12 +2809,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                     {activeTab === "hotels" && (
                         <section className="space-y-3 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3 lg:space-y-0">
-                            {isLoading && <HotelsSkeleton />}
-                            {!isLoading && overviewHotels.length === 0 && (
+                            {isLoadingHotelSummaries && <HotelsSkeleton />}
+                            {!isLoadingHotelSummaries && hotelSummaries.length === 0 && (
                                 <p className="px-1 text-sm text-slate-500 dark:text-white/40">Нет отелей</p>
                             )}
-                            {!isLoading &&
-                                overviewHotels.map((hotel) => {
+                            {!isLoadingHotelSummaries &&
+                                hotelSummaries.map((hotel) => {
                                     const inflow = hotel.ledger?.cashIn ?? 0;
                                     const outflow = (hotel.ledger?.cashOut ?? 0) + (hotel.ledger?.collections ?? 0);
 
@@ -2545,7 +2848,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         <span
                                                             key={m.id}
                                                             className="flex h-8 w-8 items-center justify-center rounded-2xl border border-slate-200/80 bg-white text-[10px] font-semibold text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.08] dark:text-white/70"
-                                                            title={`${m.displayName} · PIN ${m.pinCode || '—'}`}
+                                                            title={`${m.displayName} · PIN ${m.hasPin ? 'настроен' : 'не задан'}`}
                                                         >
                                                             {m.displayName?.slice(0, 2).toUpperCase() || "??"}
                                                         </span>
@@ -2699,11 +3002,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                             </td>
                                                             <td className="px-4 py-3">
                                                                 <div className="flex justify-end gap-2">
-                                                                    <Button type="button" size="sm" variant="secondary" onClick={() => openEditGuestForm(guest)}>
-                                                                        Изменить
+                                                                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8" title="Редактировать гостя" aria-label="Редактировать гостя" onClick={() => openEditGuestForm(guest)}>
+                                                                        <Pencil className="h-4 w-4" />
                                                                     </Button>
-                                                                    <Button type="button" size="sm" variant="danger" onClick={() => setGuestToDelete(guest)}>
-                                                                        Удалить
+                                                                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10" title="Удалить гостя" aria-label="Удалить гостя" onClick={() => setGuestToDelete(guest)}>
+                                                                        <Trash2 className="h-4 w-4" />
                                                                     </Button>
                                                                 </div>
                                                             </td>
@@ -2739,12 +3042,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                             {guestAuditActionLabels[lastAudit.action] ?? lastAudit.action} · {formatDT(lastAudit.createdAt, guestTz)}
                                                         </p>
                                                     ) : null}
-                                                    <div className="mt-3 grid grid-cols-2 gap-2">
-                                                        <Button type="button" size="sm" variant="secondary" onClick={() => openEditGuestForm(guest)}>
-                                                            Изменить
+                                                    <div className="mt-3 flex justify-end gap-1">
+                                                        <Button type="button" size="icon" variant="ghost" className="h-9 w-9" title="Редактировать гостя" aria-label="Редактировать гостя" onClick={() => openEditGuestForm(guest)}>
+                                                            <Pencil className="h-4 w-4" />
                                                         </Button>
-                                                        <Button type="button" size="sm" variant="danger" onClick={() => setGuestToDelete(guest)}>
-                                                            Удалить
+                                                        <Button type="button" size="icon" variant="ghost" className="h-9 w-9 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" title="Удалить гостя" aria-label="Удалить гостя" onClick={() => setGuestToDelete(guest)}>
+                                                            <Trash2 className="h-4 w-4" />
                                                         </Button>
                                                     </div>
                                                 </Card>
@@ -2757,8 +3060,64 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                     )}
 
                     {activeTab === "manage" && (
-                        <section className="grid gap-3 lg:grid-cols-2">
-                            <SectionCard title="Новый объект" subtitle="Create hotel">
+                        <section className="w-full space-y-3">
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21]">
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,26rem)_auto] lg:items-end">
+                                    <div className="min-w-0 lg:self-center">
+                                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-white/30">Конфигурация</p>
+                                        <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Управление объектами</h2>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/42">Выберите филиал и настройте только нужные ему возможности.</p>
+                                    </div>
+                                    <Field label="Текущий объект" htmlFor="manage-hotel-select">
+                                        <Select
+                                            id="manage-hotel-select"
+                                            className="h-10 bg-slate-50 font-medium dark:bg-white/[0.045]"
+                                            value={selectedHotelId}
+                                            onChange={(event) => setSelectedHotelId(event.target.value)}
+                                        >
+                                            <option value="">Выберите объект</option>
+                                            {hotels.map((hotel) => (
+                                                <option key={`manage-${hotel.id}`} value={hotel.id}>{hotel.name}</option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+                                    <Button type="button" className="h-10 w-full shrink-0 gap-2 lg:w-auto" onClick={() => setIsCreateHotelOpen(true)}>
+                                        <Plus className="h-4 w-4" aria-hidden="true" />
+                                        Добавить объект
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="grid items-start gap-3 lg:grid-cols-[14rem_minmax(0,1fr)]">
+                            <nav className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21] sm:grid-cols-6 lg:sticky lg:top-5 lg:grid-cols-1 lg:p-2" aria-label="Разделы настроек объекта">
+                                {manageSections.map((section) => {
+                                    const active = section.id === manageSection;
+                                    return (
+                                        <button
+                                            key={section.id}
+                                            type="button"
+                                            className={`flex min-w-0 flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors lg:flex-row lg:gap-3 lg:px-3 lg:text-left ${active ? "bg-blue-50 text-blue-700 dark:bg-blue-500/12 dark:text-blue-300" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-white/40 dark:hover:bg-white/[0.04] dark:hover:text-white/75"}`}
+                                            onClick={() => setManageSection(section.id)}
+                                            aria-current={active ? "page" : undefined}
+                                        >
+                                            <section.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                            <span className="min-w-0">
+                                                <span className="block w-full truncate text-xs font-medium">{section.label}</span>
+                                                <span className="mt-0.5 hidden truncate text-[10px] opacity-60 lg:block">{section.description}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </nav>
+                            <div className="min-w-0">
+
+                            {isCreateHotelOpen ? (
+                            <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/70 px-4 py-8 backdrop-blur-sm" onMouseDown={() => setIsCreateHotelOpen(false)}>
+                                <div className="relative w-full max-w-2xl" onMouseDown={(event) => event.stopPropagation()}>
+                                    <button type="button" className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-white/45 dark:hover:bg-white/[0.07] dark:hover:text-white" onClick={() => setIsCreateHotelOpen(false)} title="Закрыть" aria-label="Закрыть">
+                                        <X className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                            <SectionCard title="Новый объект" subtitle="Основные данные">
                                 <form action={handleCreateHotel} className="space-y-3">
                                     <Field label="Название" htmlFor="name">
                                         <Input
@@ -2815,15 +3174,23 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             </select>
                                         </Field>
                                     </div>
+                                    <div className="hidden">
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         <Field label="Начало расчетного месяца" htmlFor="financialCycleStartDay" hint="1-31">
                                             <Input id="financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" defaultValue="1" placeholder="1" />
                                         </Field>
                                     </div>
-                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                    <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
                                             <input type="checkbox" name="hasMealPlan" className="accent-emerald-500" />
                                             Показывать питание в заселениях
+                                        </label>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input type="checkbox" name="allowGroupStays" defaultChecked className="accent-emerald-500" />
+                                            Групповые заезды и бронирования
                                         </label>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -2837,12 +3204,25 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input type="checkbox" name="allowOnlinePayments" defaultChecked className="accent-emerald-500" />
+                                            Оплата на сайте и ожидаемые переводы
+                                        </label>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
                                             <input type="checkbox" name="guestQrEnabled" className="accent-emerald-500" />
                                             GuestPass / QR для гостей
                                         </label>
                                         <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
-                                            Показывать объект в Telegram WebApp и включить QR-заселение у менеджера.
+                                            Включить QR-профили и QR-заселение у менеджера.
                                         </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
+                                            <input type="checkbox" name="showInGuestListing" defaultChecked className="accent-emerald-500" />
+                                            Показывать объект в гостевом листинге
+                                        </label>
+                                    </div>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -2916,35 +3296,27 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input id="monthlyOtherCost" name="monthlyOtherCost" type="number" step="0.01" min="0" defaultValue="0" placeholder="0" />
                                         </Field>
                                     </div>
+                                    </div>
                                     <Button type="submit" className="w-full">
-                                        Сохранить
+                                        Создать объект
                                     </Button>
                                 </form>
                             </SectionCard>
+                                </div>
+                            </div>
+                            ) : null}
 
-                            <SectionCard title="Редактировать объект" subtitle="Update hotel">
+                            {manageSection !== "access" ? (
+                            <SectionCard title={activeManageSection.panelTitle} subtitle={activeManageSection.description} className="lg:p-5">
                                 {hotels.length === 0 ? (
                                     <p className="text-sm text-slate-500 dark:text-white/60">Пока нет отелей для изменения</p>
                                 ) : (
                                     <>
-                                        <Field label="Выберите объект" htmlFor="edit-hotel">
-                                            <select
-                                                id="edit-hotel"
-                                                className={selectClassName}
-                                                value={selectedHotelId}
-                                                onChange={(event) => setSelectedHotelId(event.target.value)}
-                                            >
-                                                <option value="" >
-                                                    Не выбрано
-                                                </option>
-                                                {hotels.map((hotel) => (
-                                                    <option key={hotel.id} value={hotel.id} >
-                                                        {hotel.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </Field>
-                                        <form className="mt-4 space-y-3" onSubmit={handleUpdateHotel}>
+                                        {selectedHotelId ? (
+                                        <form className="space-y-3" onSubmit={handleUpdateHotel}>
+                                            {manageSection === "general" ? (
+                                            <SettingsGroup>
+                                            <div className="grid gap-4 sm:grid-cols-2">
                                             <Field label="Название" htmlFor="edit-name">
                                                 <Input
                                                     id="edit-name"
@@ -2967,6 +3339,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                                 />
                                             </Field>
+                                            </div>
+                                            <div className="grid gap-4 sm:grid-cols-2">
                                             <Field label="Заметки" htmlFor="edit-notes" hint="необязательно">
                                                 <TextArea
                                                     id="edit-notes"
@@ -2992,6 +3366,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     Укажите Telegram-группу, куда отправлять задачи уборки.
                                                 </p>
                                             </Field>
+                                            </div>
                                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                                 <Field label="Часовой пояс" htmlFor="edit-timezone">
                                                     <select id="edit-timezone" name="timezone" value={editForm.timezone} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} className={selectClassName}>
@@ -3009,51 +3384,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     <Input id="edit-financialCycleStartDay" name="financialCycleStartDay" type="number" min="1" max="31" step="1" value={editForm.financialCycleStartDay} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
                                             </div>
-                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="hasMealPlan"
-                                                        checked={editForm.hasMealPlan}
-                                                        onChange={handleEditFieldChange}
-                                                        disabled={!selectedHotelId || isUpdatingHotel}
-                                                        className="accent-emerald-500"
-                                                    />
-                                                    Показывать питание в заселениях
-                                                </label>
-                                            </div>
-                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="allowPostpaidStays"
-                                                        checked={editForm.allowPostpaidStays}
-                                                        onChange={handleEditFieldChange}
-                                                        disabled={!selectedHotelId || isUpdatingHotel}
-                                                        className="accent-emerald-500"
-                                                    />
-                                                    Разрешить постоплату и уточнение тарифа
-                                                </label>
-                                                <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
-                                                    Менеджер сможет заселять группу без прихода в кассу, если оплата будет позже.
-                                                </p>
-                                            </div>
-                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="guestQrEnabled"
-                                                        checked={editForm.guestQrEnabled}
-                                                        onChange={handleEditFieldChange}
-                                                        disabled={!selectedHotelId || isUpdatingHotel}
-                                                        className="accent-emerald-500"
-                                                    />
-                                                    GuestPass / QR для гостей
-                                                </label>
-                                                <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
-                                                    Объект будет виден гостям в Telegram WebApp, а менеджеру откроется QR-заселение.
-                                                </p>
-                                            </div>
+                                            </SettingsGroup>
+                                            ) : null}
+                                            {manageSection === "features" ? (
+                                            <SettingsGroup>
+                                                <div className="rounded-xl border border-slate-200/80 px-4 dark:border-white/[0.06]">
+                                                    <ToggleRow title="Питание" description="Показывать варианты питания при заселении и бронировании." name="hasMealPlan" checked={editForm.hasMealPlan} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                    <ToggleRow title="Групповые заезды" description="Разрешить менеджерам создавать групповые бронирования и заселения." name="allowGroupStays" checked={editForm.allowGroupStays} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                    <ToggleRow title="Постоплата" description="Заселять без прихода в кассу, когда компания оплачивает проживание позже." name="allowPostpaidStays" checked={editForm.allowPostpaidStays} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                    <ToggleRow title="Онлайн-оплата" description="Учитывать оплату на сайте и ожидаемые банковские переводы." name="allowOnlinePayments" checked={editForm.allowOnlinePayments} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                    <ToggleRow title="GuestPass и QR" description="Включить QR-профили гостей и быстрое заселение по QR-коду." name="guestQrEnabled" checked={editForm.guestQrEnabled} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                    <ToggleRow title="Публичный листинг" description="Показывать этот объект на гостевой странице выбора филиала." name="showInGuestListing" checked={editForm.showInGuestListing} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                </div>
+                                            </SettingsGroup>
+                                            ) : null}
+                                            {manageSection === "listing" ? (
+                                            <SettingsGroup>
                                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                                                     <Field label="Описание для гостей" htmlFor="edit-guestDescription" hint="коротко">
@@ -3105,19 +3451,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     </Field>
                                                 </div>
                                             </div>
-                                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                                                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-white/75">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="usesExtranets"
-                                                        checked={editForm.usesExtranets}
-                                                        onChange={handleEditFieldChange}
-                                                        disabled={!selectedHotelId || isUpdatingHotel}
-                                                        className="accent-emerald-500"
-                                                    />
-                                                    Использовать экстранеты для этой точки
-                                                </label>
-                                                <div className="mt-3">
+                                            </SettingsGroup>
+                                            ) : null}
+                                            {manageSection === "integrations" ? (
+                                            <SettingsGroup>
+                                                <div className="rounded-xl border border-slate-200/80 px-4 dark:border-white/[0.06]">
+                                                    <ToggleRow title="Использовать экстранеты" description="Показывать источники внешних площадок в бронированиях и отчетах." name="usesExtranets" checked={editForm.usesExtranets} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
+                                                </div>
+                                                {editForm.usesExtranets ? <div className="max-w-xl rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-white/[0.06] dark:bg-white/[0.025]">
                                                     <Field label="Список экстранетов" htmlFor="edit-extranetNames" hint="По одному в строке">
                                                         <TextArea
                                                             id="edit-extranetNames"
@@ -3129,9 +3470,12 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                             disabled={!selectedHotelId || isUpdatingHotel}
                                                         />
                                                     </Field>
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                                                </div> : null}
+                                            </SettingsGroup>
+                                            ) : null}
+                                            {manageSection === "finance" ? (
+                                            <SettingsGroup>
+                                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                                 <Field label={`Зарплаты / мес (${editForm.currency || overviewDisplay.currency})`} htmlFor="edit-monthlyPayrollCost">
                                                     <Input id="edit-monthlyPayrollCost" name="monthlyPayrollCost" type="number" step="0.01" min="0" value={editForm.monthlyPayrollCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
@@ -3148,33 +3492,49 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     <Input id="edit-monthlyOtherCost" name="monthlyOtherCost" type="number" step="0.01" min="0" value={editForm.monthlyOtherCost} onChange={handleEditFieldChange} disabled={!selectedHotelId || isUpdatingHotel} />
                                                 </Field>
                                             </div>
-                                            <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-                                                <Button type="submit" className="w-full" disabled={!selectedHotelId || isUpdatingHotel}>
-                                                    {isUpdatingHotel ? "Сохраняем..." : "Обновить отель"}
-                                                </Button>
+                                            </SettingsGroup>
+                                            ) : null}
+                                            <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 pt-4 dark:border-white/[0.06]">
                                                 <Button
                                                     type="button"
+                                                    size="icon"
                                                     variant="danger"
                                                     disabled={!selectedHotelId || isDeletingHotel}
                                                     onClick={() => setConfirmDelete(true)}
-                                                    className="w-full sm:w-auto"
+                                                    className="h-10 w-10 shrink-0"
+                                                    title="Удалить объект"
+                                                    aria-label="Удалить объект"
                                                 >
-                                                    {isDeletingHotel ? "Удаляем..." : "Удалить"}
+                                                    {isDeletingHotel ? "…" : <Trash2 className="h-4 w-4" />}
+                                                </Button>
+                                                <Button type="submit" className="w-full sm:w-auto" disabled={!selectedHotelId || isUpdatingHotel}>
+                                                    {isUpdatingHotel ? "Сохраняем..." : "Сохранить изменения"}
                                                 </Button>
                                             </div>
                                         </form>
+                                        ) : (
+                                            <div className="mt-4 grid min-h-36 place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center dark:border-white/[0.07] dark:bg-white/[0.02]">
+                                                <div>
+                                                    <Building2 className="mx-auto h-5 w-5 text-slate-400 dark:text-white/30" aria-hidden="true" />
+                                                    <p className="mt-2 text-sm font-medium text-slate-700 dark:text-white/70">Выберите объект из списка</p>
+                                                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">После выбора откроются его настройки и доступные функции.</p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 )}
                             </SectionCard>
+                            ) : null}
 
                             {/* Observer management */}
-                            <SectionCard title="Наблюдатели" subtitle="Observer access" className="lg:col-span-2">
+                            {manageSection === "access" ? (
+                            <SectionCard title="Наблюдатели" subtitle="Доступ только к просмотру">
 
                                 {/* Existing observers list */}
                                 {observers && observers.length > 0 && (
-                                    <div className="mb-5 space-y-2">
+                                    <div className="mb-5 overflow-hidden rounded-xl border border-slate-200/80 dark:border-white/[0.06]">
                                         {observers.map((obs) => (
-                                            <div key={obs.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
+                                            <div key={obs.id} className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-3 last:border-b-0 dark:border-white/[0.055] sm:flex-row sm:items-center sm:justify-between">
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-medium text-light-text dark:text-white truncate">{obs.displayName}</p>
                                                     <p className="mt-1 text-xs text-slate-500 dark:text-white/40">Логин: {obs.loginName} · {obs.hotels.map((h) => h.name).join(', ') || '—'}</p>
@@ -3182,18 +3542,22 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button
                                                         type="button"
-                                                        className="rounded-xl px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-200 hover:text-slate-800 dark:text-white/60 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                                        className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-white/45 dark:hover:bg-white/[0.06] dark:hover:text-white"
                                                         onClick={() => { setResetPasswordId(obs.id); setResetPasswordValue(''); }}
+                                                        title="Сменить пароль"
+                                                        aria-label="Сменить пароль"
                                                     >
-                                                        Пароль
+                                                        <KeyRound className="h-4 w-4" aria-hidden="true" />
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        className="rounded-xl px-2.5 py-1.5 text-xs text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/12"
+                                                        className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/12"
                                                         disabled={deletingObserverId === obs.id}
                                                         onClick={() => handleDeleteObserver(obs.id)}
+                                                        title="Удалить наблюдателя"
+                                                        aria-label="Удалить наблюдателя"
                                                     >
-                                                        {deletingObserverId === obs.id ? '…' : 'Удалить'}
+                                                        {deletingObserverId === obs.id ? '…' : <Trash2 className="h-4 w-4" />}
                                                     </button>
                                                 </div>
                                             </div>
@@ -3222,11 +3586,14 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             </Button>
                                             <Button
                                                 type="button"
-                                                size="sm"
+                                                size="icon"
                                                 variant="ghost"
+                                                className="h-9 w-9"
                                                 onClick={() => setResetPasswordId(null)}
+                                                title="Отмена"
+                                                aria-label="Отмена"
                                             >
-                                                ✕
+                                                <X className="h-4 w-4" aria-hidden="true" />
                                             </Button>
                                         </div>
                                     </div>
@@ -3263,7 +3630,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             />
                                         </Field>
                                         <Field label="Объект">
-                                            <select
+                                            <Select
                                                 value={newObserver.hotelId}
                                                 onChange={(e) => setNewObserver((prev) => ({ ...prev, hotelId: e.target.value }))}
                                                 className={selectClassName}
@@ -3273,7 +3640,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 {hotels.map((hotel) => (
                                                     <option key={hotel.id} value={hotel.id}>{hotel.name}</option>
                                                 ))}
-                                            </select>
+                                            </Select>
                                         </Field>
                                     </div>
                                     <Button type="submit" className="w-full sm:w-auto" disabled={creatingObserver}>
@@ -3281,6 +3648,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     </Button>
                                 </form>
                             </SectionCard>
+                            ) : null}
+                            </div>
+                            </div>
                         </section>
                     )
                     }

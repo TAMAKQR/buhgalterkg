@@ -7,14 +7,19 @@
         "build": "prisma generate && next build",
         "render:build": "prisma migrate deploy && prisma generate && next build",
         "start": "next start",
-        "lint": "next lint",
-        "prisma:generate": "prisma generate",
-        "prisma:push": "prisma db push",
-        "prisma:migrate": "prisma migrate dev",
-        "prisma:studio": "prisma studio",
-        "prisma:seed": "prisma db seed"
+        "lint": "eslint . --max-warnings 0",
+        "typecheck": "tsc --noEmit",
+        "check": "npm run typecheck && npm run lint && npm run prisma:validate",
+        "prisma:generate": "node scripts/run_prisma_local.mjs generate",
+        "prisma:validate": "node scripts/run_prisma_local.mjs validate",
+        "prisma:push": "node scripts/run_prisma_local.mjs db push",
+        "prisma:migrate": "node scripts/run_prisma_local.mjs migrate dev",
+        "prisma:deploy:local": "node scripts/run_prisma_local.mjs migrate deploy",
+        "prisma:studio": "node scripts/run_prisma_local.mjs studio",
+        "prisma:seed": "node scripts/run_prisma_local.mjs db seed"
     },
     "dependencies": {
+        "@ducanh2912/next-pwa": "^10.2.9",
         "@hookform/resolvers": "^3.5.0",
         "@prisma/client": "^5.16.1",
         "class-variance-authority": "^0.7.0",
@@ -22,11 +27,10 @@
         "date-fns": "^3.6.0",
         "jsqr": "^1.4.0",
         "lucide-react": "^0.462.0",
-        "next": "^14.2.5",
-        "next-pwa": "^5.6.0",
+        "next": "15.5.20",
         "qrcode": "^1.5.4",
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
         "react-hook-form": "^7.53.0",
         "swr": "^2.2.5",
         "tailwind-merge": "^2.5.2",
@@ -35,17 +39,24 @@
     "devDependencies": {
         "@types/node": "^20.14.15",
         "@types/qrcode": "^1.5.6",
-        "@types/react": "^18.3.5",
-        "@types/react-dom": "^18.3.0",
+        "@types/react": "19.2.17",
+        "@types/react-dom": "19.2.3",
         "autoprefixer": "^10.4.20",
         "eslint": "^8.57.0",
-        "eslint-config-next": "^14.2.5",
-        "postcss": "^8.4.41",
+        "eslint-config-next": "15.5.20",
+        "postcss": "^8.5.19",
         "prisma": "^5.16.1",
         "tailwindcss": "^3.4.10",
         "typescript": "^5.6.2"
     },
     "prisma": {
         "seed": "node prisma/seed.mjs"
+    },
+    "engines": {
+        "node": ">=20 <23"
+    },
+    "overrides": {
+        "serialize-javascript": "^7.0.5",
+        "postcss": "^8.5.19"
     }
 }

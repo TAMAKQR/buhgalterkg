@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { deriveTelegramWebhookSecret, validateTelegramWebhookSecret } from '@/lib/server/telegram-webhook-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,7 @@ const sendGuestTelegramRequest = async (method: string, body: Record<string, unk
 
     const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
@@ -52,6 +54,14 @@ const getDisplayName = (from?: GuestTelegramUser) => [from?.first_name, from?.la
 
 export async function POST(request: Request) {
     try {
+        const authFailure = validateTelegramWebhookSecret(request, [
+            process.env.GUEST_TELEGRAM_WEBHOOK_SECRET,
+            deriveTelegramWebhookSecret(process.env.GUEST_TELEGRAM_BOT_TOKEN),
+        ]);
+        if (authFailure) {
+            return NextResponse.json({ ok: false, error: authFailure.message }, { status: authFailure.status });
+        }
+
         const update = (await request.json()) as GuestTelegramUpdate;
         const message = update.message;
 

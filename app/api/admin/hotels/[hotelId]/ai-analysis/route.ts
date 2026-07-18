@@ -14,14 +14,15 @@ const requestSchema = z.object({
     endDate: z.string().optional().nullable(),
 });
 
-export async function POST(request: NextRequest, { params }: { params: { hotelId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {
     try {
+        const { hotelId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
         const payload = requestSchema.parse(await request.json().catch(() => ({})));
 
-        const analysis = await buildBusinessAnalysis(params.hotelId, session, country, payload);
+        const analysis = await buildBusinessAnalysis(hotelId, session, country, payload);
         if (!analysis) {
             return new NextResponse('Hotel not found', { status: 404 });
         }

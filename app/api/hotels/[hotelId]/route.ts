@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ExpenseCategory, HotelAssignment, LedgerEntryType, Prisma, Room, RoomStay, RoomStatus, Shift, ShiftStatus, StayStatus, User } from '@prisma/client';
+import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -10,17 +10,90 @@ import { getCountryFromRequest } from '@/lib/server/request-country';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { sanitizeExtranetNames } from '@/lib/stays';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { hasConfiguredPin } from '@/lib/pin';
+import { httpUrlSchema } from '@/lib/http-url';
 
 export const dynamic = 'force-dynamic';
 
-const roomStayDetailInclude = {
+const SHIFT_HISTORY_LIMIT = 180;
+const DEFAULT_BOARD_PAST_DAYS = 1;
+const DEFAULT_BOARD_FUTURE_DAYS = 30;
+const MAX_BOARD_RANGE_DAYS = 62;
+const DEFAULT_DETAIL_PAGE_SIZE = 50;
+const MAX_DETAIL_PAGE_SIZE = 100;
+const PREPAID_BOOKING_PREVIEW_LIMIT = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const COLLECTION_SEARCH_TERMS = ['инкассац', 'инкасац', 'inkass', 'incass', 'collection'] as const;
+
+const collectionCandidateFilters: Prisma.CashEntryWhereInput[] = COLLECTION_SEARCH_TERMS.flatMap((term) => [
+    { note: { contains: term, mode: 'insensitive' } },
+    { expenseCategory: { name: { contains: term, mode: 'insensitive' } } }
+]);
+
+const stayShiftSelect = {
+    id: true,
+    number: true,
+    status: true,
+    openedAt: true,
+    closedAt: true,
+    manager: {
+        select: {
+            displayName: true
+        }
+    }
+} as const;
+
+const roomStayScalarSelect = {
+    id: true,
+    roomId: true,
+    shiftId: true,
+    guestName: true,
+    guestPhone: true,
+    companyName: true,
+    bookingSource: true,
+    bookingNumber: true,
+    scheduledCheckIn: true,
+    scheduledCheckOut: true,
+    actualCheckIn: true,
+    actualCheckOut: true,
+    status: true,
+    notes: true,
+    amountPaid: true,
+    totalAmount: true,
+    paymentMethod: true,
+    cashPaid: true,
+    cardPaid: true,
+    onlinePaid: true,
+    tariffPending: true,
+    mealPlan: true,
+    cancellationPaymentAction: true,
+    cancellationAmount: true,
+    cancelledAt: true
+} as const;
+
+const roomStaySummarySelect = {
+    ...roomStayScalarSelect,
+    shift: {
+        select: stayShiftSelect
+    }
+} as const;
+
+const roomStayWithTransfersSelect = {
+    ...roomStaySummarySelect,
     transfers: {
         orderBy: { createdAt: 'asc' },
-        include: {
+        select: {
+            id: true,
+            createdAt: true,
+            note: true,
             fromRoom: { select: { label: true } },
             toRoom: { select: { label: true } },
         }
-    },
+    }
+} as const;
+
+const roomStayDetailSelect = {
+    ...roomStayWithTransfersSelect,
     ledgerEntries: {
         orderBy: { recordedAt: 'asc' },
         select: {
@@ -36,122 +109,193 @@ const roomStayDetailInclude = {
             shift: { select: { number: true } },
             manager: { select: { displayName: true } }
         }
+    }
+} as const;
+
+const pendingStaySelect = {
+    ...roomStaySummarySelect,
+    createdAt: true,
+    room: { select: { id: true, label: true, floor: true } },
+} as const;
+
+const hotelDetailSelect = {
+    id: true,
+    name: true,
+    address: true,
+    timezone: true,
+    currency: true,
+    financialCycleStartDay: true,
+    managerSharePct: true,
+    cleaningChatId: true,
+    notes: true,
+    usesExtranets: true,
+    extranetNames: true,
+    hasMealPlan: true,
+    allowGroupStays: true,
+    allowPostpaidStays: true,
+    allowOnlinePayments: true,
+    guestQrEnabled: true,
+    showInGuestListing: true,
+    guestDescription: true,
+    guestAmenities: true,
+    guestPhotoUrls: true,
+    guestMapUrl: true,
+    expenseCategories: {
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true }
     },
-    shift: {
+    rooms: {
+        orderBy: { label: 'asc' },
         select: {
             id: true,
-            number: true,
+            label: true,
+            floor: true,
+            status: true,
+            isActive: true,
+            notes: true,
+            currentStay: {
+                select: roomStaySummarySelect
+            }
+        }
+    },
+    shifts: {
+        orderBy: { openedAt: 'desc' },
+        take: SHIFT_HISTORY_LIMIT,
+        select: {
+            id: true,
+            managerId: true,
             status: true,
             openedAt: true,
             closedAt: true,
-            manager: {
+            openingCash: true,
+            closingCash: true,
+            handoverCash: true,
+            openingNote: true,
+            closingNote: true,
+            handoverNote: true,
+            number: true,
+            manager: { select: { displayName: true } }
+        }
+    },
+    assignments: {
+        where: { isActive: true },
+        select: {
+            id: true,
+            userId: true,
+            pinCode: true,
+            pinHash: true,
+            shiftPayAmount: true,
+            revenueSharePct: true,
+            canEditBookings: true,
+            canEditStayPayments: true,
+            canCancelBookings: true,
+            user: {
                 select: {
-                    displayName: true
+                    id: true,
+                    displayName: true,
+                    telegramId: true,
+                    loginName: true,
+                    username: true
                 }
             }
         }
     }
 } as const;
 
-const hotelDetailInclude = {
-    expenseCategories: {
-        orderBy: { name: 'asc' }
-    },
-    rooms: {
-        orderBy: { label: 'asc' },
-        include: {
-            currentStay: {
-                include: roomStayDetailInclude
-            },
-            stays: {
-                orderBy: { scheduledCheckIn: 'desc' },
-                take: 20,
-                include: roomStayDetailInclude
-            } as never
+type HotelDetailRecord = Prisma.HotelGetPayload<{ select: typeof hotelDetailSelect }>;
+type StaySummaryRecord = Prisma.RoomStayGetPayload<{ select: typeof roomStaySummarySelect }>;
+type StayWithTransfersRecord = Prisma.RoomStayGetPayload<{ select: typeof roomStayWithTransfersSelect }>;
+type StayDetailRecord = Prisma.RoomStayGetPayload<{ select: typeof roomStayDetailSelect }>;
+type PendingStayRecord = Prisma.RoomStayGetPayload<{ select: typeof pendingStaySelect }>;
+
+const serializeStay = (stay: StaySummaryRecord | StayWithTransfersRecord | StayDetailRecord) => ({
+    id: stay.id,
+    guestName: stay.guestName,
+    guestPhone: stay.guestPhone,
+    companyName: stay.companyName,
+    status: stay.status,
+    scheduledCheckIn: stay.scheduledCheckIn,
+    scheduledCheckOut: stay.scheduledCheckOut,
+    actualCheckIn: stay.actualCheckIn,
+    actualCheckOut: stay.actualCheckOut,
+    amountPaid: stay.amountPaid,
+    totalAmount: stay.totalAmount,
+    paymentMethod: stay.paymentMethod,
+    cashPaid: stay.cashPaid,
+    cardPaid: stay.cardPaid,
+    onlinePaid: stay.onlinePaid,
+    tariffPending: stay.tariffPending,
+    bookingSource: stay.bookingSource,
+    bookingNumber: stay.bookingNumber,
+    cancellationPaymentAction: stay.cancellationPaymentAction,
+    cancellationAmount: stay.cancellationAmount,
+    cancelledAt: stay.cancelledAt,
+    mealPlan: stay.mealPlan,
+    shiftId: stay.shift?.id ?? null,
+    shiftNumber: stay.shift?.number ?? null,
+    shiftStatus: stay.shift?.status ?? null,
+    shiftOpenedAt: stay.shift?.openedAt ?? null,
+    shiftClosedAt: stay.shift?.closedAt ?? null,
+    shiftManagerName: stay.shift?.manager.displayName ?? null,
+    ...('transfers' in stay
+        ? {
+            transfers: stay.transfers.map((transfer) => ({
+                id: transfer.id,
+                createdAt: transfer.createdAt,
+                note: transfer.note,
+                fromRoomLabel: transfer.fromRoom.label,
+                toRoomLabel: transfer.toRoom.label,
+            })),
         }
-    },
-    shifts: {
-        orderBy: { openedAt: 'desc' },
-        include: { manager: true }
-    },
-    assignments: {
-        where: { isActive: true },
-        include: { user: true }
+        : {}),
+    ...('ledgerEntries' in stay
+        ? {
+            ledgerEntries: stay.ledgerEntries.map((entry) => ({
+                id: entry.id,
+                entryType: entry.entryType,
+                method: entry.method,
+                amount: entry.amount,
+                originalAmount: entry.originalAmount,
+                originalCurrency: entry.originalCurrency,
+                exchangeRate: entry.exchangeRate,
+                note: entry.note,
+                recordedAt: entry.recordedAt,
+                shiftNumber: entry.shift?.number ?? null,
+                managerName: entry.manager?.displayName ?? null,
+            })),
+        }
+        : {}),
+    notes: stay.notes,
+});
+
+const serializePendingStay = (stay: PendingStayRecord) => ({
+    ...serializeStay(stay),
+    roomId: stay.roomId,
+    roomLabel: stay.room.label,
+    roomFloor: stay.room.floor,
+});
+
+const detailQuerySchema = z.object({
+    view: z.enum(['core', 'stay', 'history', 'pending']).default('core'),
+    stayId: z.string().cuid().optional(),
+    kind: z.enum(['online', 'postpaid']).optional(),
+    cursor: z.string().cuid().optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_DETAIL_PAGE_SIZE).default(DEFAULT_DETAIL_PAGE_SIZE),
+    search: z.string().trim().max(100).optional(),
+    status: z.nativeEnum(StayStatus).optional(),
+    boardStartAt: z.string().datetime().optional(),
+    boardEndAt: z.string().datetime().optional(),
+}).superRefine((value, context) => {
+    if (value.view === 'stay' && !value.stayId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['stayId'], message: 'stayId is required' });
     }
-} as const;
-
-type HotelDetailRecord = {
-    id: string;
-    name: string;
-    address: string;
-    timezone: string;
-    currency: string;
-    financialCycleStartDay: number;
-    managerSharePct: number | null;
-    cleaningChatId: string | null;
-    notes: string | null;
-    usesExtranets: boolean;
-    extranetNames: string[];
-    hasMealPlan: boolean;
-    allowPostpaidStays: boolean;
-    guestQrEnabled: boolean;
-    guestDescription: string | null;
-    guestAmenities: string[];
-    guestPhotoUrls: string[];
-    guestMapUrl: string | null;
-    expenseCategories: ExpenseCategory[];
-    assignments: Array<HotelAssignment & { user: User }>;
-    shifts: Array<Shift & { manager: User }>;
-    rooms: Array<
-        Room & {
-            currentStay: HotelStayRecord | null;
-            stays: Array<
-                RoomStay & {
-                    transfers: Array<{
-                        id: string;
-                        createdAt: Date;
-                        note: string | null;
-                        fromRoom: { label: string };
-                        toRoom: { label: string };
-                    }>;
-                }
-            >;
-        }
-    >;
-};
-
-type HotelStayRecord = RoomStay & {
-    onlinePaid: number;
-    bookingSource: string | null;
-    transfers: Array<{
-        id: string;
-        createdAt: Date;
-        note: string | null;
-        fromRoom: { label: string };
-        toRoom: { label: string };
-    }>;
-    ledgerEntries: Array<{
-        id: string;
-        entryType: LedgerEntryType;
-        method: 'CASH' | 'CARD';
-        amount: number;
-        originalAmount: number | null;
-        originalCurrency: string;
-        exchangeRate: number | null;
-        note: string | null;
-        recordedAt: Date;
-        shift: { number: number } | null;
-        manager: { displayName: string } | null;
-    }>;
-    shift: {
-        id: string;
-        number: number;
-        status: ShiftStatus;
-        openedAt: Date;
-        closedAt: Date | null;
-        manager: { displayName: string };
-    } | null;
-};
+    if (value.view === 'pending' && !value.kind) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['kind'], message: 'kind is required' });
+    }
+    if (Boolean(value.boardStartAt) !== Boolean(value.boardEndAt)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['boardStartAt'], message: 'Both board dates are required' });
+    }
+});
 
 const cleaningChatIdSchema = z
     .string()
@@ -192,12 +336,15 @@ const updateHotelSchema = z
         usesExtranets: z.boolean().optional(),
         extranetNames: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
         hasMealPlan: z.boolean().optional(),
+        allowGroupStays: z.boolean().optional(),
         allowPostpaidStays: z.boolean().optional(),
+        allowOnlinePayments: z.boolean().optional(),
         guestQrEnabled: z.boolean().optional(),
+        showInGuestListing: z.boolean().optional(),
         guestDescription: z.string().trim().max(800).optional().nullable(),
         guestAmenities: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
-        guestPhotoUrls: z.array(z.string().trim().url().max(500)).max(12).optional(),
-        guestMapUrl: z.string().trim().url().max(500).optional().nullable(),
+        guestPhotoUrls: z.array(httpUrlSchema).max(12).optional(),
+        guestMapUrl: httpUrlSchema.optional().nullable(),
         financialCycleStartDay: z.number().int().min(1).max(31).optional(),
         managerSharePct: z.number().int().min(0).max(100).optional(),
         monthlyPayrollCost: z.number().int().min(0).optional(),
@@ -212,27 +359,194 @@ const updateHotelSchema = z
         message: 'Не переданы поля для обновления'
     });
 
-export async function GET(_request: NextRequest, { params }: { params: { hotelId: string } }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {
     try {
+        const { hotelId } = await params;
         const session = await getSessionUser(_request);
         assertAdmin(session);
         const country = getCountryFromRequest(_request);
+        const parsedQuery = detailQuerySchema.safeParse(Object.fromEntries(_request.nextUrl.searchParams.entries()));
 
-        const [hotel, ledgerGroups, collectionEntries, ledgerEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineStays, postpaidCandidateStays] = await prisma.$transaction([
-            prisma.hotel.findFirst({
-                where: { id: params.hotelId, country },
-                include: hotelDetailInclude
+        if (!parsedQuery.success) {
+            return new NextResponse(parsedQuery.error.issues[0]?.message ?? 'Invalid query', { status: 400 });
+        }
+
+        const query = parsedQuery.data;
+
+        if (query.view === 'stay') {
+            const stay = await prisma.roomStay.findFirst({
+                where: {
+                    id: query.stayId,
+                    hotelId,
+                    hotel: { country },
+                },
+                select: roomStayDetailSelect,
+            });
+
+            if (!stay) {
+                return new NextResponse('Stay not found', { status: 404 });
+            }
+
+            return NextResponse.json({ stay: serializeStay(stay) });
+        }
+
+        if (query.view === 'history') {
+            const historyStatuses = query.status
+                ? [query.status]
+                : [StayStatus.SCHEDULED, StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT, StayStatus.CANCELLED];
+            const historyWhere: Prisma.RoomStayWhereInput = {
+                hotelId,
+                hotel: { country },
+                status: { in: historyStatuses },
+                ...(query.search
+                    ? {
+                        OR: [
+                            { guestName: { contains: query.search, mode: 'insensitive' } },
+                            { guestPhone: { contains: query.search, mode: 'insensitive' } },
+                            { companyName: { contains: query.search, mode: 'insensitive' } },
+                            { bookingSource: { contains: query.search, mode: 'insensitive' } },
+                            { bookingNumber: { contains: query.search, mode: 'insensitive' } },
+                            { notes: { contains: query.search, mode: 'insensitive' } },
+                            { room: { label: { contains: query.search, mode: 'insensitive' } } },
+                        ],
+                    }
+                    : {}),
+            };
+            const [historyRows, total] = await prisma.$transaction([
+                prisma.roomStay.findMany({
+                    where: historyWhere,
+                    orderBy: [{ scheduledCheckIn: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+                    take: query.limit + 1,
+                    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+                    select: roomStayWithTransfersSelect,
+                }),
+                prisma.roomStay.count({ where: historyWhere }),
+            ]);
+            const hasMore = historyRows.length > query.limit;
+            const pageRows = historyRows.slice(0, query.limit);
+
+            return NextResponse.json({
+                stays: pageRows.map((stay) => ({
+                    roomId: stay.roomId,
+                    stay: serializeStay(stay),
+                })),
+                pagination: {
+                    total,
+                    limit: query.limit,
+                    hasMore,
+                    nextCursor: hasMore ? pageRows[pageRows.length - 1]?.id ?? null : null,
+                },
+            });
+        }
+
+        if (query.view === 'pending') {
+            const pendingWhere: Prisma.RoomStayWhereInput = query.kind === 'online'
+                ? {
+                    hotelId,
+                    hotel: { country },
+                    onlinePaid: { gt: 0 },
+                }
+                : {
+                    hotelId,
+                    hotel: { country },
+                    status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] },
+                    OR: [
+                        { tariffPending: true },
+                        {
+                            AND: [
+                                { totalAmount: { gt: 0 } },
+                                {
+                                    OR: [
+                                        { amountPaid: null },
+                                        { amountPaid: { lt: prisma.roomStay.fields.totalAmount } },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                };
+            const [pendingRows, total] = await prisma.$transaction([
+                prisma.roomStay.findMany({
+                    where: pendingWhere,
+                    orderBy: [{ scheduledCheckIn: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+                    take: query.limit + 1,
+                    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+                    select: pendingStaySelect,
+                }),
+                prisma.roomStay.count({ where: pendingWhere }),
+            ]);
+            const hasMore = pendingRows.length > query.limit;
+            const pageRows = pendingRows.slice(0, query.limit);
+
+            return NextResponse.json({
+                stays: pageRows.map((stay) => ({
+                    ...serializePendingStay(stay),
+                    ...(query.kind === 'postpaid'
+                        ? { pendingPostpaidAmount: Math.max((stay.totalAmount ?? 0) - (stay.amountPaid ?? 0), 0) }
+                        : {}),
+                })),
+                pagination: {
+                    total,
+                    limit: query.limit,
+                    hasMore,
+                    nextCursor: hasMore ? pageRows[pageRows.length - 1]?.id ?? null : null,
+                },
+            });
+        }
+
+        const hotel = await prisma.hotel.findFirst({
+            where: { id: hotelId, country },
+            select: hotelDetailSelect
+        });
+
+        if (!hotel) {
+            return new NextResponse('Hotel not found', { status: 404 });
+        }
+
+        const hotelRecord: HotelDetailRecord = hotel;
+        const visibleShiftIds = hotelRecord.shifts.map((shift) => shift.id);
+        const now = new Date();
+        const boardStart = query.boardStartAt
+            ? new Date(query.boardStartAt)
+            : new Date(now.getTime() - DEFAULT_BOARD_PAST_DAYS * DAY_MS);
+        const boardEnd = query.boardEndAt
+            ? new Date(query.boardEndAt)
+            : new Date(now.getTime() + DEFAULT_BOARD_FUTURE_DAYS * DAY_MS);
+
+        if (boardStart.getTime() >= boardEnd.getTime()) {
+            return new NextResponse('Invalid board range', { status: 400 });
+        }
+        if (boardEnd.getTime() - boardStart.getTime() > MAX_BOARD_RANGE_DAYS * DAY_MS) {
+            return new NextResponse(`Board range must not exceed ${MAX_BOARD_RANGE_DAYS} days`, { status: 400 });
+        }
+
+        const [operationalRoomStays, ledgerGroups, collectionEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineGroups, postpaidCandidateStays, prepaidBookingAggregate, prepaidBookingPreview] = await prisma.$transaction([
+            prisma.roomStay.findMany({
+                where: {
+                    hotelId,
+                    OR: [
+                        { status: StayStatus.CHECKED_IN },
+                        {
+                            status: StayStatus.SCHEDULED,
+                            scheduledCheckIn: { lt: boardEnd },
+                            scheduledCheckOut: { gt: boardStart },
+                        },
+                    ],
+                },
+                orderBy: [{ scheduledCheckIn: 'asc' }, { createdAt: 'asc' }],
+                select: roomStaySummarySelect,
             }),
             prisma.cashEntry.groupBy({
                 by: ['entryType'],
                 orderBy: { entryType: 'asc' },
-                where: { hotelId: params.hotelId },
+                where: { hotelId },
                 _sum: { amount: true }
             }),
             prisma.cashEntry.findMany({
                 where: {
-                    hotelId: params.hotelId,
+                    hotelId,
                     entryType: LedgerEntryType.CASH_OUT,
+                    OR: collectionCandidateFilters
                 },
                 select: {
                     amount: true,
@@ -242,100 +556,92 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                     expenseCategory: { select: { name: true } },
                 },
             }),
-            prisma.cashEntry.findMany({
-                where: { hotelId: params.hotelId },
-                orderBy: { recordedAt: 'desc' },
-                include: {
-                    expenseCategory: {
-                        select: {
-                            id: true,
-                            name: true
-                        }
-                    },
-                    manager: true,
-                    shift: { select: { id: true, number: true } }
-                }
-            }),
             prisma.cashEntry.groupBy({
                 by: ['shiftId', 'entryType'],
                 orderBy: [
                     { shiftId: 'asc' },
                     { entryType: 'asc' }
                 ],
-                where: { hotelId: params.hotelId, shiftId: { not: null } },
+                where: { hotelId, shiftId: { in: visibleShiftIds } },
                 _sum: { amount: true }
             }),
             prisma.bonusTier.findMany({
-                where: { hotelId: params.hotelId },
-                orderBy: { threshold: 'asc' }
+                where: { hotelId },
+                orderBy: { threshold: 'asc' },
+                select: { id: true, threshold: true, bonus: true, bonusPct: true }
             }),
             prisma.roomStay.groupBy({
                 by: ['shiftId'],
                 orderBy: { shiftId: 'asc' },
                 where: {
-                    hotelId: params.hotelId,
-                    shiftId: { not: null },
+                    hotelId,
+                    shiftId: { in: visibleShiftIds },
                     status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] }
                 },
                 _sum: { amountPaid: true, onlinePaid: true }
             }),
-            prisma.roomStay.findMany({
+            prisma.roomStay.groupBy({
+                by: ['shiftId'],
+                orderBy: { shiftId: 'asc' },
                 where: {
-                    hotelId: params.hotelId,
+                    hotelId,
                     onlinePaid: { gt: 0 }
                 },
-                orderBy: [
-                    { scheduledCheckIn: 'desc' },
-                    { createdAt: 'desc' }
-                ],
-                include: {
-                    room: { select: { id: true, label: true, floor: true } },
-                    shift: {
-                        select: {
-                            id: true,
-                            number: true,
-                            status: true,
-                            openedAt: true,
-                            closedAt: true,
-                            manager: { select: { displayName: true } }
-                        }
-                    }
-                }
+                _sum: { onlinePaid: true },
             }),
             prisma.roomStay.findMany({
                 where: {
-                    hotelId: params.hotelId,
+                    hotelId,
                     status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] },
                     OR: [
                         { tariffPending: true },
-                        { totalAmount: { gt: 0 } }
+                        {
+                            AND: [
+                                { totalAmount: { gt: 0 } },
+                                {
+                                    OR: [
+                                        { amountPaid: null },
+                                        { amountPaid: { lt: prisma.roomStay.fields.totalAmount } }
+                                    ]
+                                }
+                            ]
+                        }
                     ]
                 },
-                orderBy: [
-                    { scheduledCheckIn: 'desc' },
-                    { createdAt: 'desc' }
-                ],
-                include: {
-                    room: { select: { id: true, label: true, floor: true } },
-                    shift: {
-                        select: {
-                            id: true,
-                            number: true,
-                            status: true,
-                            openedAt: true,
-                            closedAt: true,
-                            manager: { select: { displayName: true } }
-                        }
-                    }
-                }
-            })
+                select: {
+                    shiftId: true,
+                    totalAmount: true,
+                    amountPaid: true,
+                    tariffPending: true,
+                },
+            }),
+            prisma.roomStay.aggregate({
+                where: {
+                    hotelId,
+                    status: StayStatus.SCHEDULED,
+                    amountPaid: { gt: 0 },
+                },
+                _sum: { amountPaid: true },
+                _count: { _all: true },
+            }),
+            prisma.roomStay.findMany({
+                where: {
+                    hotelId,
+                    status: StayStatus.SCHEDULED,
+                    amountPaid: { gt: 0 },
+                },
+                orderBy: [{ scheduledCheckIn: 'asc' }, { createdAt: 'asc' }],
+                take: PREPAID_BOOKING_PREVIEW_LIMIT,
+                select: pendingStaySelect,
+            }),
         ]);
 
-        if (!hotel) {
-            return new NextResponse('Hotel not found', { status: 404 });
+        const roomStays = new Map<string, StaySummaryRecord[]>();
+        for (const stay of operationalRoomStays) {
+            const stays = roomStays.get(stay.roomId) ?? [];
+            stays.push(stay);
+            roomStays.set(stay.roomId, stays);
         }
-
-        const hotelRecord = hotel as unknown as HotelDetailRecord;
 
         const ledgerTotals: Record<LedgerEntryType, number> = {
             [LedgerEntryType.CASH_IN]: 0,
@@ -418,7 +724,10 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             return calculateBonusFromTiers(revenue, bonusTiers);
         };
 
-        const pendingOnlineTotal = pendingOnlineStays.reduce((total, stay) => total + stay.onlinePaid, 0);
+        const pendingOnlineTotal = pendingOnlineGroups.reduce(
+            (total, group) => total + (group._sum?.onlinePaid ?? 0),
+            0
+        );
         const pendingPostpaidStays = postpaidCandidateStays
             .map((stay) => ({
                 ...stay,
@@ -482,8 +791,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             usesExtranets: hotelRecord.usesExtranets,
             extranetNames: hotelRecord.extranetNames,
             hasMealPlan: hotelRecord.hasMealPlan,
+            allowGroupStays: hotelRecord.allowGroupStays,
             allowPostpaidStays: hotelRecord.allowPostpaidStays,
+            allowOnlinePayments: hotelRecord.allowOnlinePayments,
             guestQrEnabled: hotelRecord.guestQrEnabled,
+            showInGuestListing: hotelRecord.showInGuestListing,
             guestDescription: hotelRecord.guestDescription,
             guestAmenities: hotelRecord.guestAmenities,
             guestPhotoUrls: hotelRecord.guestPhotoUrls,
@@ -495,59 +807,15 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
             roomCount: hotelRecord.rooms.length,
             occupiedRooms: hotelRecord.rooms.filter((room) => room.status === RoomStatus.OCCUPIED).length,
             rooms: hotelRecord.rooms.map((room) => {
-                const serializeStay = (stay: HotelStayRecord) => {
-                    const stayRecord = stay as HotelStayRecord;
-                    return {
-                        id: stay.id,
-                        guestName: stay.guestName,
-                        guestPhone: stay.guestPhone,
-                        companyName: stay.companyName,
-                        status: stay.status,
-                        scheduledCheckIn: stay.scheduledCheckIn,
-                        scheduledCheckOut: stay.scheduledCheckOut,
-                        actualCheckIn: stay.actualCheckIn,
-                        actualCheckOut: stay.actualCheckOut,
-                        amountPaid: stay.amountPaid,
-                        totalAmount: stay.totalAmount,
-                        paymentMethod: stay.paymentMethod,
-                        cashPaid: stay.cashPaid,
-                        cardPaid: stay.cardPaid,
-                        onlinePaid: stayRecord.onlinePaid,
-                        tariffPending: stayRecord.tariffPending,
-                        bookingSource: stayRecord.bookingSource,
-                        bookingNumber: stayRecord.bookingNumber,
-                        mealPlan: stayRecord.mealPlan,
-                        shiftId: stayRecord.shift?.id ?? null,
-                        shiftNumber: stayRecord.shift?.number ?? null,
-                        shiftStatus: stayRecord.shift?.status ?? null,
-                        shiftOpenedAt: stayRecord.shift?.openedAt ?? null,
-                        shiftClosedAt: stayRecord.shift?.closedAt ?? null,
-                        shiftManagerName: stayRecord.shift?.manager.displayName ?? null,
-                        transfers: stayRecord.transfers.map((transfer) => ({
-                            id: transfer.id,
-                            createdAt: transfer.createdAt,
-                            note: transfer.note,
-                            fromRoomLabel: transfer.fromRoom.label,
-                            toRoomLabel: transfer.toRoom.label,
-                        })),
-                        ledgerEntries: stayRecord.ledgerEntries.map((entry) => ({
-                            id: entry.id,
-                            entryType: entry.entryType,
-                            method: entry.method,
-                            amount: entry.amount,
-                            originalAmount: entry.originalAmount,
-                            originalCurrency: entry.originalCurrency,
-                            exchangeRate: entry.exchangeRate,
-                            note: entry.note,
-                            recordedAt: entry.recordedAt,
-                            shiftNumber: entry.shift?.number ?? null,
-                            managerName: entry.manager?.displayName ?? null
-                        })),
-                        notes: stay.notes
-                    };
-                };
-                const stayHistory = room.stays.map((stay) => serializeStay(stay as HotelStayRecord));
                 const currentStay = room.currentStay ? serializeStay(room.currentStay) : null;
+                const selectedStays = roomStays.get(room.id) ?? [];
+                const uniqueStays = new Map<string, StaySummaryRecord>();
+                for (const stay of [...(room.currentStay ? [room.currentStay] : []), ...selectedStays]) {
+                    if (!uniqueStays.has(stay.id)) {
+                        uniqueStays.set(stay.id, stay);
+                    }
+                }
+                const stayHistory = Array.from(uniqueStays.values()).map((stay) => serializeStay(stay));
                 const checkedInStay = stayHistory.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? null;
                 const scheduledStay = stayHistory.find((stay) => stay.status === StayStatus.SCHEDULED) ?? null;
                 const historyStay = stayHistory.find((stay) => stay.status !== StayStatus.CHECKED_IN) ?? stayHistory[0] ?? null;
@@ -571,10 +839,12 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 telegramId: assignment.user.telegramId,
                 loginName: assignment.user.loginName,
                 username: assignment.user.username,
-                pinCode: assignment.pinCode,
+                hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct,
-                canEditStayPayments: assignment.canEditStayPayments
+                canEditBookings: assignment.canEditBookings,
+                canEditStayPayments: assignment.canEditStayPayments,
+                canCancelBookings: assignment.canCancelBookings
             })),
             activeShift: activeShiftRecord
                 ? {
@@ -600,89 +870,11 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
                 }
                 : null,
             shiftHistory,
-            pendingOnlineStays: pendingOnlineStays.map((stay) => ({
-                id: stay.id,
-                roomId: stay.roomId,
-                roomLabel: stay.room.label,
-                roomFloor: stay.room.floor,
-                guestName: stay.guestName,
-                guestPhone: stay.guestPhone,
-                companyName: stay.companyName,
-                status: stay.status,
-                scheduledCheckIn: stay.scheduledCheckIn,
-                scheduledCheckOut: stay.scheduledCheckOut,
-                actualCheckIn: stay.actualCheckIn,
-                actualCheckOut: stay.actualCheckOut,
-                amountPaid: stay.amountPaid,
-                totalAmount: stay.totalAmount,
-                paymentMethod: stay.paymentMethod,
-                cashPaid: stay.cashPaid,
-                cardPaid: stay.cardPaid,
-                onlinePaid: stay.onlinePaid,
-                tariffPending: stay.tariffPending,
-                bookingSource: stay.bookingSource,
-                bookingNumber: stay.bookingNumber,
-                mealPlan: stay.mealPlan,
-                shiftId: stay.shift?.id ?? null,
-                shiftNumber: stay.shift?.number ?? null,
-                shiftStatus: stay.shift?.status ?? null,
-                shiftOpenedAt: stay.shift?.openedAt ?? null,
-                shiftClosedAt: stay.shift?.closedAt ?? null,
-                shiftManagerName: stay.shift?.manager.displayName ?? null,
-                notes: stay.notes
-            })),
-            pendingPostpaidStays: pendingPostpaidStays.map((stay) => ({
-                id: stay.id,
-                roomId: stay.roomId,
-                roomLabel: stay.room.label,
-                roomFloor: stay.room.floor,
-                guestName: stay.guestName,
-                guestPhone: stay.guestPhone,
-                companyName: stay.companyName,
-                status: stay.status,
-                scheduledCheckIn: stay.scheduledCheckIn,
-                scheduledCheckOut: stay.scheduledCheckOut,
-                actualCheckIn: stay.actualCheckIn,
-                actualCheckOut: stay.actualCheckOut,
-                amountPaid: stay.amountPaid,
-                totalAmount: stay.totalAmount,
-                pendingPostpaidAmount: stay.pendingPostpaidAmount,
-                paymentMethod: stay.paymentMethod,
-                cashPaid: stay.cashPaid,
-                cardPaid: stay.cardPaid,
-                onlinePaid: stay.onlinePaid,
-                tariffPending: stay.tariffPending,
-                bookingSource: stay.bookingSource,
-                bookingNumber: stay.bookingNumber,
-                mealPlan: stay.mealPlan,
-                shiftId: stay.shift?.id ?? null,
-                shiftNumber: stay.shift?.number ?? null,
-                shiftStatus: stay.shift?.status ?? null,
-                shiftOpenedAt: stay.shift?.openedAt ?? null,
-                shiftClosedAt: stay.shift?.closedAt ?? null,
-                shiftManagerName: stay.shift?.manager.displayName ?? null,
-                notes: stay.notes
-            })),
-            transactions: ledgerEntries.map((entry) => ({
-                id: entry.id,
-                entryType: entry.entryType,
-                method: entry.method,
-                amount: entry.amount,
-                originalAmount: entry.originalAmount,
-                originalCurrency: entry.originalCurrency,
-                exchangeRate: entry.exchangeRate,
-                note: entry.note,
-                category: entry.expenseCategory
-                    ? {
-                        id: entry.expenseCategory.id,
-                        name: entry.expenseCategory.name
-                    }
-                    : null,
-                recordedAt: entry.recordedAt,
-                managerName: entry.manager?.displayName ?? null,
-                shiftId: entry.shift?.id ?? null,
-                shiftNumber: entry.shift?.number ?? null
-            })),
+            prepaidBookings: {
+                count: prepaidBookingAggregate._count._all,
+                total: prepaidBookingAggregate._sum.amountPaid ?? 0,
+                items: prepaidBookingPreview.map(serializePendingStay),
+            },
             expenseCategories: hotelRecord.expenseCategories.map((category) => ({
                 id: category.id,
                 name: category.name
@@ -717,8 +909,9 @@ export async function GET(_request: NextRequest, { params }: { params: { hotelId
     }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { hotelId: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {
     try {
+        const { hotelId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         assertAdmin(session);
@@ -734,7 +927,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         };
 
         const targetHotel = await prisma.hotel.findFirst({
-            where: { id: params.hotelId, country },
+            where: { id: hotelId, country },
             select: { id: true },
         });
         if (!targetHotel) {
@@ -742,7 +935,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
         }
 
         const hotel = await prisma.hotel.update({
-            where: { id: params.hotelId },
+            where: { id: hotelId },
             data: {
                 ...updatePayload,
                 extranetNames: payload.extranetNames ? sanitizeExtranetNames(payload.extranetNames) : undefined
@@ -761,14 +954,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { hotelI
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { hotelId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {
     try {
+        const { hotelId } = await params;
         const session = await getSessionUser(request);
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
         const targetHotel = await prisma.hotel.findFirst({
-            where: { id: params.hotelId, country },
+            where: { id: hotelId, country },
             select: { id: true },
         });
         if (!targetHotel) {
@@ -776,14 +970,14 @@ export async function DELETE(request: NextRequest, { params }: { params: { hotel
         }
 
         const deleted = await prisma.$transaction(async (tx) => {
-            await tx.room.updateMany({ where: { hotelId: params.hotelId }, data: { currentStayId: null } });
-            await tx.cashEntry.deleteMany({ where: { hotelId: params.hotelId } });
-            await tx.roomStay.deleteMany({ where: { hotelId: params.hotelId } });
-            await tx.shift.deleteMany({ where: { hotelId: params.hotelId } });
-            await tx.room.deleteMany({ where: { hotelId: params.hotelId } });
-            await tx.hotelAssignment.deleteMany({ where: { hotelId: params.hotelId } });
+            await tx.room.updateMany({ where: { hotelId }, data: { currentStayId: null } });
+            await tx.cashEntry.deleteMany({ where: { hotelId } });
+            await tx.roomStay.deleteMany({ where: { hotelId } });
+            await tx.shift.deleteMany({ where: { hotelId } });
+            await tx.room.deleteMany({ where: { hotelId } });
+            await tx.hotelAssignment.deleteMany({ where: { hotelId } });
 
-            return tx.hotel.delete({ where: { id: params.hotelId } });
+            return tx.hotel.delete({ where: { id: hotelId } });
         });
 
         return NextResponse.json({ success: true, id: deleted.id });

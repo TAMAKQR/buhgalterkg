@@ -6,6 +6,39 @@ import { useCountryContext } from '@/hooks/useCountryContext';
 
 type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
+export class ApiRequestError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = 'ApiRequestError';
+        this.status = status;
+    }
+}
+
+const readErrorMessage = async (response: Response) => {
+    const body = await response.text();
+    if (!body) return `API request failed (${response.status})`;
+
+    try {
+        const parsed = JSON.parse(body) as unknown;
+        if (parsed && typeof parsed === 'object') {
+            const message = 'error' in parsed
+                ? (parsed as { error?: unknown }).error
+                : 'message' in parsed
+                    ? (parsed as { message?: unknown }).message
+                    : null;
+            if (typeof message === 'string' && message.trim()) {
+                return message;
+            }
+        }
+    } catch {
+        // Plain-text API errors are valid and should be shown as-is.
+    }
+
+    return body;
+};
+
 const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
     if (!headers) return {};
     if (headers instanceof Headers) {
@@ -39,8 +72,7 @@ export function useApi() {
             });
 
             if (!response.ok) {
-                const message = await response.text();
-                throw new Error(message || 'API request failed');
+                throw new ApiRequestError(response.status, await readErrorMessage(response));
             }
 
             return (await response.json()) as T;
@@ -55,7 +87,7 @@ export function useApi() {
                 cache: 'no-store'
             });
             if (!response.ok) {
-                throw new Error(await response.text());
+                throw new ApiRequestError(response.status, await readErrorMessage(response));
             }
             return (await response.json()) as T;
         },

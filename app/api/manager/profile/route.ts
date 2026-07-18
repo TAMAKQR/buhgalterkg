@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LedgerEntryType } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
-import { assertHotelAccess } from '@/lib/permissions';
+import { assertHotelOperatorAccess } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { calculateBonusFromTiers } from '@/lib/bonus';
+import { hasConfiguredPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Manager is not assigned to a hotel', { status: 400 });
         }
 
-        assertHotelAccess(session, hotelId);
+        assertHotelOperatorAccess(session, hotelId);
 
         const [assignment, shifts, bonusTiers] = await Promise.all([
             prisma.hotelAssignment.findFirst({
@@ -124,7 +125,7 @@ export async function GET(request: NextRequest) {
                     shiftPayAmount: assignment.shiftPayAmount,
                     revenueSharePct: assignment.revenueSharePct,
                     createdAt: assignment.createdAt,
-                    pinCode: assignment.pinCode
+                    hasPin: hasConfiguredPin(assignment)
                 }
                 : null,
             shifts: shiftHistory
