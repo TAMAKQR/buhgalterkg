@@ -16,6 +16,7 @@ import { formatDateKey, formatInputValue, formatMoney, parseInputValue } from '@
 
 type EconomicsMode = 'actual' | 'planned';
 type SettingsTab = 'expense' | 'plan';
+const MAX_BULK_ROOM_SELECTION = 200;
 
 type EconomicsRoom = {
     id: string;
@@ -78,7 +79,8 @@ type PlanFormState = {
 
 type ExpenseFormState = {
     scope: 'hotel' | 'room';
-    roomId: string;
+    roomIds: string[];
+    allocationMode: 'SPLIT_TOTAL' | 'PER_ROOM';
     categoryId: string;
     amount: string;
     method: 'CASH' | 'CARD';
@@ -105,7 +107,8 @@ interface RoomEconomicsPanelProps {
 
 const emptyExpenseForm: ExpenseFormState = {
     scope: 'hotel',
-    roomId: '',
+    roomIds: [],
+    allocationMode: 'SPLIT_TOTAL',
     categoryId: '',
     amount: '',
     method: 'CASH',
@@ -203,6 +206,9 @@ export const RoomEconomicsPanel = ({
     }));
     const [expenseOperationId, setExpenseOperationId] = useState(() => crypto.randomUUID());
     const [planForm, setPlanForm] = useState<PlanFormState>(emptyPlanForm);
+    const [selectedReportRoomIds, setSelectedReportRoomIds] = useState<string[]>([]);
+
+    const activeRooms = useMemo(() => rooms.filter((room) => room.isActive), [rooms]);
 
     const dateError = !from || !to
         ? 'Укажите начало и конец периода'
@@ -230,7 +236,17 @@ export const RoomEconomicsPanel = ({
         setTo(range.to);
         setExpenseForm({ ...emptyExpenseForm, date: range.to });
         setExpenseOperationId(crypto.randomUUID());
+        setSelectedReportRoomIds([]);
     }, [hotelId, timezone]);
+
+    useEffect(() => {
+        const activeRoomIds = new Set(activeRooms.map((room) => room.id));
+        setSelectedReportRoomIds((current) => current.filter((roomId) => activeRoomIds.has(roomId)));
+        setExpenseForm((current) => ({
+            ...current,
+            roomIds: current.roomIds.filter((roomId) => activeRoomIds.has(roomId)),
+        }));
+    }, [activeRooms]);
 
     useEffect(() => {
         if (!isSettingsOpen) return;
@@ -255,6 +271,22 @@ export const RoomEconomicsPanel = ({
                     : 0,
         }
         : null;
+    const reportActiveRoomIds = displayedReport?.rooms.filter((room) => room.isActive).map((room) => room.id) ?? [];
+    const selectableReportRoomIds = reportActiveRoomIds.slice(0, MAX_BULK_ROOM_SELECTION);
+    const allReportRoomsSelected = selectableReportRoomIds.length > 0
+        && selectableReportRoomIds.every((roomId) => selectedReportRoomIds.includes(roomId));
+    const expenseAmountMinor = toMinorUnits(expenseForm.amount, false);
+    const expenseRoomCount = expenseForm.roomIds.length;
+    const expenseBatchTotalMinor = expenseAmountMinor == null
+        ? null
+        : expenseForm.allocationMode === 'PER_ROOM'
+            ? expenseAmountMinor * expenseRoomCount
+            : expenseAmountMinor;
+    const expensePerRoomMinor = expenseAmountMinor == null || expenseRoomCount === 0
+        ? null
+        : expenseForm.allocationMode === 'PER_ROOM'
+            ? expenseAmountMinor
+            : Math.floor(expenseAmountMinor / expenseRoomCount);
 
     const applyPreset = (days: 7 | 30) => {
         const range = createPresetRange(days, timezone);
@@ -263,7 +295,7 @@ export const RoomEconomicsPanel = ({
         setTo(range.to);
     };
 
-    const openSettings = (tab: SettingsTab) => {
+    const openSettings = (tab: SettingsTab, preselectedRoomIds: string[] = []) => {
         setSettingsTab(tab);
         setPlanForm(planFormFromReport(displayedReport));
         if (tab === 'expense') {
@@ -274,6 +306,8 @@ export const RoomEconomicsPanel = ({
             setExpenseForm((current) => ({
                 ...current,
                 date: formatInputValue(defaultInstant ?? new Date(), timezone),
+                scope: preselectedRoomIds.length ? 'room' : current.scope,
+                roomIds: preselectedRoomIds.length ? preselectedRoomIds : current.roomIds,
             }));
             setExpenseOperationId(crypto.randomUUID());
         }
@@ -285,6 +319,29 @@ export const RoomEconomicsPanel = ({
         setIsSettingsOpen(false);
     };
 
+    const toggleExpenseRoom = (roomId: string) => {
+        if (!expenseForm.roomIds.includes(roomId) && expenseForm.roomIds.length >= MAX_BULK_ROOM_SELECTION) {
+            toast(`За один раз можно выбрать не более ${MAX_BULK_ROOM_SELECTION} номеров`, 'error');
+            return;
+        }
+        setExpenseForm((current) => ({
+            ...current,
+            roomIds: current.roomIds.includes(roomId)
+                ? current.roomIds.filter((id) => id !== roomId)
+                : [...current.roomIds, roomId],
+        }));
+    };
+
+    const toggleReportRoom = (roomId: string) => {
+        if (!selectedReportRoomIds.includes(roomId) && selectedReportRoomIds.length >= MAX_BULK_ROOM_SELECTION) {
+            toast(`За один раз можно выбрать не более ${MAX_BULK_ROOM_SELECTION} номеров`, 'error');
+            return;
+        }
+        setSelectedReportRoomIds((current) => current.includes(roomId)
+            ? current.filter((id) => id !== roomId)
+            : [...current, roomId]);
+    };
+
     const handleExpenseSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const amount = toMinorUnits(expenseForm.amount, false);
@@ -292,8 +349,8 @@ export const RoomEconomicsPanel = ({
             toast('Укажите сумму расхода больше нуля', 'error');
             return;
         }
-        if (expenseForm.scope === 'room' && !expenseForm.roomId) {
-            toast('Выберите номер', 'error');
+        if (expenseForm.scope === 'room' && !expenseForm.roomIds.length) {
+            toast('Выберите хотя бы один номер', 'error');
             return;
         }
         const recordedAt = parseInputValue(expenseForm.date, timezone);
@@ -304,23 +361,39 @@ export const RoomEconomicsPanel = ({
 
         setIsSavingExpense(true);
         try {
-            await request('/api/expenses', {
-                method: 'POST',
-                headers: { 'Idempotency-Key': expenseOperationId },
-                body: {
-                    hotelId,
-                    entryType: 'CASH_OUT',
-                    roomId: expenseForm.scope === 'room' ? expenseForm.roomId : undefined,
-                    categoryId: expenseForm.categoryId || undefined,
-                    amount,
-                    method: expenseForm.method,
-                    recordedAt: recordedAt.toISOString(),
-                    note: expenseForm.note.trim() || undefined,
-                },
-            });
-            toast('Расход добавлен', 'success');
+            const commonBody = {
+                categoryId: expenseForm.categoryId || undefined,
+                amount,
+                method: expenseForm.method,
+                recordedAt: recordedAt.toISOString(),
+                note: expenseForm.note.trim() || undefined,
+            };
+            if (expenseForm.scope === 'room') {
+                await request(`/api/admin/hotels/${hotelId}/room-expenses`, {
+                    method: 'POST',
+                    headers: { 'Idempotency-Key': expenseOperationId },
+                    body: {
+                        ...commonBody,
+                        roomIds: expenseForm.roomIds,
+                        allocationMode: expenseForm.allocationMode,
+                    },
+                });
+                toast(`Расход сохранён для ${expenseForm.roomIds.length} ${expenseForm.roomIds.length === 1 ? 'номера' : 'номеров'}`, 'success');
+            } else {
+                await request('/api/expenses', {
+                    method: 'POST',
+                    headers: { 'Idempotency-Key': expenseOperationId },
+                    body: {
+                        ...commonBody,
+                        hotelId,
+                        entryType: 'CASH_OUT',
+                    },
+                });
+                toast('Расход добавлен', 'success');
+            }
             setExpenseForm({ ...emptyExpenseForm, date: formatInputValue(new Date(), timezone) });
             setExpenseOperationId(crypto.randomUUID());
+            setSelectedReportRoomIds([]);
             setIsSettingsOpen(false);
             void mutate();
             onChanged?.();
@@ -453,7 +526,7 @@ export const RoomEconomicsPanel = ({
                                 <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 План затрат
                             </Button>
-                            <Button type="button" size="sm" className="gap-1.5" onClick={() => openSettings('expense')}>
+                            <Button type="button" size="sm" className="gap-1.5" onClick={() => openSettings('expense', selectedReportRoomIds)}>
                                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                                 Добавить расход
                             </Button>
@@ -525,11 +598,36 @@ export const RoomEconomicsPanel = ({
                                 </p>
                             ) : null}
 
+                            {selectedReportRoomIds.length ? (
+                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-400/20 dark:bg-blue-500/10">
+                                    <div>
+                                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Выбрано номеров: {selectedReportRoomIds.length}</p>
+                                        <p className="text-[11px] text-blue-700/70 dark:text-blue-100/55">Добавьте один расход сразу на отмеченные комнаты.</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedReportRoomIds([])}>Сбросить</Button>
+                                        <Button type="button" size="sm" className="gap-1.5" onClick={() => openSettings('expense', selectedReportRoomIds)}>
+                                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                                            Добавить расход
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+
                             <div className={`overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/[0.07] ${isValidating ? 'opacity-70' : ''}`}>
                                 <div className="hidden overflow-x-auto lg:block">
                                     <table className="min-w-full text-sm">
                                         <thead className="border-b border-slate-200/80 bg-slate-50 text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.025] dark:text-white/35">
                                             <tr>
+                                                <th className="w-10 px-3 py-2.5 text-center font-medium">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={allReportRoomsSelected}
+                                                        onChange={() => setSelectedReportRoomIds(allReportRoomsSelected ? [] : selectableReportRoomIds)}
+                                                        className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                                                        aria-label={allReportRoomsSelected ? 'Снять выбор со всех номеров' : 'Выбрать все активные номера'}
+                                                    />
+                                                </th>
                                                 <th className="px-4 py-2.5 text-left font-medium">Номер</th>
                                                 <th className="px-4 py-2.5 text-right font-medium">Загрузка</th>
                                                 <th className="px-4 py-2.5 text-right font-medium">Начислено</th>
@@ -549,6 +647,16 @@ export const RoomEconomicsPanel = ({
                                                         : 0;
                                                 return (
                                                     <tr key={room.id} className="bg-white transition hover:bg-slate-50/80 dark:bg-transparent dark:hover:bg-white/[0.025]">
+                                                        <td className="px-3 py-3 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedReportRoomIds.includes(room.id)}
+                                                                disabled={!room.isActive}
+                                                                onChange={() => toggleReportRoom(room.id)}
+                                                                className="h-4 w-4 rounded border-slate-300 accent-blue-600 disabled:opacity-30"
+                                                                aria-label={`Выбрать номер ${room.label}`}
+                                                            />
+                                                        </td>
                                                         <td className="px-4 py-3">
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-semibold text-slate-900 dark:text-white">№ {room.label}</span>
@@ -592,9 +700,19 @@ export const RoomEconomicsPanel = ({
                                         return (
                                             <div key={room.id} className="bg-white p-3 dark:bg-transparent">
                                                 <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <p className="font-semibold text-slate-900 dark:text-white">№ {room.label}{room.floor ? ` · ${room.floor}` : ''}</p>
-                                                        <p className="mt-0.5 text-xs text-slate-500 dark:text-white/40">{room.occupiedNights} ночей · {room.stayCount} заездов</p>
+                                                    <div className="flex min-w-0 items-start gap-2.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedReportRoomIds.includes(room.id)}
+                                                            disabled={!room.isActive}
+                                                            onChange={() => toggleReportRoom(room.id)}
+                                                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-blue-600 disabled:opacity-30"
+                                                            aria-label={`Выбрать номер ${room.label}`}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <p className="font-semibold text-slate-900 dark:text-white">№ {room.label}{room.floor ? ` · ${room.floor}` : ''}</p>
+                                                            <p className="mt-0.5 text-xs text-slate-500 dark:text-white/40">{room.occupiedNights} ночей · {room.stayCount} заездов</p>
+                                                        </div>
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
                                                         {!room.isActive ? <Badge label="Выкл" /> : null}
@@ -646,7 +764,7 @@ export const RoomEconomicsPanel = ({
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/35">Экономика номеров</p>
-                                <h3 id="room-economics-settings-title" className="mt-1 text-base font-semibold text-slate-900 dark:text-white">Затраты объекта</h3>
+                                <h3 id="room-economics-settings-title" className="mt-1 text-base font-semibold text-slate-900 dark:text-white">Настройка затрат</h3>
                             </div>
                             <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={closeSettings} aria-label="Закрыть">
                                 <X className="h-4 w-4" aria-hidden="true" />
@@ -679,25 +797,93 @@ export const RoomEconomicsPanel = ({
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <label className="space-y-1.5">
                                         <span className="text-xs font-medium text-slate-500 dark:text-white/45">Куда отнести</span>
-                                        <Select value={expenseForm.scope} onChange={(event) => setExpenseForm((current) => ({ ...current, scope: event.target.value as ExpenseFormState['scope'], roomId: '' }))}>
+                                        <Select value={expenseForm.scope} onChange={(event) => setExpenseForm((current) => ({ ...current, scope: event.target.value as ExpenseFormState['scope'], roomIds: [] }))}>
                                             <option value="hotel">Весь объект</option>
-                                            <option value="room">Конкретный номер</option>
+                                            <option value="room">Выбранные номера</option>
                                         </Select>
                                     </label>
                                     {expenseForm.scope === 'room' ? (
-                                        <label className="space-y-1.5">
-                                            <span className="text-xs font-medium text-slate-500 dark:text-white/45">Номер</span>
-                                            <Select value={expenseForm.roomId} onChange={(event) => setExpenseForm((current) => ({ ...current, roomId: event.target.value }))} required>
-                                                <option value="">Выберите номер</option>
-                                                {rooms.map((room) => <option key={room.id} value={room.id} disabled={!room.isActive}>№ {room.label}{room.floor ? ` · ${room.floor}` : ''}{room.isActive ? '' : ' · выключен'}</option>)}
-                                            </Select>
-                                        </label>
+                                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-400/20 dark:bg-blue-500/10">
+                                            <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">Выбрано: {expenseForm.roomIds.length}</p>
+                                            <p className="mt-0.5 text-[11px] text-blue-700/70 dark:text-blue-100/55">Расход будет записан отдельно в экономику каждой комнаты.</p>
+                                        </div>
                                     ) : (
                                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-white/45">
                                             Общий расход распределится между номерами, активными на указанную дату.
                                         </div>
                                     )}
                                 </div>
+                                {expenseForm.scope === 'room' ? (
+                                    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <p className="text-xs font-semibold text-slate-800 dark:text-white/85">Выберите номера</p>
+                                                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-white/40">Только активные комнаты доступны для нового расхода.</p>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => setExpenseForm((current) => ({ ...current, roomIds: activeRooms.slice(0, MAX_BULK_ROOM_SELECTION).map((room) => room.id) }))}
+                                                >
+                                                    Выбрать все
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={!expenseForm.roomIds.length}
+                                                    onClick={() => setExpenseForm((current) => ({ ...current, roomIds: [] }))}
+                                                >
+                                                    Очистить
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <div className="grid max-h-44 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+                                            {activeRooms.map((room) => {
+                                                const checked = expenseForm.roomIds.includes(room.id);
+                                                return (
+                                                    <label
+                                                        key={room.id}
+                                                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition ${checked ? 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-100' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-white/65 dark:hover:border-white/15'}`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            onChange={() => toggleExpenseRoom(room.id)}
+                                                            className="h-4 w-4 shrink-0 rounded border-slate-300 accent-blue-600"
+                                                        />
+                                                        <span className="min-w-0 truncate" title={`№ ${room.label}${room.floor ? ` · ${room.floor}` : ''}`}>№ {room.label}{room.floor ? ` · ${room.floor}` : ''}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                        {activeRooms.length === 0 ? (
+                                            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">Нет активных номеров для распределения расхода.</p>
+                                        ) : null}
+
+                                        <div>
+                                            <p className="mb-1.5 text-xs font-medium text-slate-500 dark:text-white/45">Как применить сумму</p>
+                                            <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-white/[0.07] dark:bg-white/[0.025]">
+                                                <button
+                                                    type="button"
+                                                    className={`min-h-9 rounded-md px-2 py-1.5 text-xs font-medium transition ${expenseForm.allocationMode === 'SPLIT_TOTAL' ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950' : 'text-slate-500 dark:text-white/45'}`}
+                                                    onClick={() => setExpenseForm((current) => ({ ...current, allocationMode: 'SPLIT_TOTAL' }))}
+                                                >
+                                                    Общую — разделить
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`min-h-9 rounded-md px-2 py-1.5 text-xs font-medium transition ${expenseForm.allocationMode === 'PER_ROOM' ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950' : 'text-slate-500 dark:text-white/45'}`}
+                                                    onClick={() => setExpenseForm((current) => ({ ...current, allocationMode: 'PER_ROOM' }))}
+                                                >
+                                                    На каждый номер
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : null}
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <label className="space-y-1.5">
                                         <span className="text-xs font-medium text-slate-500 dark:text-white/45">Категория</span>
@@ -707,8 +893,17 @@ export const RoomEconomicsPanel = ({
                                         </Select>
                                     </label>
                                     <label className="space-y-1.5">
-                                        <span className="text-xs font-medium text-slate-500 dark:text-white/45">Сумма ({currency})</span>
+                                        <span className="text-xs font-medium text-slate-500 dark:text-white/45">
+                                            {expenseForm.scope === 'room' && expenseForm.allocationMode === 'PER_ROOM' ? 'Сумма на номер' : 'Общая сумма'} ({currency})
+                                        </span>
                                         <Input type="number" min="0.01" step="0.01" inputMode="decimal" value={expenseForm.amount} onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))} placeholder="0" required />
+                                        {expenseForm.scope === 'room' && expenseBatchTotalMinor != null && expensePerRoomMinor != null && expenseRoomCount > 0 ? (
+                                            <span className="block text-[11px] text-slate-500 dark:text-white/40">
+                                                {expenseForm.allocationMode === 'PER_ROOM'
+                                                    ? `${formatMoney(expensePerRoomMinor, currency)} × ${expenseRoomCount} = ${formatMoney(expenseBatchTotalMinor, currency)}`
+                                                    : `${formatMoney(expenseBatchTotalMinor, currency)} ÷ ${expenseRoomCount} ≈ ${formatMoney(expensePerRoomMinor, currency)} / номер`}
+                                            </span>
+                                        ) : null}
                                     </label>
                                 </div>
                                 <div className="grid gap-3 sm:grid-cols-2">
@@ -736,7 +931,13 @@ export const RoomEconomicsPanel = ({
                                 </div>
                                 <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4 dark:border-white/[0.06]">
                                     <Button type="button" variant="ghost" onClick={closeSettings}>Отмена</Button>
-                                    <Button type="submit" disabled={isSavingExpense}>{isSavingExpense ? 'Сохраняем…' : 'Добавить расход'}</Button>
+                                    <Button type="submit" disabled={isSavingExpense || (expenseForm.scope === 'room' && !expenseForm.roomIds.length)}>
+                                        {isSavingExpense
+                                            ? 'Сохраняем…'
+                                            : expenseForm.scope === 'room'
+                                                ? `Добавить для ${expenseForm.roomIds.length}`
+                                                : 'Добавить расход'}
+                                    </Button>
                                 </div>
                             </form>
                         ) : (
