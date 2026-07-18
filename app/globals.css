@@ -53,6 +53,28 @@ body {
 
 button, a, input, textarea, select { touch-action: manipulation; }
 
+/* iOS Safari gives native date controls an intrinsic inline width that can
+   exceed a single-column grid. Keep the native picker while constraining its
+   painted border to the field/card width. */
+.mobile-date-input {
+    inline-size: 100%;
+    min-inline-size: 0 !important;
+    max-inline-size: 100% !important;
+    box-sizing: border-box;
+}
+
+@media (max-width: 639px) {
+    .mobile-date-input {
+        padding-inline: 0;
+    }
+
+    .mobile-date-input::-webkit-date-and-time-value,
+    .mobile-date-input::-webkit-datetime-edit {
+        min-inline-size: 0;
+        max-inline-size: 100%;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         scroll-behavior: auto !important;

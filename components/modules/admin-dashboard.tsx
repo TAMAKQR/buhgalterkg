@@ -663,7 +663,7 @@ function CollapsibleSection({
 
 function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
     return (
-        <div className="space-y-1.5">
+        <div className="min-w-0 max-w-full space-y-1.5">
             <div className="flex items-center justify-between gap-3">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400" htmlFor={htmlFor}>
                     {label}
@@ -860,12 +860,12 @@ function CheckboxPicker({ label, options, selected, onChange, emptyLabel }: {
         : `Выбрано: ${selected.length}`;
 
     return (
-        <details className="group relative open:z-50">
+        <details className="group relative w-full min-w-0 max-w-full open:z-50">
             <summary className={`${selectClassName} flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden`}>
                 <span className="truncate">{buttonLabel}</span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
             </summary>
-            <div className="absolute right-0 z-[100] mt-2 max-h-80 w-full min-w-[18rem] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] dark:border-white/[0.1] dark:bg-[#1a1f26]">
+            <div className="absolute right-0 z-[100] mt-2 max-h-80 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] sm:min-w-[18rem] dark:border-white/[0.1] dark:bg-[#1a1f26]">
                 <div className="mb-1 flex items-center justify-between px-2 py-1.5">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{label}</span>
                     {selected.length > 0 && <button type="button" className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400" onClick={() => onChange([])}>Сбросить</button>}
@@ -2553,7 +2553,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 title="Период и фильтры"
                                 className="z-40 lg:p-4"
                             >
-                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
+                                <div className="grid min-w-0 max-w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
                                     <div className="md:col-span-2 xl:col-span-5">
                                         <div className="flex flex-wrap gap-1.5">
                                             {([
@@ -2580,7 +2580,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-start"
                                                 type="date"
-                                                className="h-9 min-w-0 rounded-lg text-[13px] sm:h-9"
+                                                className="mobile-date-input block h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
                                                 value={filters.startDate}
                                                 onChange={(event) => handleFilterInput("startDate", event.target.value)}
                                                 placeholder="С даты"
@@ -2590,7 +2590,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                             <Input
                                                 id="overview-end"
                                                 type="date"
-                                                className="h-9 min-w-0 rounded-lg text-[13px] sm:h-9"
+                                                className="mobile-date-input block h-9 w-full min-w-0 max-w-full rounded-lg text-[13px] sm:h-9"
                                                 value={filters.endDate}
                                                 min={filters.startDate || undefined}
                                                 onChange={(event) => handleFilterInput("endDate", event.target.value)}
