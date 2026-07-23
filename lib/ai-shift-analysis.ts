@@ -49,6 +49,10 @@ const aiTextReplacements: Array<[string, string]> = [
     ['pendingPostpaid', 'постоплата к получению'],
     ['pendingOnline', 'онлайн-оплаты к подтверждению'],
     ['cashDifference', 'расхождение по кассе'],
+    ['openingCashDifference', 'расхождение стартовой кассы'],
+    ['expectedOpeningCash', 'ожидаемая касса на старте'],
+    ['previousShift', 'предыдущая смена'],
+    ['handoverCash', 'наличные при передаче смены'],
     ['MANAGER_PAYOUT', 'выплата менеджеру'],
     ['expectedCash', 'ожидаемые наличные'],
     ['openingCash', 'наличные на старте'],
@@ -140,8 +144,8 @@ const fetchOpenAiAnalysis = async (mode: ShiftAnalysisMode, context: unknown, fa
 
     const model = getOpenAiModel();
     const roleInstruction = mode === 'admin'
-        ? 'Ты финансовый ассистент администратора мини-отеля. Проверь смену, кассу, оплаты, долги и операционные риски.'
-        : 'Ты помощник менеджера мини-отеля на смене. Дай короткие практичные подсказки, что проверить до закрытия смены.';
+        ? 'Ты финансовый ассистент администратора мини-отеля. Проверь текущую смену, связь с предыдущей сменой, правильность наличных на старте, кассу, оплаты, долги и операционные риски.'
+        : 'Ты помощник менеджера мини-отеля на смене. Сравни наличные на старте с передачей предыдущей смены и дай короткие практичные подсказки, что проверить до закрытия смены.';
 
     try {
         const response = await fetch(OPENAI_RESPONSES_URL, {
@@ -280,6 +284,34 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
         throw new Error('Можно анализировать только свою смену');
     }
 
+    const previousShift = await prisma.shift.findFirst({
+        where: {
+            hotelId: shift.hotelId,
+            id: { not: shift.id },
+            openedAt: { lt: shift.openedAt },
+        },
+        orderBy: [{ openedAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+            id: true,
+            number: true,
+            status: true,
+            openedAt: true,
+            closedAt: true,
+            openingCash: true,
+            closingCash: true,
+            handoverCash: true,
+            manager: { select: { displayName: true } },
+            ledger: {
+                orderBy: { recordedAt: 'asc' },
+                select: {
+                    entryType: true,
+                    method: true,
+                    amount: true,
+                },
+            },
+        },
+    });
+
     const rooms = await prisma.room.findMany({
         where: { hotelId: shift.hotelId },
         orderBy: { label: 'asc' },
@@ -327,6 +359,20 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
         }, 0);
     const closingCash = shift.status === ShiftStatus.CLOSED ? shift.closingCash : null;
     const cashDifference = typeof closingCash === 'number' ? closingCash - expectedCash : null;
+    const previousCalculatedCash = previousShift
+        ? previousShift.openingCash + previousShift.ledger.reduce((total, entry) => {
+            if (entry.method !== PaymentMethod.CASH) return total;
+            return entry.entryType === LedgerEntryType.CASH_IN || entry.entryType === LedgerEntryType.ADJUSTMENT
+                ? total + entry.amount
+                : total - entry.amount;
+        }, 0)
+        : null;
+    const expectedOpeningCash = previousShift
+        ? previousShift.handoverCash ?? previousShift.closingCash ?? previousCalculatedCash
+        : null;
+    const openingCashDifference = expectedOpeningCash == null
+        ? null
+        : shift.openingCash - expectedOpeningCash;
     const stayRevenue = shift.ledger.reduce(
         (total, entry) => entry.entryType === LedgerEntryType.CASH_IN && isStayIncomeNote(entry.note) ? total + entry.amount : total,
         0
@@ -358,6 +404,19 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
             closingCash: closingCash == null ? null : formatMoney(closingCash, shift.hotel.currency),
             cashDifference: cashDifference == null ? null : formatMoney(cashDifference, shift.hotel.currency)
         },
+        previousShift: previousShift ? {
+            number: previousShift.number,
+            manager: previousShift.manager.displayName,
+            status: previousShift.status,
+            openedAt: formatDateTime(previousShift.openedAt, shift.hotel.timezone),
+            closedAt: formatDateTime(previousShift.closedAt, shift.hotel.timezone, undefined, ''),
+            handoverCash: previousShift.handoverCash == null ? null : formatMoney(previousShift.handoverCash, shift.hotel.currency),
+            closingCash: previousShift.closingCash == null ? null : formatMoney(previousShift.closingCash, shift.hotel.currency),
+            calculatedCash: previousCalculatedCash == null ? null : formatMoney(previousCalculatedCash, shift.hotel.currency),
+            expectedOpeningCash: expectedOpeningCash == null ? null : formatMoney(expectedOpeningCash, shift.hotel.currency),
+            currentOpeningCash: formatMoney(shift.openingCash, shift.hotel.currency),
+            openingCashDifference: openingCashDifference == null ? null : formatMoney(openingCashDifference, shift.hotel.currency),
+        } : null,
         totals: {
             revenue: formatMoney(ledgerTotals.CASH_IN, shift.hotel.currency),
             stayRevenue: formatMoney(stayRevenue, shift.hotel.currency),
@@ -401,11 +460,29 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
     const highlights = [
         `Выручка за смену: ${formatMoney(ledgerTotals.CASH_IN, shift.hotel.currency)}.`,
         `Ожидаемые наличные: ${formatMoney(expectedCash, shift.hotel.currency)}.`,
-        `Расходы без инкассации: ${formatMoney(realExpenses, shift.hotel.currency)}.`
+        `Расходы без инкассации: ${formatMoney(realExpenses, shift.hotel.currency)}.`,
+        ...(expectedOpeningCash == null
+            ? ['Предыдущая смена не найдена: стартовую кассу нельзя сверить с передачей.']
+            : [`На старте должно быть ${formatMoney(expectedOpeningCash, shift.hotel.currency)}, указано ${formatMoney(shift.openingCash, shift.hotel.currency)}.`])
     ];
 
     const risks: AiShiftInsight[] = [];
     const nextActions: string[] = [];
+
+    if (openingCashDifference !== null && openingCashDifference !== 0) {
+        risks.push({
+            title: 'Стартовая касса не совпадает с предыдущей сменой',
+            detail: `После смены №${previousShift?.number ?? '—'} должно быть ${formatMoney(expectedOpeningCash ?? shift.openingCash, shift.hotel.currency)}, указано ${formatMoney(shift.openingCash, shift.hotel.currency)}. Расхождение: ${formatMoney(openingCashDifference, shift.hotel.currency)}.`,
+            tone: Math.abs(openingCashDifference) >= 10000 ? 'danger' : 'warning'
+        });
+        nextActions.push(`Сверить передачу смены №${previousShift?.number ?? '—'} и наличные, указанные при открытии текущей смены.`);
+    } else if (openingCashDifference === 0 && previousShift) {
+        risks.push({
+            title: 'Стартовая касса подтверждена',
+            detail: `Наличные на старте совпадают с передачей смены №${previousShift.number}: ${formatMoney(shift.openingCash, shift.hotel.currency)}.`,
+            tone: 'success'
+        });
+    }
 
     if (cashDifference !== null && Math.abs(cashDifference) > 0) {
         risks.push({
@@ -464,7 +541,7 @@ export const buildShiftAnalysis = async (shiftId: string, mode: ShiftAnalysisMod
         diagnostic: 'Локальная проверка: OpenAI не использовался',
         generatedAt: new Date().toISOString(),
         summary: mode === 'admin'
-            ? `Смена №${shift.number}: ${formatMoney(ledgerTotals.CASH_IN, shift.hotel.currency)} поступлений, ${formatMoney(realExpenses, shift.hotel.currency)} расходов, ожидаемая касса ${formatMoney(expectedCash, shift.hotel.currency)}.`
+            ? `Смена №${shift.number}: ${formatMoney(ledgerTotals.CASH_IN, shift.hotel.currency)} поступлений, ${formatMoney(realExpenses, shift.hotel.currency)} расходов, ожидаемая касса ${formatMoney(expectedCash, shift.hotel.currency)}.${expectedOpeningCash == null ? '' : ` На старте должно быть ${formatMoney(expectedOpeningCash, shift.hotel.currency)}, расхождение ${formatMoney(openingCashDifference ?? 0, shift.hotel.currency)}.`}`
             : `По смене №${shift.number} проверьте кассу ${formatMoney(expectedCash, shift.hotel.currency)}, оплаты с сайта и статусы номеров перед закрытием.`,
         highlights,
         risks: risks.slice(0, 5),
