@@ -68,6 +68,43 @@ model Hotel {
   shifts          Shift[]
   bonusTiers      BonusTier[]
   expenseCategories ExpenseCategory[]
+  roomCostCategories RoomCostCategory[]
+  plannedCostItems  HotelPlannedCostItem[]
+  employees         HotelEmployee[]
+}
+
+model HotelEmployee {
+  id          String    @id @default(cuid())
+  hotelId     String    @map("hotel_id")
+  fullName    String    @map("full_name")
+  position    String
+  payType     String    @default("MONTHLY") @map("pay_type")
+  payAmount   Int       @default(0) @map("pay_amount")
+  isActive    Boolean   @default(true) @map("is_active")
+  hiredAt     DateTime? @map("hired_at")
+  dismissedAt DateTime? @map("dismissed_at")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  hotel       Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId, isActive])
+  @@map("hotel_employees")
+}
+
+model HotelPlannedCostItem {
+  id            String   @id @default(cuid())
+  hotelId       String   @map("hotel_id")
+  name          String
+  monthlyAmount Int      @default(0) @map("monthly_amount")
+  kind          String   @default("GENERAL")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  hotel         Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId, sortOrder])
+  @@map("hotel_planned_cost_items")
 }
 
 model GuestProfile {
@@ -177,6 +214,11 @@ model Room {
   createdAt     DateTime   @default(now())
   archivedAt    DateTime?  @map("archived_at")
   activityTrackedFrom DateTime @default(now()) @map("activity_tracking_started_at")
+  nightlyVariableCost Int      @default(0) @map("nightly_variable_cost")
+  breakfastCost       Int      @default(0) @map("breakfast_cost")
+  lunchCost           Int      @default(0) @map("lunch_cost")
+  dinnerCost          Int      @default(0) @map("dinner_cost")
+  costCategoryId      String?  @map("cost_category_id")
   updatedAt     DateTime   @updatedAt
   currentStay   RoomStay?  @relation("RoomCurrentStay", fields: [currentStayId], references: [id])
   hotel         Hotel      @relation(fields: [hotelId], references: [id])
@@ -185,9 +227,46 @@ model Room {
   transfersTo   StayTransfer[] @relation("StayTransferToRoom")
   ledgerEntries CashEntry[]
   activityPeriods RoomActivityPeriod[]
+  costItems      RoomCostItem[]
+  costCategory   RoomCostCategory? @relation(fields: [costCategoryId], references: [id], onDelete: SetNull)
 
   @@unique([hotelId, label])
   @@index([hotelId, archivedAt])
+  @@index([costCategoryId])
+}
+
+model RoomCostItem {
+  id            String   @id @default(cuid())
+  roomId        String?  @map("room_id")
+  categoryId    String?  @map("category_id")
+  name          String
+  quantityMilli Int      @default(1000) @map("quantity_milli")
+  unitPrice     Int      @default(0) @map("unit_price")
+  mealPlanCode  String?  @map("meal_plan_code")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  room          Room?    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  category      RoomCostCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, sortOrder])
+  @@index([categoryId, sortOrder])
+  @@map("room_cost_items")
+}
+
+model RoomCostCategory {
+  id        String   @id @default(cuid())
+  hotelId   String   @map("hotel_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  rooms     Room[]
+  costItems RoomCostItem[]
+
+  @@unique([hotelId, name])
+  @@index([hotelId])
+  @@map("room_cost_categories")
 }
 
 model RoomActivityPeriod {

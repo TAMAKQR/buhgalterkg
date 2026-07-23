@@ -228,6 +228,17 @@ interface HotelDetailPayload {
         stay?: RoomStayDetail | null;
         stays: RoomStayDetail[];
     }>;
+    employees: Array<{
+        id: string;
+        fullName: string;
+        position: string;
+        payType: 'MONTHLY' | 'SHIFT' | 'ROOM' | 'PERCENT' | 'OTHER';
+        payAmount: number;
+        isActive: boolean;
+        hiredAt?: string | null;
+        dismissedAt?: string | null;
+        notes?: string | null;
+    }>;
     activeShift?: ShiftHistoryEntry | null;
     shiftHistory: ShiftHistoryEntry[];
     prepaidBookings?: {
@@ -745,6 +756,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isDeletingShift, setIsDeletingShift] = useState(false);
     const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
+    const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', notes: '' });
+    const [savingEmployee, setSavingEmployee] = useState(false);
+    const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
     const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
     const [editRoomData, setEditRoomData] = useState<{ label: string; floor: string; notes: string; isActive: boolean }>({ label: '', floor: '', notes: '', isActive: true });
@@ -1506,6 +1520,49 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             toast('Не удалось удалить менеджера', 'error');
         } finally {
             setRemovingManagerId((current) => (current === assignmentId ? null : current));
+        }
+    };
+
+    const handleCreateEmployee = async () => {
+        const payAmount = toOptionalMinor(Number(employeeForm.payAmount));
+        if (!employeeForm.fullName.trim() || !employeeForm.position.trim() || payAmount == null) {
+            toast('Заполните имя, должность и оплату сотрудника', 'error');
+            return;
+        }
+        setSavingEmployee(true);
+        try {
+            await request(`/api/admin/hotels/${hotelId}/employees`, {
+                method: 'POST',
+                body: {
+                    fullName: employeeForm.fullName.trim(),
+                    position: employeeForm.position.trim(),
+                    payType: employeeForm.payType,
+                    payAmount,
+                    notes: employeeForm.notes.trim() || null,
+                },
+            });
+            setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', notes: '' });
+            mutate();
+            toast('Сотрудник добавлен', 'success');
+        } catch (employeeError) {
+            toast(employeeError instanceof Error ? employeeError.message : 'Не удалось добавить сотрудника', 'error');
+        } finally {
+            setSavingEmployee(false);
+        }
+    };
+
+    const handleEmployeeStatus = async (employeeId: string, isActive: boolean) => {
+        setUpdatingEmployeeId(employeeId);
+        try {
+            await request(`/api/admin/hotels/${hotelId}/employees`, {
+                method: 'PATCH',
+                body: { id: employeeId, isActive },
+            });
+            mutate();
+        } catch (employeeError) {
+            toast(employeeError instanceof Error ? employeeError.message : 'Не удалось изменить сотрудника', 'error');
+        } finally {
+            setUpdatingEmployeeId(null);
         }
     };
 
@@ -4180,6 +4237,55 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 </Button>
                             </div>
                             <div className="flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-5 sm:pr-2">
+                                <Card className="border-slate-200 bg-white dark:border-white/[0.055] dark:bg-white/[0.03]">
+                                    <CardHeader title="Сотрудники" />
+                                    <div className="space-y-3">
+                                        {(data.employees ?? []).map((employee) => (
+                                            <div key={employee.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-3 dark:border-white/[0.07]">
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{employee.fullName}</p>
+                                                        <Badge label={employee.isActive ? 'Работает' : 'Не работает'} tone={employee.isActive ? 'success' : 'default'} />
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 dark:text-white/50">
+                                                        {employee.position} · {({
+                                                            MONTHLY: 'в месяц',
+                                                            SHIFT: 'за смену',
+                                                            ROOM: 'за номер',
+                                                            PERCENT: 'процент',
+                                                            OTHER: 'другое',
+                                                        } as Record<string, string>)[employee.payType] ?? employee.payType}: {employee.payType === 'PERCENT' ? formatPercentage(employee.payAmount / 100) : formatCurrency(employee.payAmount)}
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={updatingEmployeeId === employee.id}
+                                                    onClick={() => handleEmployeeStatus(employee.id, !employee.isActive)}
+                                                >
+                                                    {employee.isActive ? 'Не работает' : 'Вернуть'}
+                                                </Button>
+                                            </div>
+                                        ))}
+                                        <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2 dark:border-white/[0.07]">
+                                            <Input value={employeeForm.fullName} onChange={(event) => setEmployeeForm((current) => ({ ...current, fullName: event.target.value }))} placeholder="Имя сотрудника" />
+                                            <Input value={employeeForm.position} onChange={(event) => setEmployeeForm((current) => ({ ...current, position: event.target.value }))} placeholder="Должность: горничная, маркетолог…" />
+                                            <Select value={employeeForm.payType} onChange={(event) => setEmployeeForm((current) => ({ ...current, payType: event.target.value }))}>
+                                                <option value="MONTHLY">Фиксированно в месяц</option>
+                                                <option value="SHIFT">За смену</option>
+                                                <option value="ROOM">За убранный номер</option>
+                                                <option value="PERCENT">Процент</option>
+                                                <option value="OTHER">Другая схема</option>
+                                            </Select>
+                                            <Input type="number" min="0" step="0.01" value={employeeForm.payAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, payAmount: event.target.value }))} placeholder={employeeForm.payType === 'PERCENT' ? 'Процент' : 'Сумма'} />
+                                            <Input className="sm:col-span-2" value={employeeForm.notes} onChange={(event) => setEmployeeForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Комментарий" />
+                                            <Button type="button" className="sm:col-span-2" disabled={savingEmployee} onClick={handleCreateEmployee}>
+                                                {savingEmployee ? 'Добавляем…' : 'Добавить сотрудника'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </Card>
                                 <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
                                     <CardHeader title="Менеджеры" />
                                     <div className="space-y-4">

@@ -50,7 +50,22 @@ type RoomEconomicsRow = {
     cashReceived: number;
     directActualCost: number;
     sharedActualCost: number;
+    standardVariableCost: number;
     plannedCost: number;
+    nightlyVariableCost: number;
+    breakfastCost: number;
+    lunchCost: number;
+    dinnerCost: number;
+    forecastRevenue: number;
+    forecastVariableCost: number;
+    costItems: Array<{
+        id: string;
+        name: string;
+        quantityMilli: number;
+        unitPrice: number;
+        mealPlanCode: string | null;
+        sortOrder: number;
+    }>;
 };
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {
@@ -85,6 +100,33 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 monthlyUtilitiesCost: true,
                 monthlySuppliesCost: true,
                 monthlyOtherCost: true,
+                plannedCostItems: {
+                    orderBy: { sortOrder: 'asc' },
+                    select: { id: true, name: true, monthlyAmount: true, kind: true, sortOrder: true },
+                },
+                employees: {
+                    where: { isActive: true },
+                    select: { id: true, payType: true, payAmount: true },
+                },
+                roomCostCategories: {
+                    orderBy: { name: 'asc' },
+                    select: {
+                        id: true,
+                        name: true,
+                        rooms: { orderBy: { label: 'asc' }, select: { id: true, label: true } },
+                        costItems: {
+                            orderBy: { sortOrder: 'asc' },
+                            select: {
+                                id: true,
+                                name: true,
+                                quantityMilli: true,
+                                unitPrice: true,
+                                mealPlanCode: true,
+                                sortOrder: true,
+                            },
+                        },
+                    },
+                },
                 rooms: {
                     orderBy: [{ isActive: 'desc' }, { label: 'asc' }],
                     select: {
@@ -92,6 +134,38 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                         label: true,
                         floor: true,
                         isActive: true,
+                        nightlyVariableCost: true,
+                        breakfastCost: true,
+                        lunchCost: true,
+                        dinnerCost: true,
+                        costItems: {
+                            orderBy: { sortOrder: 'asc' },
+                            select: {
+                                id: true,
+                                name: true,
+                                quantityMilli: true,
+                                unitPrice: true,
+                                mealPlanCode: true,
+                                sortOrder: true,
+                            },
+                        },
+                        costCategory: {
+                            select: {
+                                id: true,
+                                name: true,
+                                costItems: {
+                                    orderBy: { sortOrder: 'asc' },
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        quantityMilli: true,
+                                        unitPrice: true,
+                                        mealPlanCode: true,
+                                        sortOrder: true,
+                                    },
+                                },
+                            },
+                        },
                         activityTrackedFrom: true,
                         activityPeriods: {
                             orderBy: { activeFrom: 'asc' },
@@ -163,6 +237,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                             cancellationPaymentAction: 'RETAIN',
                             cancelledAt: { gte: periodStart, lt: periodEndExclusive },
                         },
+                        {
+                            status: StayStatus.SCHEDULED,
+                            scheduledCheckIn: { lt: periodEndExclusive },
+                            scheduledCheckOut: { gt: periodStart },
+                        },
                     ],
                 },
                 select: {
@@ -179,6 +258,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                     cardPaid: true,
                     onlinePaid: true,
                     tariffPending: true,
+                    mealPlan: true,
                     cancellationPaymentAction: true,
                     cancellationAmount: true,
                     cancelledAt: true,
@@ -228,6 +308,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ]);
 
         const rows = new Map<string, RoomEconomicsRow>(hotel.rooms.map((room) => {
+            const effectiveCostItems = room.costCategory?.costItems.length
+                ? room.costCategory.costItems
+                : room.costItems;
+            const itemAmount = (quantityMilli: number, unitPrice: number) =>
+                Math.round((quantityMilli * unitPrice) / 1000);
+            const itemTotal = (mealPlanCode: string | null) => effectiveCostItems
+                .filter((item) => item.mealPlanCode === mealPlanCode)
+                .reduce((sum, item) => sum + itemAmount(item.quantityMilli, item.unitPrice), 0);
             return [room.id, {
                 id: room.id,
                 label: room.label,
@@ -246,13 +334,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 cashReceived: 0,
                 directActualCost: 0,
                 sharedActualCost: 0,
+                standardVariableCost: 0,
                 plannedCost: 0,
+                nightlyVariableCost: itemTotal(null),
+                breakfastCost: itemTotal('BREAKFAST'),
+                lunchCost: itemTotal('LUNCH'),
+                dinnerCost: itemTotal('DINNER'),
+                forecastRevenue: 0,
+                forecastVariableCost: 0,
+                costItems: effectiveCostItems,
             }];
         }));
         const incompleteStayIds = new Set<string>();
 
         const reportNow = new Date();
         for (const stay of stays) {
+            if (stay.status === StayStatus.SCHEDULED) continue;
             if (stay.status === StayStatus.CANCELLED) {
                 const confirmedPaid = (stay.cashPaid ?? 0) + (stay.cardPaid ?? 0);
                 const retained = Math.min(stay.cancellationAmount ?? confirmedPaid, confirmedPaid);
@@ -306,6 +403,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 const row = rows.get(roomId);
                 if (!row) continue;
                 row.earnedRevenue += allocation.roomAmounts[roomId] ?? 0;
+                const occupiedNights = allocation.roomOccupiedNights[roomId] ?? 0;
+                const mealCost =
+                    (stay.mealPlan.includes('BREAKFAST') ? row.breakfastCost : 0) +
+                    (stay.mealPlan.includes('LUNCH') ? row.lunchCost : 0) +
+                    (stay.mealPlan.includes('DINNER') ? row.dinnerCost : 0);
+                row.standardVariableCost += Math.round((row.nightlyVariableCost + mealCost) * occupiedNights);
                 for (const [nightKey, occupiedFraction] of Object.entries(allocation.roomNightOccupancy[roomId] ?? {})) {
                     const existingFraction = row.occupiedByNight.get(nightKey) ?? 0;
                     if (existingFraction + occupiedFraction > 1.000001) row.hasOccupancyConflict = true;
@@ -313,6 +416,43 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 }
                 row.stayIds.add(stay.id);
                 if (tariffIncomplete) row.incompleteStayIds.add(stay.id);
+            }
+        }
+
+        for (const stay of stays) {
+            if (stay.status === StayStatus.CANCELLED) continue;
+            const effectiveCheckIn = stay.actualCheckIn ?? stay.scheduledCheckIn;
+            const naturalCheckOut = stay.actualCheckOut ?? stay.scheduledCheckOut;
+            const effectiveCheckOut = stay.status === StayStatus.CHECKED_IN && naturalCheckOut < reportNow
+                ? reportNow
+                : naturalCheckOut;
+            if (effectiveCheckOut <= effectiveCheckIn) continue;
+            const tariffIncomplete = stay.tariffPending || stay.totalAmount == null || stay.totalAmount <= 0;
+            const allocation = calculateStayPeriodAllocation({
+                roomId: stay.roomId,
+                scheduledCheckIn: effectiveCheckIn,
+                scheduledCheckOut: effectiveCheckOut,
+                actualCheckIn: null,
+                actualCheckOut: null,
+                transfers: stay.transfers,
+                totalAmount: tariffIncomplete ? null : stay.totalAmount,
+                timezone: hotel.timezone,
+                fromKey: from,
+                toKey: to,
+            });
+            for (const roomId of new Set([
+                ...Object.keys(allocation.roomAmounts),
+                ...Object.keys(allocation.roomOccupiedNights),
+            ])) {
+                const row = rows.get(roomId);
+                if (!row) continue;
+                const occupiedNights = allocation.roomOccupiedNights[roomId] ?? 0;
+                const mealCost =
+                    (stay.mealPlan.includes('BREAKFAST') ? row.breakfastCost : 0) +
+                    (stay.mealPlan.includes('LUNCH') ? row.lunchCost : 0) +
+                    (stay.mealPlan.includes('DINNER') ? row.dinnerCost : 0);
+                row.forecastRevenue += allocation.roomAmounts[roomId] ?? 0;
+                row.forecastVariableCost += Math.round((row.nightlyVariableCost + mealCost) * occupiedNights);
             }
         }
 
@@ -378,9 +518,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             }
         }
 
-        const monthlyPlan = hotel.monthlyPayrollCost + hotel.monthlyRentCost + hotel.monthlyUtilitiesCost +
-            hotel.monthlySuppliesCost + hotel.monthlyOtherCost;
-        const plannedByDay = allocateMonthlyAmountByDay(monthlyPlan, from, to);
+        const monthlyEmployeePayroll = hotel.employees
+            .filter((employee) => employee.payType === 'MONTHLY')
+            .reduce((sum, employee) => sum + employee.payAmount, 0);
+        const monthlyPlan = hotel.plannedCostItems
+            .filter((item) => monthlyEmployeePayroll === 0 || item.kind !== 'PAYROLL')
+            .reduce((sum, item) => sum + item.monthlyAmount, 0);
+        const uncalculatedEmployeeCount = hotel.employees.filter((employee) => employee.payType !== 'MONTHLY').length;
+        const monthlyFixedForecast = monthlyPlan + monthlyEmployeePayroll;
+        const plannedByDay = allocateMonthlyAmountByDay(monthlyFixedForecast, from, to);
         let plannedCost = 0;
         for (const day of reportDays) {
             const dayAmount = plannedByDay[day.dateKey] ?? 0;
@@ -404,7 +550,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             .map((row) => {
                 const actualCost = row.directActualCost + row.sharedActualCost;
                 const actualProfit = row.earnedRevenue - actualCost;
-                const plannedProfit = row.earnedRevenue - row.plannedCost;
+                const projectedCost = row.standardVariableCost;
+                const plannedProfit = row.earnedRevenue - projectedCost;
+                const forecastCost = row.forecastVariableCost + row.plannedCost;
+                const forecastProfit = row.forecastRevenue - forecastCost;
                 return {
                     id: row.id,
                     label: row.label,
@@ -418,7 +567,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                     directActualCost: row.directActualCost,
                     sharedActualCost: row.sharedActualCost,
                     actualCost,
-                    plannedCost: row.plannedCost,
+                    plannedFixedCost: row.plannedCost,
+                    standardVariableCost: row.standardVariableCost,
+                    plannedCost: projectedCost,
+                    nightlyVariableCost: row.nightlyVariableCost,
+                    breakfastCost: row.breakfastCost,
+                    lunchCost: row.lunchCost,
+                    dinnerCost: row.dinnerCost,
+                    forecastRevenue: row.forecastRevenue,
+                    forecastVariableCost: row.forecastVariableCost,
+                    forecastFixedCost: row.plannedCost,
+                    forecastCost,
+                    forecastProfit,
+                    forecastMargin: percentMargin(forecastProfit, row.forecastRevenue),
+                    costItems: row.costItems.map((item) => ({
+                        ...item,
+                        amount: Math.round((item.quantityMilli * item.unitPrice) / 1000),
+                    })),
                     actualProfit,
                     plannedProfit,
                     margin: percentMargin(actualProfit, row.earnedRevenue),
@@ -430,10 +595,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const cashReceived = rawRooms.reduce((sum, room) => sum + room.cashReceived, 0);
         const directActualCost = rawRooms.reduce((sum, room) => sum + room.directActualCost, 0);
         const assignedActualCost = rawRooms.reduce((sum, room) => sum + room.directActualCost + room.sharedActualCost, 0);
-        const assignedPlannedCost = rawRooms.reduce((sum, room) => sum + room.plannedCost, 0);
+        const standardVariableCost = rawRooms.reduce((sum, room) => sum + room.standardVariableCost, 0);
+        const assignedPlannedFixedCost = rawRooms.reduce((sum, room) => sum + room.plannedCost, 0);
         const actualCost = directActualCost + sharedActualCost;
         const actualProfit = earnedRevenue - actualCost;
-        const plannedProfit = earnedRevenue - plannedCost;
+        const projectedCost = standardVariableCost;
+        const plannedProfit = earnedRevenue - projectedCost;
+        const forecastRevenue = rawRooms.reduce((sum, room) => sum + room.forecastRevenue, 0);
+        const forecastVariableCost = rawRooms.reduce((sum, room) => sum + room.forecastVariableCost, 0);
+        const forecastCost = forecastVariableCost + plannedCost;
+        const forecastProfit = forecastRevenue - forecastCost;
         const occupiedNights = rawRooms.reduce((sum, room) => sum + room.occupiedNights, 0);
 
         return NextResponse.json({
@@ -444,21 +615,42 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 monthlyUtilitiesCost: hotel.monthlyUtilitiesCost,
                 monthlySuppliesCost: hotel.monthlySuppliesCost,
                 monthlyOtherCost: hotel.monthlyOtherCost,
+                plannedCostItems: hotel.plannedCostItems,
+                monthlyEmployeePayroll,
+                uncalculatedEmployeeCount,
             },
+            costCategories: hotel.roomCostCategories.map((category) => ({
+                id: category.id,
+                name: category.name,
+                roomIds: category.rooms.map((room) => room.id),
+                roomLabels: category.rooms.map((room) => room.label),
+                items: category.costItems.map((item) => ({
+                    ...item,
+                    amount: Math.round((item.quantityMilli * item.unitPrice) / 1000),
+                })),
+            })),
             totals: {
                 earnedRevenue,
                 cashReceived,
                 actualCost,
-                plannedCost,
+                plannedFixedCost: plannedCost,
+                standardVariableCost,
+                plannedCost: projectedCost,
                 actualProfit,
                 plannedProfit,
+                forecastRevenue,
+                forecastVariableCost,
+                forecastFixedCost: plannedCost,
+                forecastCost,
+                forecastProfit,
+                forecastMargin: percentMargin(forecastProfit, forecastRevenue),
                 margin: percentMargin(actualProfit, earnedRevenue),
                 occupiedNights: Math.round(occupiedNights * 10) / 10,
                 incompleteStays: incompleteStayIds.size,
                 occupancyConflictRooms,
                 estimatedActivityRooms,
                 unallocatedActualCost: actualCost - assignedActualCost,
-                unallocatedPlannedCost: plannedCost - assignedPlannedCost,
+                unallocatedPlannedCost: plannedCost - assignedPlannedFixedCost,
             },
             rooms: serializedRooms,
         });

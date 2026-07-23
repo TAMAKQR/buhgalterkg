@@ -266,11 +266,11 @@ export const buildBusinessAnalysis = async (
             timezone: true,
             usesExtranets: true,
             extranetNames: true,
-            monthlyPayrollCost: true,
-            monthlyRentCost: true,
-            monthlyUtilitiesCost: true,
-            monthlySuppliesCost: true,
-            monthlyOtherCost: true,
+            plannedCostItems: { select: { monthlyAmount: true, kind: true } },
+            employees: {
+                where: { isActive: true, payType: 'MONTHLY' },
+                select: { payAmount: true },
+            },
         },
     });
 
@@ -448,12 +448,12 @@ export const buildBusinessAnalysis = async (
     const closedShiftsWithMissingCash = shifts.filter((shift) => shift.status === 'CLOSED' && shift.closingCash == null).length;
     const expenseRatio = revenue > 0 ? (expenses + payouts) / revenue : expenses + payouts > 0 ? 1 : 0;
     const net = revenue - expenses - payouts + adjustments;
+    const employeePayroll = hotel.employees.reduce((sum, employee) => sum + employee.payAmount, 0);
     const monthlyPlan =
-        hotel.monthlyPayrollCost +
-        hotel.monthlyRentCost +
-        hotel.monthlyUtilitiesCost +
-        hotel.monthlySuppliesCost +
-        hotel.monthlyOtherCost;
+        hotel.plannedCostItems
+            .filter((item) => employeePayroll === 0 || item.kind !== 'PAYROLL')
+            .reduce((sum, item) => sum + item.monthlyAmount, 0) +
+        employeePayroll;
 
     const riskChecks: AiBusinessAnalysis['dashboard']['riskChecks'] = [
         {

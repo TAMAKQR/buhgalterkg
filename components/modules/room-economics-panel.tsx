@@ -14,8 +14,8 @@ import { useToast } from '@/components/ui/toast';
 import { useApi } from '@/hooks/useApi';
 import { formatDateKey, formatInputValue, formatMoney, parseInputValue } from '@/lib/timezone';
 
-type EconomicsMode = 'actual' | 'planned';
-type SettingsTab = 'expense' | 'plan';
+type EconomicsMode = 'actual' | 'planned' | 'forecast';
+type SettingsTab = 'expense' | 'plan' | 'standards';
 const MAX_BULK_ROOM_SELECTION = 200;
 
 type EconomicsRoom = {
@@ -31,7 +31,28 @@ type EconomicsRoom = {
     directActualCost: number;
     sharedActualCost: number;
     actualCost: number;
+    plannedFixedCost: number;
+    standardVariableCost: number;
     plannedCost: number;
+    nightlyVariableCost: number;
+    breakfastCost: number;
+    lunchCost: number;
+    dinnerCost: number;
+    forecastRevenue: number;
+    forecastVariableCost: number;
+    forecastFixedCost: number;
+    forecastCost: number;
+    forecastProfit: number;
+    forecastMargin: number;
+    costItems: Array<{
+        id: string;
+        name: string;
+        quantityMilli: number;
+        unitPrice: number;
+        mealPlanCode: 'BREAKFAST' | 'LUNCH' | 'DINNER' | null;
+        sortOrder: number;
+        amount: number;
+    }>;
     actualProfit: number;
     plannedProfit: number;
     margin: number;
@@ -44,20 +65,44 @@ type RoomEconomicsPayload = {
         to: string;
         days: number;
     };
+    costCategories: Array<{
+        id: string;
+        name: string;
+        roomIds: string[];
+        roomLabels: string[];
+        items: EconomicsRoom['costItems'];
+    }>;
     hotel: {
         monthlyPayrollCost: number;
         monthlyRentCost: number;
         monthlyUtilitiesCost: number;
         monthlySuppliesCost: number;
         monthlyOtherCost: number;
+        plannedCostItems: Array<{
+            id: string;
+            name: string;
+            monthlyAmount: number;
+            kind: 'GENERAL' | 'PAYROLL';
+            sortOrder: number;
+        }>;
+        monthlyEmployeePayroll: number;
+        uncalculatedEmployeeCount: number;
     };
     totals: {
         earnedRevenue: number;
         cashReceived: number;
         actualCost: number;
+        plannedFixedCost: number;
+        standardVariableCost: number;
         plannedCost: number;
         actualProfit: number;
         plannedProfit: number;
+        forecastRevenue: number;
+        forecastVariableCost: number;
+        forecastFixedCost: number;
+        forecastCost: number;
+        forecastProfit: number;
+        forecastMargin: number;
         margin: number;
         occupiedNights: number;
         incompleteStays: number;
@@ -69,12 +114,10 @@ type RoomEconomicsPayload = {
     rooms: EconomicsRoom[];
 };
 
-type PlanFormState = {
-    payroll: string;
-    rent: string;
-    utilities: string;
-    supplies: string;
-    other: string;
+type PlanFormItem = {
+    name: string;
+    monthlyAmount: string;
+    kind: 'GENERAL' | 'PAYROLL';
 };
 
 type ExpenseFormState = {
@@ -86,6 +129,13 @@ type ExpenseFormState = {
     method: 'CASH' | 'CARD';
     date: string;
     note: string;
+};
+
+type CostItemForm = {
+    name: string;
+    quantity: string;
+    unitPrice: string;
+    mealPlanCode: 'BREAKFAST' | 'LUNCH' | 'DINNER' | '';
 };
 
 interface RoomEconomicsPanelProps {
@@ -116,13 +166,7 @@ const emptyExpenseForm: ExpenseFormState = {
     note: '',
 };
 
-const emptyPlanForm: PlanFormState = {
-    payroll: '0',
-    rent: '0',
-    utilities: '0',
-    supplies: '0',
-    other: '0',
-};
+const emptyPlanForm: PlanFormItem[] = [];
 
 const shiftDateKey = (value: string, dayDelta: number) => {
     const [year, month, day] = value.split('-').map(Number);
@@ -148,15 +192,13 @@ const toMinorUnits = (value: string, allowZero = true) => {
     return Math.round(parsed * 100);
 };
 
-const planFormFromReport = (report?: RoomEconomicsPayload | null): PlanFormState => {
+const planFormFromReport = (report?: RoomEconomicsPayload | null): PlanFormItem[] => {
     if (!report) return emptyPlanForm;
-    return {
-        payroll: fromMinorUnits(report.hotel.monthlyPayrollCost),
-        rent: fromMinorUnits(report.hotel.monthlyRentCost),
-        utilities: fromMinorUnits(report.hotel.monthlyUtilitiesCost),
-        supplies: fromMinorUnits(report.hotel.monthlySuppliesCost),
-        other: fromMinorUnits(report.hotel.monthlyOtherCost),
-    };
+    return report.hotel.plannedCostItems.map((item) => ({
+        name: item.name,
+        monthlyAmount: fromMinorUnits(item.monthlyAmount),
+        kind: item.kind,
+    }));
 };
 
 const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) : '0'}%`;
@@ -196,16 +238,21 @@ export const RoomEconomicsPanel = ({
     const [to, setTo] = useState(initialRange.to);
     const [mode, setMode] = useState<EconomicsMode>('actual');
     const [lastReport, setLastReport] = useState<RoomEconomicsPayload | null>(null);
-    const [settingsTab, setSettingsTab] = useState<SettingsTab>('expense');
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('plan');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSavingExpense, setIsSavingExpense] = useState(false);
     const [isSavingPlan, setIsSavingPlan] = useState(false);
+    const [isSavingStandards, setIsSavingStandards] = useState(false);
     const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(() => ({
         ...emptyExpenseForm,
         date: formatDateKey(new Date(), timezone),
     }));
     const [expenseOperationId, setExpenseOperationId] = useState(() => crypto.randomUUID());
-    const [planForm, setPlanForm] = useState<PlanFormState>(emptyPlanForm);
+    const [planForm, setPlanForm] = useState<PlanFormItem[]>(emptyPlanForm);
+    const [standardRoomId, setStandardRoomId] = useState('');
+    const [standardCategoryName, setStandardCategoryName] = useState('');
+    const [standardRoomIds, setStandardRoomIds] = useState<string[]>([]);
+    const [standardItems, setStandardItems] = useState<CostItemForm[]>([]);
     const [selectedReportRoomIds, setSelectedReportRoomIds] = useState<string[]>([]);
 
     const activeRooms = useMemo(() => rooms.filter((room) => room.isActive), [rooms]);
@@ -251,21 +298,32 @@ export const RoomEconomicsPanel = ({
     useEffect(() => {
         if (!isSettingsOpen) return;
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape' && !isSavingExpense && !isSavingPlan) {
+            if (event.key === 'Escape' && !isSavingExpense && !isSavingPlan && !isSavingStandards) {
                 setIsSettingsOpen(false);
             }
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isSavingExpense, isSavingPlan, isSettingsOpen]);
+    }, [isSavingExpense, isSavingPlan, isSavingStandards, isSettingsOpen]);
 
     const displayedReport = report ?? lastReport;
     const selectedTotals = displayedReport
         ? {
-            cost: mode === 'actual' ? displayedReport.totals.actualCost : displayedReport.totals.plannedCost,
-            profit: mode === 'actual' ? displayedReport.totals.actualProfit : displayedReport.totals.plannedProfit,
+            revenue: mode === 'forecast' ? displayedReport.totals.forecastRevenue : displayedReport.totals.earnedRevenue,
+            cost: mode === 'actual'
+                ? displayedReport.totals.actualCost
+                : mode === 'forecast'
+                    ? displayedReport.totals.forecastCost
+                    : displayedReport.totals.plannedCost,
+            profit: mode === 'actual'
+                ? displayedReport.totals.actualProfit
+                : mode === 'forecast'
+                    ? displayedReport.totals.forecastProfit
+                    : displayedReport.totals.plannedProfit,
             margin: mode === 'actual'
                 ? displayedReport.totals.margin
+                : mode === 'forecast'
+                    ? displayedReport.totals.forecastMargin
                 : displayedReport.totals.earnedRevenue > 0
                     ? (displayedReport.totals.plannedProfit / displayedReport.totals.earnedRevenue) * 100
                     : 0,
@@ -315,7 +373,7 @@ export const RoomEconomicsPanel = ({
     };
 
     const closeSettings = () => {
-        if (isSavingExpense || isSavingPlan) return;
+        if (isSavingExpense || isSavingPlan || isSavingStandards) return;
         setIsSettingsOpen(false);
     };
 
@@ -406,27 +464,21 @@ export const RoomEconomicsPanel = ({
 
     const handlePlanSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const payroll = toMinorUnits(planForm.payroll);
-        const rent = toMinorUnits(planForm.rent);
-        const utilities = toMinorUnits(planForm.utilities);
-        const supplies = toMinorUnits(planForm.supplies);
-        const other = toMinorUnits(planForm.other);
-        if ([payroll, rent, utilities, supplies, other].some((value) => value == null)) {
+        const items = planForm.map((item) => ({
+            name: item.name.trim(),
+            monthlyAmount: toMinorUnits(item.monthlyAmount),
+            kind: item.kind,
+        }));
+        if (items.some((item) => !item.name || item.monthlyAmount == null)) {
             toast('Проверьте суммы плановых затрат', 'error');
             return;
         }
 
         setIsSavingPlan(true);
         try {
-            await request(`/api/hotels/${hotelId}`, {
+            await request(`/api/admin/hotels/${hotelId}/planned-costs`, {
                 method: 'PATCH',
-                body: {
-                    monthlyPayrollCost: payroll,
-                    monthlyRentCost: rent,
-                    monthlyUtilitiesCost: utilities,
-                    monthlySuppliesCost: supplies,
-                    monthlyOtherCost: other,
-                },
+                body: { items },
             });
             toast('Плановые затраты сохранены', 'success');
             setIsSettingsOpen(false);
@@ -439,8 +491,61 @@ export const RoomEconomicsPanel = ({
         }
     };
 
+    const openStandards = () => {
+        if (!displayedReport) return;
+        const category = displayedReport.costCategories.find((item) => item.roomIds.includes(selectedReportRoomIds[0]))
+            ?? displayedReport.costCategories[0];
+        setStandardRoomId(category?.id ?? '');
+        setStandardCategoryName(category?.name ?? '');
+        setStandardRoomIds(category?.roomIds ?? selectedReportRoomIds);
+        setStandardItems((category?.items ?? []).map((item) => ({
+            name: item.name,
+            quantity: String(item.quantityMilli / 1000).replace('.', ','),
+            unitPrice: fromMinorUnits(item.unitPrice),
+            mealPlanCode: item.mealPlanCode ?? '',
+        })));
+        setSettingsTab('standards');
+        setIsSettingsOpen(true);
+    };
+
+    const handleStandardsSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const parsed = standardItems.map((item) => {
+            const quantity = Number(item.quantity.trim().replace(',', '.'));
+            return {
+                name: item.name.trim(),
+                quantityMilli: Number.isFinite(quantity) && quantity >= 0 ? Math.round(quantity * 1000) : null,
+                unitPrice: toMinorUnits(item.unitPrice),
+                mealPlanCode: item.mealPlanCode || null,
+            };
+        });
+        if (!standardCategoryName.trim() || !standardRoomIds.length || parsed.some((item) => !item.name || item.quantityMilli == null || item.unitPrice == null)) {
+            toast('Проверьте строки калькуляции', 'error');
+            return;
+        }
+        setIsSavingStandards(true);
+        try {
+            await request(`/api/admin/hotels/${hotelId}/room-cost-standards`, {
+                method: 'PATCH',
+                body: {
+                    categoryId: standardRoomId || undefined,
+                    name: standardCategoryName.trim(),
+                    roomIds: standardRoomIds,
+                    items: parsed,
+                },
+            });
+            toast('Калькуляция номера сохранена', 'success');
+            setIsSettingsOpen(false);
+            void mutate();
+        } catch (submitError) {
+            toast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить калькуляцию', 'error');
+        } finally {
+            setIsSavingStandards(false);
+        }
+    };
+
     const reportSummary = displayedReport && selectedTotals
-        ? `${displayedReport.period.days} дн. · ${mode === 'actual' ? 'факт' : 'план'} ${formatMoney(selectedTotals.profit, currency)}`
+        ? `${displayedReport.period.days} дн. · ${mode === 'actual' ? 'факт' : mode === 'forecast' ? 'прогноз' : 'калькуляция'} ${formatMoney(selectedTotals.profit, currency)}`
         : 'Себестоимость и прибыль каждого номера';
 
     return (
@@ -509,8 +614,8 @@ export const RoomEconomicsPanel = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                            <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/[0.07] dark:bg-white/[0.03]" aria-label="Режим расчёта">
-                                {([['actual', 'Факт'], ['planned', 'План']] as const).map(([value, label]) => (
+                            <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/[0.07] dark:bg-white/[0.03]" aria-label="Режим расчёта">
+                                {([['actual', 'Факт'], ['planned', 'Калькуляция'], ['forecast', 'Прогноз']] as const).map(([value, label]) => (
                                     <button
                                         key={value}
                                         type="button"
@@ -526,9 +631,9 @@ export const RoomEconomicsPanel = ({
                                 <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 План затрат
                             </Button>
-                            <Button type="button" size="sm" className="gap-1.5" onClick={() => openSettings('expense', selectedReportRoomIds)}>
-                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                                Добавить расход
+                            <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={openStandards} disabled={!displayedReport}>
+                                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Калькуляция номера
                             </Button>
                         </div>
                     </div>
@@ -553,22 +658,22 @@ export const RoomEconomicsPanel = ({
                                 <div className="grid grid-cols-2 gap-px xl:grid-cols-4">
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Начислено</p>
-                                        <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{formatMoney(displayedReport.totals.earnedRevenue, currency)}</p>
+                                        <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{formatMoney(selectedTotals.revenue, currency)}</p>
                                         <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42" title="Фактически проведённые оплаты за выбранный период">Получено {formatMoney(displayedReport.totals.cashReceived, currency)}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
-                                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">{mode === 'actual' ? 'Факт. расходы' : 'План. расходы'}</p>
+                                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">{mode === 'actual' ? 'Факт. расходы' : mode === 'forecast' ? 'Прогноз расходов' : 'Калькуляция'}</p>
                                         <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{formatMoney(selectedTotals.cost, currency)}</p>
                                         <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">{formatPerNight(selectedTotals.cost, displayedReport.totals.occupiedNights, currency).replace(' / ночь', ' / занятую ночь')}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
-                                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Чистыми</p>
+                                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">{mode === 'forecast' ? 'Прогноз чистыми' : mode === 'planned' ? 'Маржинальная прибыль' : 'Чистыми'}</p>
                                         <p className={`mt-1 text-base font-semibold ${profitTone(selectedTotals.profit)}`}>{formatMoney(selectedTotals.profit, currency)}</p>
-                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">Начислено минус {mode === 'actual' ? 'факт' : 'план'}</p>
+                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">Доход минус {mode === 'actual' ? 'факт' : mode === 'forecast' ? 'калькуляция, план и оклады' : 'калькуляция ночей'}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Маржа</p>
-                                        <p className={`mt-1 text-base font-semibold ${displayedReport.totals.earnedRevenue > 0 ? profitTone(selectedTotals.margin) : 'text-slate-500 dark:text-white/45'}`}>{displayedReport.totals.earnedRevenue > 0 ? formatPercent(selectedTotals.margin) : '—'}</p>
+                                        <p className={`mt-1 text-base font-semibold ${selectedTotals.revenue > 0 ? profitTone(selectedTotals.margin) : 'text-slate-500 dark:text-white/45'}`}>{selectedTotals.revenue > 0 ? formatPercent(selectedTotals.margin) : '—'}</p>
                                         <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">{displayedReport.totals.occupiedNights} занятых ночей</p>
                                     </div>
                                 </div>
@@ -592,27 +697,18 @@ export const RoomEconomicsPanel = ({
                                 </p>
                             ) : null}
 
+                            {mode === 'forecast' && displayedReport.hotel.uncalculatedEmployeeCount > 0 ? (
+                                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
+                                    Не включены в фонд оплаты труда: {displayedReport.hotel.uncalculatedEmployeeCount} сотрудников со схемой «за смену», «за номер», «процент» или «другое». Для них нужен журнал начислений.
+                                </p>
+                            ) : null}
+
                             {(mode === 'actual' ? displayedReport.totals.unallocatedActualCost : displayedReport.totals.unallocatedPlannedCost) ? (
                                 <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-300/20 dark:bg-sky-400/10 dark:text-sky-100">
                                     {formatMoney((mode === 'actual' ? displayedReport.totals.unallocatedActualCost : displayedReport.totals.unallocatedPlannedCost) ?? 0, currency)} не распределено: в соответствующие даты в объекте не было активных номеров.
                                 </p>
                             ) : null}
 
-                            {selectedReportRoomIds.length ? (
-                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-400/20 dark:bg-blue-500/10">
-                                    <div>
-                                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Выбрано номеров: {selectedReportRoomIds.length}</p>
-                                        <p className="text-[11px] text-blue-700/70 dark:text-blue-100/55">Добавьте один расход сразу на отмеченные комнаты.</p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedReportRoomIds([])}>Сбросить</Button>
-                                        <Button type="button" size="sm" className="gap-1.5" onClick={() => openSettings('expense', selectedReportRoomIds)}>
-                                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                                            Добавить расход
-                                        </Button>
-                                    </div>
-                                </div>
-                            ) : null}
 
                             <div className={`overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/[0.07] ${isValidating ? 'opacity-70' : ''}`}>
                                 <div className="hidden overflow-x-auto lg:block">
@@ -638,10 +734,13 @@ export const RoomEconomicsPanel = ({
                                         </thead>
                                         <tbody className="divide-y divide-slate-200/70 dark:divide-white/[0.055]">
                                             {displayedReport.rooms.map((room) => {
-                                                const cost = mode === 'actual' ? room.actualCost : room.plannedCost;
-                                                const profit = mode === 'actual' ? room.actualProfit : room.plannedProfit;
+                                                const revenue = mode === 'forecast' ? room.forecastRevenue : room.earnedRevenue;
+                                                const cost = mode === 'actual' ? room.actualCost : mode === 'forecast' ? room.forecastCost : room.plannedCost;
+                                                const profit = mode === 'actual' ? room.actualProfit : mode === 'forecast' ? room.forecastProfit : room.plannedProfit;
                                                 const margin = mode === 'actual'
                                                     ? room.margin
+                                                    : mode === 'forecast'
+                                                        ? room.forecastMargin
                                                     : room.earnedRevenue > 0
                                                         ? (room.plannedProfit / room.earnedRevenue) * 100
                                                         : 0;
@@ -669,18 +768,22 @@ export const RoomEconomicsPanel = ({
                                                             <p className="text-[11px] text-slate-500 dark:text-white/35">{room.stayCount} заезд.</p>
                                                         </td>
                                                         <td className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white">
-                                                            <p>{formatMoney(room.earnedRevenue, currency)}</p>
+                                                            <p>{formatMoney(revenue, currency)}</p>
                                                             <p className="text-[11px] font-normal text-slate-500 dark:text-white/35" title="Фактически получено">получено {formatMoney(room.cashReceived, currency)}</p>
                                                         </td>
                                                         <td className="px-4 py-3 text-right text-slate-700 dark:text-white/70">
                                                             <p>{formatMoney(cost, currency)}</p>
-                                                            <p className="text-[11px] text-slate-500 dark:text-white/35">{formatPerNight(cost, room.occupiedNights, currency)}{mode === 'actual' ? ` · прямые ${formatMoney(room.directActualCost, currency)}` : ''}</p>
+                                                            <p className="text-[11px] text-slate-500 dark:text-white/35">
+                                                                {mode === 'actual'
+                                                                    ? `${formatPerNight(cost, room.occupiedNights, currency)} · прямые ${formatMoney(room.directActualCost, currency)}`
+                                                                    : `по строкам · ${formatPerNight(room.standardVariableCost, room.occupiedNights, currency)}`}
+                                                            </p>
                                                         </td>
                                                         <td className={`px-4 py-3 text-right font-semibold ${profitTone(profit)}`}>
                                                             <p>{formatMoney(profit, currency)}</p>
                                                             <p className="text-[11px] font-normal opacity-70">{formatPerNight(profit, room.occupiedNights, currency)}</p>
                                                         </td>
-                                                        <td className="px-4 py-3 text-right"><Badge label={room.earnedRevenue > 0 ? formatPercent(margin) : '—'} tone={room.earnedRevenue > 0 ? marginTone(margin) : 'default'} /></td>
+                                                        <td className="px-4 py-3 text-right"><Badge label={revenue > 0 ? formatPercent(margin) : '—'} tone={revenue > 0 ? marginTone(margin) : 'default'} /></td>
                                                     </tr>
                                                 );
                                             })}
@@ -690,10 +793,13 @@ export const RoomEconomicsPanel = ({
 
                                 <div className="divide-y divide-slate-200/70 dark:divide-white/[0.055] lg:hidden">
                                     {displayedReport.rooms.map((room) => {
-                                        const cost = mode === 'actual' ? room.actualCost : room.plannedCost;
-                                        const profit = mode === 'actual' ? room.actualProfit : room.plannedProfit;
+                                        const revenue = mode === 'forecast' ? room.forecastRevenue : room.earnedRevenue;
+                                        const cost = mode === 'actual' ? room.actualCost : mode === 'forecast' ? room.forecastCost : room.plannedCost;
+                                        const profit = mode === 'actual' ? room.actualProfit : mode === 'forecast' ? room.forecastProfit : room.plannedProfit;
                                         const margin = mode === 'actual'
                                             ? room.margin
+                                            : mode === 'forecast'
+                                                ? room.forecastMargin
                                             : room.earnedRevenue > 0
                                                 ? (room.plannedProfit / room.earnedRevenue) * 100
                                                 : 0;
@@ -716,13 +822,13 @@ export const RoomEconomicsPanel = ({
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
                                                         {!room.isActive ? <Badge label="Выкл" /> : null}
-                                                        <Badge label={room.earnedRevenue > 0 ? formatPercent(margin) : '—'} tone={room.earnedRevenue > 0 ? marginTone(margin) : 'default'} />
+                                                        <Badge label={revenue > 0 ? formatPercent(margin) : '—'} tone={revenue > 0 ? marginTone(margin) : 'default'} />
                                                     </div>
                                                 </div>
                                                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                                                     <div className="col-span-2 border-t border-slate-200/70 pt-2 dark:border-white/[0.055]">
                                                         <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/35">Начислено</p>
-                                                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatMoney(room.earnedRevenue, currency)}</p>
+                                                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatMoney(revenue, currency)}</p>
                                                         <p className="mt-0.5 text-[10px] text-slate-500 dark:text-white/35">получено {formatMoney(room.cashReceived, currency)}</p>
                                                     </div>
                                                     <div>
@@ -774,13 +880,6 @@ export const RoomEconomicsPanel = ({
                         <div className="mt-4 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/[0.07] dark:bg-white/[0.03]">
                             <button
                                 type="button"
-                                className={`h-9 rounded-md px-3 text-xs font-medium transition ${settingsTab === 'expense' ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.1] dark:text-white' : 'text-slate-500 dark:text-white/45'}`}
-                                onClick={() => setSettingsTab('expense')}
-                            >
-                                Фактический расход
-                            </button>
-                            <button
-                                type="button"
                                 className={`h-9 rounded-md px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${settingsTab === 'plan' ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.1] dark:text-white' : 'text-slate-500 dark:text-white/45'}`}
                                 disabled={!displayedReport}
                                 onClick={() => {
@@ -789,6 +888,14 @@ export const RoomEconomicsPanel = ({
                                 }}
                             >
                                 Месячный план
+                            </button>
+                            <button
+                                type="button"
+                                className={`h-9 rounded-md px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${settingsTab === 'standards' ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.1] dark:text-white' : 'text-slate-500 dark:text-white/45'}`}
+                                disabled={!displayedReport}
+                                onClick={openStandards}
+                            >
+                                Калькуляция
                             </button>
                         </div>
 
@@ -940,34 +1047,153 @@ export const RoomEconomicsPanel = ({
                                     </Button>
                                 </div>
                             </form>
-                        ) : (
+                        ) : settingsTab === 'plan' ? (
                             <form className="mt-4 space-y-4" onSubmit={handlePlanSubmit}>
                                 <p className="text-xs leading-5 text-slate-500 dark:text-white/45">Текущий месячный план распределяется по календарным дням активности номеров как сценарий. Фактическая история расходов при этом не меняется.</p>
-                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    {([
-                                        ['payroll', 'Зарплаты'],
-                                        ['rent', 'Аренда'],
-                                        ['utilities', 'Коммунальные услуги'],
-                                        ['supplies', 'Обслуживание и хозтовары'],
-                                        ['other', 'Прочее'],
-                                    ] as Array<[keyof PlanFormState, string]>).map(([key, label]) => (
-                                        <label key={key} className="space-y-1.5">
-                                            <span className="text-xs font-medium text-slate-500 dark:text-white/45">{label} / мес.</span>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                inputMode="decimal"
-                                                value={planForm[key]}
-                                                onChange={(event) => setPlanForm((current) => ({ ...current, [key]: event.target.value }))}
-                                                aria-label={`${label}, ${currency} в месяц`}
-                                            />
-                                        </label>
+                                <div className="space-y-2">
+                                    {planForm.map((item, index) => (
+                                        <div key={index} className="grid grid-cols-[minmax(0,1fr)_8rem_minmax(8rem,12rem)_2.25rem] items-end gap-2">
+                                            <label className="space-y-1.5">
+                                                <span className="text-xs font-medium text-slate-500 dark:text-white/45">Название статьи</span>
+                                                <Input value={item.name} onChange={(event) => setPlanForm((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, name: event.target.value } : row))} placeholder="Зарплаты, аренда, маркетинг…" />
+                                            </label>
+                                            <label className="space-y-1.5">
+                                                <span className="text-xs font-medium text-slate-500 dark:text-white/45">Тип</span>
+                                                <Select value={item.kind} onChange={(event) => setPlanForm((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, kind: event.target.value as PlanFormItem['kind'] } : row))}>
+                                                    <option value="GENERAL">Общая</option>
+                                                    <option value="PAYROLL">Зарплата</option>
+                                                </Select>
+                                            </label>
+                                            <label className="space-y-1.5">
+                                                <span className="text-xs font-medium text-slate-500 dark:text-white/45">Сумма / мес.</span>
+                                                <Input type="number" min="0" step="0.01" inputMode="decimal" value={item.monthlyAmount} onChange={(event) => setPlanForm((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, monthlyAmount: event.target.value } : row))} />
+                                            </label>
+                                            <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={() => setPlanForm((current) => current.filter((_, rowIndex) => rowIndex !== index))} aria-label={`Удалить статью ${item.name || index + 1}`}>
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ))}
+                                </div>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => setPlanForm((current) => [...current, { name: '', monthlyAmount: '0', kind: 'GENERAL' }])}>
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" />Добавить статью
+                                    </Button>
+                                    <p className="text-sm text-slate-600 dark:text-white/60">
+                                        Итого для прогноза: <strong>{formatMoney(
+                                            planForm
+                                                .filter((item) => displayedReport?.hotel.monthlyEmployeePayroll === 0 || item.kind !== 'PAYROLL')
+                                                .reduce((sum, item) => sum + (toMinorUnits(item.monthlyAmount) ?? 0), 0)
+                                            + (displayedReport?.hotel.monthlyEmployeePayroll ?? 0),
+                                            currency,
+                                        )}</strong> / мес.
+                                    </p>
                                 </div>
                                 <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4 dark:border-white/[0.06]">
                                     <Button type="button" variant="ghost" onClick={closeSettings}>Отмена</Button>
                                     <Button type="submit" disabled={isSavingPlan}>{isSavingPlan ? 'Сохраняем…' : 'Сохранить план'}</Button>
+                                </div>
+                            </form>
+                        ) : (
+                            <form className="mt-4 space-y-4" onSubmit={handleStandardsSubmit}>
+                                <p className="text-xs leading-5 text-slate-500 dark:text-white/45">
+                                    Калькуляция применяется к каждой фактически занятой ночи. Позиции с питанием добавляются только когда соответствующее питание выбрано в проживании.
+                                </p>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="block space-y-1.5">
+                                        <span className="text-xs font-medium text-slate-500 dark:text-white/45">Категория номеров</span>
+                                        <Select
+                                            value={standardRoomId}
+                                            onChange={(event) => {
+                                                const categoryId = event.target.value;
+                                                const category = displayedReport?.costCategories.find((item) => item.id === categoryId);
+                                                setStandardRoomId(categoryId);
+                                                setStandardCategoryName(category?.name ?? '');
+                                                setStandardRoomIds(category?.roomIds ?? []);
+                                                setStandardItems((category?.items ?? []).map((item) => ({
+                                                    name: item.name,
+                                                    quantity: String(item.quantityMilli / 1000).replace('.', ','),
+                                                    unitPrice: fromMinorUnits(item.unitPrice),
+                                                    mealPlanCode: item.mealPlanCode ?? '',
+                                                })));
+                                            }}
+                                        >
+                                            <option value="">Новая категория</option>
+                                            {displayedReport?.costCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                                        </Select>
+                                    </label>
+                                    <label className="block space-y-1.5">
+                                        <span className="text-xs font-medium text-slate-500 dark:text-white/45">Название категории</span>
+                                        <Input value={standardCategoryName} onChange={(event) => setStandardCategoryName(event.target.value)} placeholder="Double, Twin, Single…" />
+                                    </label>
+                                </div>
+                                <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-white/[0.07]">
+                                    <p className="text-xs font-medium text-slate-700 dark:text-white/70">Номера этой категории</p>
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                                        {displayedReport?.rooms.filter((room) => room.isActive).map((room) => (
+                                            <label key={room.id} className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-xs dark:border-white/[0.07]">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={standardRoomIds.includes(room.id)}
+                                                    onChange={() => setStandardRoomIds((current) => current.includes(room.id)
+                                                        ? current.filter((id) => id !== room.id)
+                                                        : [...current, room.id])}
+                                                    className="h-4 w-4 accent-blue-600"
+                                                />
+                                                <span className="truncate">№ {room.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="max-h-[55vh] overflow-auto rounded-lg border border-slate-200 dark:border-white/[0.07]">
+                                    <table className="min-w-[760px] w-full text-xs">
+                                        <thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-[#171b21] dark:text-white/45">
+                                            <tr>
+                                                <th className="px-2 py-2 text-left font-medium">Наименование</th>
+                                                <th className="w-24 px-2 py-2 text-right font-medium">Кол-во</th>
+                                                <th className="w-28 px-2 py-2 text-right font-medium">Цена</th>
+                                                <th className="w-28 px-2 py-2 text-right font-medium">Сумма</th>
+                                                <th className="w-32 px-2 py-2 text-left font-medium">Применять</th>
+                                                <th className="w-10 px-2 py-2" />
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200/70 dark:divide-white/[0.055]">
+                                            {standardItems.map((item, index) => {
+                                                const quantity = Number(item.quantity.replace(',', '.')) || 0;
+                                                const unitPrice = toMinorUnits(item.unitPrice) ?? 0;
+                                                const amount = Math.round(quantity * unitPrice);
+                                                return (
+                                                    <tr key={index}>
+                                                        <td className="p-2"><Input value={item.name} onChange={(event) => setStandardItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, name: event.target.value } : row))} /></td>
+                                                        <td className="p-2"><Input className="text-right" type="number" min="0" step="0.001" value={item.quantity.replace(',', '.')} onChange={(event) => setStandardItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row))} /></td>
+                                                        <td className="p-2"><Input className="text-right" type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => setStandardItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, unitPrice: event.target.value } : row))} /></td>
+                                                        <td className="px-2 py-2 text-right font-medium">{formatMoney(amount, currency)}</td>
+                                                        <td className="p-2">
+                                                            <Select value={item.mealPlanCode} onChange={(event) => setStandardItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, mealPlanCode: event.target.value as CostItemForm['mealPlanCode'] } : row))}>
+                                                                <option value="">Всегда</option>
+                                                                <option value="BREAKFAST">С завтраком</option>
+                                                                <option value="LUNCH">С обедом</option>
+                                                                <option value="DINNER">С ужином</option>
+                                                            </Select>
+                                                        </td>
+                                                        <td className="p-2"><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setStandardItems((current) => current.filter((_, rowIndex) => rowIndex !== index))}><X className="h-4 w-4" /></Button></td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => setStandardItems((current) => [...current, { name: '', quantity: '1', unitPrice: '0', mealPlanCode: '' }])}>
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" />Добавить строку
+                                    </Button>
+                                    <div className="text-right text-xs">
+                                        <p>Без питания: <strong>{formatMoney(standardItems.filter((item) => !item.mealPlanCode).reduce((sum, item) => sum + Math.round((Number(item.quantity.replace(',', '.')) || 0) * (toMinorUnits(item.unitPrice) ?? 0)), 0), currency)}</strong></p>
+                                        <p>С завтраком: <strong>{formatMoney(standardItems.filter((item) => !item.mealPlanCode || item.mealPlanCode === 'BREAKFAST').reduce((sum, item) => sum + Math.round((Number(item.quantity.replace(',', '.')) || 0) * (toMinorUnits(item.unitPrice) ?? 0)), 0), currency)}</strong></p>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4 dark:border-white/[0.06]">
+                                    <Button type="button" variant="ghost" onClick={closeSettings}>Отмена</Button>
+                                    <Button type="submit" disabled={isSavingStandards}>{isSavingStandards ? 'Сохраняем…' : 'Сохранить калькуляцию'}</Button>
                                 </div>
                             </form>
                         )}

@@ -321,11 +321,11 @@ export async function GET(request: NextRequest) {
                     currency: true,
                     timezone: true,
                     financialCycleStartDay: true,
-                    monthlyPayrollCost: true,
-                    monthlyRentCost: true,
-                    monthlyUtilitiesCost: true,
-                    monthlySuppliesCost: true,
-                    monthlyOtherCost: true,
+                    plannedCostItems: { select: { name: true, monthlyAmount: true, kind: true } },
+                    employees: {
+                        where: { isActive: true },
+                        select: { payType: true, payAmount: true },
+                    },
                     _count: {
                         select: { rooms: true },
                     },
@@ -683,6 +683,22 @@ export async function GET(request: NextRequest) {
             managerHotelBucket.shifts += 1;
         }
 
+        const rankingManagerIds = Array.from(managerRankBuckets.keys());
+        const activeRankingAssignments = rankingManagerIds.length
+            ? await prisma.hotelAssignment.findMany({
+                where: {
+                    userId: { in: rankingManagerIds },
+                    isActive: true,
+                    hotel: { country },
+                },
+                select: { userId: true, hotelId: true },
+            })
+            : [];
+        const activeRankingManagerIds = new Set(activeRankingAssignments.map((assignment) => assignment.userId));
+        const activeRankingManagerHotelKeys = new Set(
+            activeRankingAssignments.map((assignment) => `${assignment.hotelId}:${assignment.userId}`)
+        );
+
         const hotelBuckets = Array.from(hotelRankBuckets.values()).map((item) => {
             const net = item.revenue - item.expenses - item.payouts + item.adjustments;
             const expenseTotal = item.expenses + item.payouts;
@@ -779,6 +795,7 @@ export async function GET(request: NextRequest) {
                     averageStayRevenue: item.averageStayRevenue,
                     expenseRatio: item.expenseRatio,
                     hotels: Array.from(item.hotels).slice(0, 4),
+                    isActive: activeRankingManagerIds.has(item.id),
                 };
             })
             .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
@@ -836,6 +853,7 @@ export async function GET(request: NextRequest) {
                             averageStayRevenue: item.averageStayRevenue,
                             expenseRatio: item.expenseRatio,
                             hotels: [item.hotelName],
+                            isActive: activeRankingManagerHotelKeys.has(`${item.hotelId}:${item.managerId}`),
                         };
                     })
                     .sort((first, second) => second.score - first.score || second.revenue - first.revenue)
@@ -921,11 +939,13 @@ export async function GET(request: NextRequest) {
         const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0;
         const monthlyCostPlan = targetHotels.reduce(
             (totals, hotel) => {
-                totals.payroll += hotel.monthlyPayrollCost ?? 0;
-                totals.rent += hotel.monthlyRentCost ?? 0;
-                totals.utilities += hotel.monthlyUtilitiesCost ?? 0;
-                totals.supplies += hotel.monthlySuppliesCost ?? 0;
-                totals.other += hotel.monthlyOtherCost ?? 0;
+                const employeePayroll = hotel.employees
+                    .filter((employee) => employee.payType === 'MONTHLY')
+                    .reduce((sum, employee) => sum + employee.payAmount, 0);
+                totals.payroll += employeePayroll;
+                totals.other += hotel.plannedCostItems
+                    .filter((item) => employeePayroll === 0 || item.kind !== 'PAYROLL')
+                    .reduce((sum, item) => sum + item.monthlyAmount, 0);
                 return totals;
             },
             { payroll: 0, rent: 0, utilities: 0, supplies: 0, other: 0 }
@@ -938,12 +958,14 @@ export async function GET(request: NextRequest) {
             monthlyCostPlan.other;
         const cycleMetrics = cycleSummaries.map(({ hotel, window }, index) => {
             const revenue = cycleRevenueResults[index]?._sum.amountPaid ?? 0;
+            const employeePayroll = hotel.employees
+                    .filter((employee) => employee.payType === 'MONTHLY')
+                    .reduce((sum, employee) => sum + employee.payAmount, 0);
             const requiredRevenue =
-                (hotel.monthlyPayrollCost ?? 0) +
-                (hotel.monthlyRentCost ?? 0) +
-                (hotel.monthlyUtilitiesCost ?? 0) +
-                (hotel.monthlySuppliesCost ?? 0) +
-                (hotel.monthlyOtherCost ?? 0);
+                hotel.plannedCostItems
+                    .filter((item) => employeePayroll === 0 || item.kind !== 'PAYROLL')
+                    .reduce((sum, item) => sum + item.monthlyAmount, 0) +
+                employeePayroll;
             const remainingRevenue = Math.max(requiredRevenue - revenue, 0);
             const currentAverage = window.elapsedDays > 0 ? Math.round(revenue / window.elapsedDays) : 0;
             const requiredAverage = remainingRevenue > 0 && window.remainingDays > 0
@@ -971,6 +993,11 @@ export async function GET(request: NextRequest) {
         const currentDailyAverage = cycleMetrics.reduce((sum, item) => sum + item.currentAverage, 0);
         const requiredDailyAverage = cycleMetrics.reduce((sum, item) => sum + item.requiredAverage, 0);
         const projectedRevenue = cycleMetrics.reduce((sum, item) => sum + item.projectedRevenue, 0);
+        const projectedNetProfit = projectedRevenue - monthlyRequiredRevenue;
+        const uncalculatedEmployeeCount = targetHotels.reduce(
+            (sum, hotel) => sum + hotel.employees.filter((employee) => employee.payType !== 'MONTHLY').length,
+            0
+        );
         const elapsedDays = sharedTimeline ? cycleMetrics[0]?.elapsedDays ?? null : null;
         const totalDays = sharedTimeline ? cycleMetrics[0]?.totalDays ?? null : null;
         const remainingDays = sharedTimeline ? cycleMetrics[0]?.remainingDays ?? null : null;
@@ -1118,6 +1145,8 @@ export async function GET(request: NextRequest) {
                 currentDailyAverage,
                 requiredDailyAverage,
                 projectedRevenue,
+                projectedNetProfit,
+                uncalculatedEmployeeCount,
                 onTrack: monthlyRequiredRevenue > 0 ? projectedRevenue >= monthlyRequiredRevenue : false,
             },
             dailySeries,

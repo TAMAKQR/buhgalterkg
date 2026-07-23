@@ -109,6 +109,7 @@ type ManagerRankingItem = {
     averageStayRevenue: number;
     expenseRatio: number;
     hotels: string[];
+    isActive?: boolean;
 };
 
 type ManagersByHotelRankingGroup = {
@@ -231,6 +232,8 @@ type AdminOverview = {
         currentDailyAverage: number;
         requiredDailyAverage: number;
         projectedRevenue: number;
+        projectedNetProfit: number;
+        uncalculatedEmployeeCount: number;
         onTrack: boolean;
     };
     dailySeries?: Array<{ date: string; cashIn: number; cashOut: number; collections: number }>;
@@ -697,12 +700,14 @@ function BusinessTargetCard({
 
     if (!target) return null;
 
+    const generalPlannedCosts =
+        target.costs.rent +
+        target.costs.utilities +
+        target.costs.supplies +
+        target.costs.other;
     const breakdown = [
-        { label: "Зарплаты", value: target.costs.payroll },
-        { label: "Аренда", value: target.costs.rent },
-        { label: "Ком услуги", value: target.costs.utilities },
-        { label: "Хоз товары", value: target.costs.supplies },
-        { label: "Прочее", value: target.costs.other },
+        { label: "Фонд оплаты сотрудников", value: target.costs.payroll },
+        { label: "Прочие статьи месячного плана", value: generalPlannedCosts },
     ];
     const hasPlan = target.monthlyRequiredRevenue > 0;
     const helpText = hasPlan
@@ -750,7 +755,7 @@ function BusinessTargetCard({
                             {target.onTrack ? "Идем по темпу" : "Нужно ускориться"}
                         </p>
                         <p className="mt-1 break-words text-xs text-slate-500 dark:text-white/45">
-                            Прогноз: {formatCurrency(target.projectedRevenue, currency)}
+                            Прогноз результата: {formatCurrency(target.projectedNetProfit, currency)}
                         </p>
                     </div>
                 ) : null}
@@ -758,13 +763,24 @@ function BusinessTargetCard({
 
             {hasPlan ? (
                 <>
-                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-5">
-                        <StatPill label="Нужно за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                        <StatPill label="План затрат за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
                         <StatPill label="Уже заработано" value={formatCurrency(target.monthRevenue, currency)} />
                         <StatPill label="Осталось добрать" value={formatCurrency(target.remainingToTarget, currency)} />
+                        <StatPill label="Прогноз выручки по текущему темпу" value={formatCurrency(target.projectedRevenue, currency)} />
+                        <StatPill
+                            label={target.projectedNetProfit >= 0 ? "Прогноз чистой прибыли" : "Прогноз убытка"}
+                            value={formatCurrency(Math.abs(target.projectedNetProfit), currency)}
+                        />
                         <StatPill label="Средний темп" value={`${formatCurrency(target.currentDailyAverage, currency)}/день`} />
                         <StatPill label="Нужно дальше" value={target.requiredDailyAverage > 0 ? `${formatCurrency(target.requiredDailyAverage, currency)}/день` : "цель закрыта"} />
                     </div>
+
+                    {target.uncalculatedEmployeeCount > 0 ? (
+                        <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                            В плане не учтено сотрудников с посменной, сдельной или процентной оплатой: {target.uncalculatedEmployeeCount}. Их сумма появится после задания месячного планового начисления.
+                        </p>
+                    ) : null}
 
                     <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-white/[0.03]">
                         <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
@@ -791,7 +807,7 @@ function BusinessTargetCard({
 
                     <details className="mt-3">
                         <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">Состав месячного плана</summary>
-                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                             {breakdown.map((item) => (
                                 <div key={item.label} className="min-w-0 border-l-2 border-slate-200 px-3 py-1 dark:border-white/[0.08]">
                                     <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-500">{item.label}</p>
@@ -1178,6 +1194,15 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                                 {index + 1}
                                             </span>
                                             <p className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white" title={item.name}>{item.name}</p>
+                                            {kind === "managers" ? (
+                                                <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+                                                    (item as ManagerRankingItem).isActive
+                                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                                                        : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/45"
+                                                }`}>
+                                                    {(item as ManagerRankingItem).isActive ? "Работает" : "Не работает"}
+                                                </span>
+                                            ) : null}
                                         </div>
                                         <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-semibold lg:hidden ${scoreTone}`}>
                                             {item.score}
@@ -1268,7 +1293,16 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className, onSele
                                     >
                                         <span className="text-xs font-semibold text-slate-400 dark:text-white/35">{index + 1}</span>
                                         <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
+                                                <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+                                                    manager.isActive
+                                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                                                        : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/45"
+                                                }`}>
+                                                    {manager.isActive ? "Работает" : "Не работает"}
+                                                </span>
+                                            </div>
                                             <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/38">
                                                 {formatCurrency(manager.revenue, defaultCurrency)} · {manager.shifts} смен · {manager.stays} заездов
                                             </p>
@@ -1312,6 +1346,13 @@ function RankingDetailModal({ selection, currency, onClose }: {
     const expenseRatioLabel = item.revenue > 0 ? formatPercent(item.expenseRatio) : "0%";
 
     const rows = [
+        ...(!isHotel ? [{
+            label: "Статус",
+            value: (item as ManagerRankingItem).isActive ? "Работает" : "Не работает",
+            tone: (item as ManagerRankingItem).isActive
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-slate-500 dark:text-white/50",
+        }] : []),
         { label: "Score", value: String(item.score) },
         { label: "Выручка", value: formatCurrency(item.revenue, currency) },
         { label: "Чистыми", value: formatCurrency(item.net, currency), tone: item.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300" },

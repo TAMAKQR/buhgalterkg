@@ -144,6 +144,20 @@ const hotelDetailSelect = {
         orderBy: { name: 'asc' },
         select: { id: true, name: true }
     },
+    employees: {
+        orderBy: { fullName: 'asc' },
+        select: {
+            id: true,
+            fullName: true,
+            position: true,
+            payType: true,
+            payAmount: true,
+            isActive: true,
+            hiredAt: true,
+            dismissedAt: true,
+            notes: true,
+        },
+    },
     rooms: {
         orderBy: { label: 'asc' },
         select: {
@@ -846,6 +860,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                 canEditStayPayments: assignment.canEditStayPayments,
                 canCancelBookings: assignment.canCancelBookings
             })),
+            employees: hotelRecord.employees,
             activeShift: activeShiftRecord
                 ? {
                     id: activeShiftRecord.id,
