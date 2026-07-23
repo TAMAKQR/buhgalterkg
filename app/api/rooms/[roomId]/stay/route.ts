@@ -20,7 +20,7 @@ const staySchema = z.object({
     shiftId: z.string().cuid().optional(),
     stayId: z.string().cuid().optional(),
     guestProfileId: z.string().cuid().optional(),
-    intent: z.enum(['book', 'checkin', 'checkout', 'extend', 'transfer', 'cancel-booking', 'adjust-payments', 'edit-stay']),
+    intent: z.enum(['book', 'checkin', 'checkout', 'extend', 'transfer', 'move-booking', 'cancel-booking', 'adjust-payments', 'edit-stay']),
     guestName: z.string().optional(),
     guestPhone: z.string().max(40).optional().nullable(),
     companyName: z.string().max(120).optional().nullable(),
@@ -112,8 +112,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             return new NextResponse('Можно использовать только свою открытую смену на этом объекте', { status: 403 });
         }
 
-        if ((payload.intent === 'checkin' || payload.intent === 'extend' || payload.intent === 'transfer') && !shift) {
+        if (
+            (payload.intent === 'checkin' || payload.intent === 'extend' || payload.intent === 'transfer') &&
+            !shift &&
+            session.role !== UserRole.ADMIN
+        ) {
             return new NextResponse('Нужна активная смена для операции с проживанием', { status: 400 });
+        }
+
+        if (payload.intent === 'move-booking' && !canEditBookings) {
+            return new NextResponse('Нет права переносить бронирования', { status: 403 });
         }
 
         if (!room.hotel.allowOnlinePayments && (payload.onlineAmount ?? 0) > 0) {
@@ -759,6 +767,99 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             return NextResponse.json(adjustedStay);
         }
 
+        if (payload.intent === 'move-booking') {
+            if (!payload.stayId || !payload.targetRoomId) {
+                return new NextResponse('Укажите бронь и номер назначения', { status: 400 });
+            }
+            const targetRoom = await prisma.room.findFirst({
+                where: {
+                    id: payload.targetRoomId,
+                    hotelId: room.hotelId,
+                    isActive: true,
+                },
+                select: { id: true, label: true },
+            });
+            if (!targetRoom) {
+                return new NextResponse('Целевой номер не найден', { status: 404 });
+            }
+
+            const transferLine = targetRoom.id === room.id
+                ? `Перенос дат брони в №${room.label}`
+                : `Перенос брони: из №${room.label} в №${targetRoom.label}`;
+            const movedBooking = await prisma.$transaction(async (tx) => {
+                await lockRoomsForStayMutation(tx, [room.id, targetRoom.id]);
+
+                const booking = await tx.roomStay.findFirst({
+                    where: {
+                        id: payload.stayId,
+                        roomId: room.id,
+                        hotelId: room.hotelId,
+                        status: StayStatus.SCHEDULED,
+                    },
+                });
+                if (!booking) {
+                    throw new SessionError('Бронь уже изменена или заселена', 409);
+                }
+
+                const nextCheckIn = payload.scheduledCheckIn ? new Date(payload.scheduledCheckIn) : booking.scheduledCheckIn;
+                const nextCheckOut = payload.scheduledCheckOut ? new Date(payload.scheduledCheckOut) : booking.scheduledCheckOut;
+                if (
+                    Number.isNaN(nextCheckIn.getTime()) ||
+                    Number.isNaN(nextCheckOut.getTime()) ||
+                    nextCheckOut <= nextCheckIn
+                ) {
+                    throw new SessionError('Некорректные даты переноса брони', 400);
+                }
+
+                const conflict = await tx.roomStay.findFirst({
+                    where: {
+                        id: { not: booking.id },
+                        roomId: targetRoom.id,
+                        status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
+                        scheduledCheckIn: { lt: nextCheckOut },
+                        scheduledCheckOut: { gt: nextCheckIn },
+                    },
+                    select: { id: true },
+                });
+                if (conflict) {
+                    throw new SessionError('На эти даты целевой номер уже занят или забронирован', 409);
+                }
+
+                const moved = await tx.roomStay.updateMany({
+                    where: {
+                        id: booking.id,
+                        roomId: room.id,
+                        status: StayStatus.SCHEDULED,
+                    },
+                    data: {
+                        roomId: targetRoom.id,
+                        scheduledCheckIn: nextCheckIn,
+                        scheduledCheckOut: nextCheckOut,
+                        notes: appendTransferNote(booking.notes, transferLine),
+                    },
+                });
+                if (moved.count !== 1) {
+                    throw new SessionError('Бронь уже изменена другой операцией', 409);
+                }
+
+                await tx.stayTransfer.create({
+                    data: {
+                        stayId: booking.id,
+                        fromRoomId: room.id,
+                        toRoomId: targetRoom.id,
+                        shiftId: shift?.id ?? null,
+                        note: targetRoom.id === room.id
+                            ? 'Перенос дат брони перетаскиванием'
+                            : 'Перенос брони перетаскиванием',
+                    },
+                });
+
+                return tx.roomStay.findUniqueOrThrow({ where: { id: booking.id } });
+            });
+
+            return NextResponse.json(movedBooking);
+        }
+
         if (payload.intent === 'checkin') {
             const normalizedBookingSource = normalizeBookingSource(payload.bookingSource);
             const resolvedBookingSource = normalizedBookingSource
@@ -1263,8 +1364,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                 return new NextResponse('Целевая комната не найдена', { status: 404 });
             }
 
-            if (targetRoom.status !== RoomStatus.AVAILABLE || targetRoom.currentStayId) {
-                return new NextResponse('Целевая комната должна быть свободной', { status: 400 });
+            if (targetRoom.currentStayId || targetRoom.status === RoomStatus.OCCUPIED) {
+                return new NextResponse('Целевой номер сейчас занят гостем', { status: 400 });
+            }
+            if (targetRoom.status === RoomStatus.DIRTY) {
+                return new NextResponse('Целевой номер свободен, но ожидает уборки', { status: 400 });
+            }
+            if (targetRoom.status !== RoomStatus.AVAILABLE) {
+                return new NextResponse('Целевой номер сейчас недоступен', { status: 400 });
             }
 
             const transferLine = `Переселение: из №${room.label} в №${targetRoom.label}`;
@@ -1293,8 +1400,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     },
                     select: { status: true, currentStayId: true }
                 });
-                if (!lockedTargetRoom || lockedTargetRoom.status !== RoomStatus.AVAILABLE || lockedTargetRoom.currentStayId) {
+                if (!lockedTargetRoom) {
+                    throw new SessionError('Целевой номер больше недоступен', 409);
+                }
+                if (lockedTargetRoom.currentStayId || lockedTargetRoom.status === RoomStatus.OCCUPIED) {
                     throw new SessionError('Целевая комната уже занята другой операцией', 409);
+                }
+                if (lockedTargetRoom.status === RoomStatus.DIRTY) {
+                    throw new SessionError('Целевой номер свободен, но ожидает уборки', 409);
+                }
+                if (lockedTargetRoom.status !== RoomStatus.AVAILABLE) {
+                    throw new SessionError('Целевой номер сейчас недоступен', 409);
                 }
 
                 const conflictingStay = await tx.roomStay.findFirst({

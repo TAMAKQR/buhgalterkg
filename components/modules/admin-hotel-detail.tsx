@@ -12,6 +12,7 @@ import { Input, TextArea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useApi } from '@/hooks/useApi';
 import { formatDateTime, formatMoney, parseDateOnly } from '@/lib/timezone';
 import { useHotelToday } from '@/hooks/useHotelToday';
@@ -615,7 +616,11 @@ interface AdminHotelDetailProps {
 export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const { request, get } = useApi();
     const { toast } = useToast();
+    const { confirm: requestConfirmation, confirmationDialog } = useConfirmDialog();
     const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
+    const [draggedBoardStay, setDraggedBoardStay] = useState<{ roomId: string; stay: RoomStayDetail } | null>(null);
+    const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
+    const [isMovingBoardStay, setIsMovingBoardStay] = useState(false);
     const boardRequestRange = useMemo(() => {
         const visibleStart = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
         return {
@@ -1135,6 +1140,64 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return refreshedHotel;
     }, [mutateHotel, mutatePendingOnline, mutatePendingPostpaid, mutateSelectedShiftLedger, mutateStayHistory]);
 
+    const handleAdminStayDrop = useCallback(async (targetRoomId: string, targetDay?: Date) => {
+        const source = draggedBoardStay;
+        setDragTargetRoomId(null);
+        setDraggedBoardStay(null);
+        if (!source || isMovingBoardStay) return;
+
+        let scheduledCheckIn: string | undefined;
+        let scheduledCheckOut: string | undefined;
+        if (source.stay.status === 'SCHEDULED' && targetDay) {
+            const currentStart = new Date(source.stay.scheduledCheckIn);
+            const currentEnd = new Date(source.stay.scheduledCheckOut);
+            const dayDelta = startOfLocalDay(targetDay).getTime() - startOfLocalDay(currentStart).getTime();
+            scheduledCheckIn = new Date(currentStart.getTime() + dayDelta).toISOString();
+            scheduledCheckOut = new Date(currentEnd.getTime() + dayDelta).toISOString();
+        }
+        if (source.roomId === targetRoomId && !scheduledCheckIn) return;
+
+        const sourceRoomLabel = data?.rooms.find((room) => room.id === source.roomId)?.label ?? '—';
+        const targetRoomLabel = data?.rooms.find((room) => room.id === targetRoomId)?.label ?? '—';
+        const isGuestTransfer = source.stay.status === 'CHECKED_IN';
+        const confirmed = await requestConfirmation({
+            title: isGuestTransfer ? 'Подтвердите переселение' : 'Подтвердите перенос брони',
+            description: isGuestTransfer
+                ? `Гость будет переселён из №${sourceRoomLabel} в №${targetRoomLabel}. Исходный номер перейдёт в уборку.`
+                : `№${sourceRoomLabel} → №${targetRoomLabel}${scheduledCheckIn && scheduledCheckOut
+                    ? `\nНовые даты: ${formatDateTime(scheduledCheckIn, hotelTz)} — ${formatDateTime(scheduledCheckOut, hotelTz)}`
+                    : ''}`,
+            confirmLabel: isGuestTransfer ? 'Переселить' : 'Перенести',
+        });
+        if (!confirmed) return;
+
+        setIsMovingBoardStay(true);
+        try {
+            await request(`/api/rooms/${source.roomId}/stay`, {
+                body: source.stay.status === 'CHECKED_IN'
+                    ? {
+                        intent: 'transfer',
+                        targetRoomId,
+                        transferNote: 'Переселение администратором перетаскиванием',
+                    }
+                    : {
+                        intent: 'move-booking',
+                        stayId: source.stay.id,
+                        targetRoomId,
+                        scheduledCheckIn,
+                        scheduledCheckOut,
+                    },
+            });
+            toast(source.stay.status === 'CHECKED_IN' ? 'Гость переселён' : 'Бронь перенесена', 'success');
+            await mutate();
+        } catch (moveError) {
+            console.error(moveError);
+            toast(moveError instanceof Error ? moveError.message : 'Не удалось выполнить перенос', 'error');
+        } finally {
+            setIsMovingBoardStay(false);
+        }
+    }, [data?.rooms, draggedBoardStay, hotelTz, isMovingBoardStay, mutate, request, requestConfirmation, toast]);
+
     useEffect(() => {
         setIsTransactionsExpanded(false);
         void setSelectedShiftLedgerPageCount(1);
@@ -1178,12 +1241,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 .map((stay) => {
                     const stayStart = Date.parse(stay.scheduledCheckIn);
                     const stayEnd = Date.parse(stay.scheduledCheckOut);
-                    if (!Number.isFinite(stayStart) || !Number.isFinite(stayEnd) || stayEnd <= rangeStart || stayStart >= rangeEnd) {
+                    const effectiveStayEnd = stay.status === 'CHECKED_IN'
+                        ? Math.max(stayEnd, now.getTime() + 1)
+                        : stayEnd;
+                    if (!Number.isFinite(stayStart) || !Number.isFinite(effectiveStayEnd) || effectiveStayEnd <= rangeStart || stayStart >= rangeEnd) {
                         return null;
                     }
 
                     const clampedStart = Math.max(stayStart, rangeStart);
-                    const clampedEnd = Math.min(stayEnd, rangeEnd);
+                    const clampedEnd = Math.min(effectiveStayEnd, rangeEnd);
                     const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
                     const endIndex = Math.min(bookingBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
                     const span = Math.max(1, endIndex - startIndex);
@@ -1482,7 +1548,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleClearShiftHistory = async () => {
-        if (!window.confirm('Очистить закрытые смены этого объекта? Действие нельзя отменить.')) {
+        if (!await requestConfirmation({
+            title: 'Очистить закрытые смены?',
+            description: 'История закрытых смен этого объекта будет удалена. Действие нельзя отменить.',
+            confirmLabel: 'Очистить',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -1504,7 +1575,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const handleRemoveManager = async (assignmentId: string) => {
         const manager = data?.managers.find((item) => item.assignmentId === assignmentId);
         const managerName = manager?.displayName || manager?.loginName || 'этого менеджера';
-        if (!window.confirm(`Удалить назначение менеджера ${managerName}?`)) {
+        if (!await requestConfirmation({
+            title: 'Удалить менеджера из объекта?',
+            description: `${managerName} потеряет доступ к объекту. История смен и рейтинг сохранятся.`,
+            confirmLabel: 'Удалить',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -1569,7 +1645,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const handleDeleteRoom = async (roomId: string) => {
         const room = data?.rooms.find((item) => item.id === roomId);
         const roomLabel = room?.label ? `№ ${room.label}` : 'этот номер';
-        if (!window.confirm(`Удалить ${roomLabel}? История по номеру также будет удалена.`)) {
+        if (!await requestConfirmation({
+            title: `Удалить ${roomLabel}?`,
+            description: 'История проживания по номеру также будет удалена.',
+            confirmLabel: 'Удалить номер',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -1650,7 +1731,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleDeleteBonusTier = async (tierId: string) => {
-        if (!window.confirm('Удалить этот бонусный порог?')) {
+        if (!await requestConfirmation({
+            title: 'Удалить бонусный порог?',
+            confirmLabel: 'Удалить',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -1725,7 +1810,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const handleDeleteExpenseCategory = async (categoryId: string) => {
         const category = data?.expenseCategories?.find((item) => item.id === categoryId);
         const categoryName = category?.name ? `«${category.name}»` : 'эту категорию';
-        if (!window.confirm(`Удалить категорию расходов ${categoryName}?`)) {
+        if (!await requestConfirmation({
+            title: 'Удалить категорию расходов?',
+            description: categoryName,
+            confirmLabel: 'Удалить',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -1813,7 +1903,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             return;
         }
 
-        if (!window.confirm('Удалить эту кассовую операцию? Балансы смены будут пересчитаны.')) {
+        if (!await requestConfirmation({
+            title: 'Удалить кассовую операцию?',
+            description: 'После удаления балансы смены будут пересчитаны.',
+            confirmLabel: 'Удалить операцию',
+            tone: 'danger',
+        })) {
             return;
         }
 
@@ -3223,16 +3318,37 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 {bookingBoardRows.map(({ room, items, laneCount }) => (
                                                                     <div
                                                                         key={`booking-board-row-${room.id}`}
-                                                                        className="grid min-h-[58px] border-b border-slate-200/70 last:border-b-0 dark:border-white/[0.05]"
+                                                                        className={`grid min-h-[58px] border-b border-slate-200/70 transition last:border-b-0 dark:border-white/[0.05] ${
+                                                                            dragTargetRoomId === room.id && draggedBoardStay?.roomId !== room.id
+                                                                                ? 'bg-cyan-100/70 ring-2 ring-inset ring-cyan-400/35 dark:bg-cyan-400/10'
+                                                                                : ''
+                                                                        }`}
                                                                         style={{
                                                                             gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))`,
                                                                             gridTemplateRows: `repeat(${laneCount}, minmax(54px, auto))`
+                                                                        }}
+                                                                        onDragOver={(event) => {
+                                                                            if (!draggedBoardStay || draggedBoardStay.roomId === room.id) return;
+                                                                            event.preventDefault();
+                                                                            event.dataTransfer.dropEffect = 'move';
+                                                                            setDragTargetRoomId(room.id);
+                                                                        }}
+                                                                        onDragLeave={(event) => {
+                                                                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                                                                setDragTargetRoomId((current) => current === room.id ? null : current);
+                                                                            }
+                                                                        }}
+                                                                        onDrop={(event) => {
+                                                                            event.preventDefault();
+                                                                            void handleAdminStayDrop(room.id);
                                                                         }}
                                                                     >
                                                                         <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-200/80 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]" style={{ gridRow: `1 / span ${laneCount}` }}>
                                                                             <div className="min-w-0">
                                                                                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</p>
                                                                                 {room.floor ? <p className="truncate text-[11px] text-slate-400 dark:text-white/35">{room.floor}</p> : null}
+                                                                                {room.status === 'DIRTY' ? <p className="text-[10px] font-medium text-rose-500 dark:text-rose-300/70">Ожидает уборки</p> : null}
+                                                                                {room.status === 'OCCUPIED' ? <p className="text-[10px] font-medium text-amber-600 dark:text-amber-300/70">Сейчас занят</p> : null}
                                                                             </div>
                                                                         </div>
                                                                         {bookingBoardDays.map((day, dayIndex) => {
@@ -3242,6 +3358,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     key={`booking-board-cell-${room.id}-${dayIndex}`}
                                                                                     className={`border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/70 dark:bg-amber-400/[0.05]' : ''}`}
                                                                                     style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
+                                                                                    onDragOver={(event) => {
+                                                                                        if (!draggedBoardStay) return;
+                                                                                        if (draggedBoardStay.roomId === room.id && draggedBoardStay.stay.status !== 'SCHEDULED') return;
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        event.dataTransfer.dropEffect = 'move';
+                                                                                        setDragTargetRoomId(room.id);
+                                                                                    }}
+                                                                                    onDrop={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        void handleAdminStayDrop(room.id, day);
+                                                                                    }}
                                                                                 />
                                                                             );
                                                                         })}
@@ -3249,8 +3378,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <button
                                                                                 key={`booking-board-stay-${item.stay.id}`}
                                                                                 type="button"
-                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
+                                                                                draggable={(item.stay.status === 'SCHEDULED' || item.stay.status === 'CHECKED_IN') && !isMovingBoardStay}
+                                                                                className={`z-10 m-1 min-w-0 cursor-grab rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
+                                                                                    draggedBoardStay?.stay.id === item.stay.id ? 'opacity-45' : ''
+                                                                                } ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
+                                                                                onDragStart={(event) => {
+                                                                                    event.dataTransfer.effectAllowed = 'move';
+                                                                                    event.dataTransfer.setData('text/plain', item.stay.id);
+                                                                                    setDraggedBoardStay({ roomId: room.id, stay: item.stay });
+                                                                                }}
+                                                                                onDragEnd={() => {
+                                                                                    setDraggedBoardStay(null);
+                                                                                    setDragTargetRoomId(null);
+                                                                                }}
                                                                                 onClick={() => handleSelectStayForEdit(room, item.stay)}
                                                                                 title={[
                                                                                     item.guestLabel,
@@ -3269,7 +3410,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 className="z-10 col-start-2 col-end-[-1] m-1 rounded-xl border border-dashed border-slate-200/90 px-2 py-1 text-left text-[11px] text-slate-300 transition hover:border-slate-300 hover:text-slate-500 dark:border-white/[0.06] dark:text-white/20 dark:hover:text-white/45"
                                                                                 onClick={() => handleOpenBookingForm(room)}
                                                                             >
-                                                                                Свободно в выбранном периоде
+                                                                                {room.status === 'OCCUPIED'
+                                                                                    ? 'Активное проживание — данные обновляются'
+                                                                                    : room.status === 'DIRTY'
+                                                                                        ? 'Свободно, ожидает уборки'
+                                                                                        : 'Свободно в выбранном периоде'}
                                                                             </button>
                                                                         ) : null}
                                                                     </div>
@@ -5188,6 +5333,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     onRefresh={() => void handleAnalyzeBusiness()}
                     isRefreshing={isAdminBusinessAiLoading}
                 />
+                {confirmationDialog}
             </div>
         </>
     );

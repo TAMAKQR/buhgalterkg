@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { SessionUser } from '@/lib/types';
 import { useApi } from '@/hooks/useApi';
 import { formatDateKey, formatDateTime, formatInputValue, parseDateOnly, parseInputValue, formatMoney } from '@/lib/timezone';
@@ -466,6 +467,7 @@ const boardSectionLabel = (floor?: string | null) => {
 
 export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) => {
     const { get, request } = useApi();
+    const { confirm: requestConfirmation, confirmationDialog } = useConfirmDialog();
     const hotelId = user.hotels[0]?.id;
     const offlineScope = useMemo<ManagerOfflineScope | null>(
         () => hotelId ? { userId: user.id, hotelId } : null,
@@ -582,6 +584,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [cancelBookingError, setCancelBookingError] = useState<string | null>(null);
     const [updatingCleaningRoomId, setUpdatingCleaningRoomId] = useState<string | null>(null);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
+    const [draggedStay, setDraggedStay] = useState<{ roomId: string; stay: ManagerRoomStay } | null>(null);
+    const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
+    const [isMovingStay, setIsMovingStay] = useState(false);
     const { toast } = useToast();
     const refreshOfflineQueueCount = useCallback(() => {
         setPendingOfflineCount(offlineScope ? readManagerOfflineQueue(offlineScope).length : 0);
@@ -856,6 +861,80 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const canEditBookings = Boolean(compensation?.canEditBookings);
     const canEditStayPayments = Boolean(compensation?.canEditStayPayments);
     const canCancelBookings = Boolean(compensation?.canCancelBookings);
+    const canDragStay = useCallback((stay: ManagerRoomStay) => (
+        stay.status === 'CHECKED_IN'
+            ? hasOpenShift
+            : stay.status === 'SCHEDULED' && canEditBookings
+    ), [canEditBookings, hasOpenShift]);
+
+    const handleStayDrop = useCallback(async (targetRoomId: string, targetDay?: Date) => {
+        const source = draggedStay;
+        setDragTargetRoomId(null);
+        setDraggedStay(null);
+        if (!source || isMovingStay) return;
+
+        if (source.stay.status === 'CHECKED_IN' && !data?.shift?.id) {
+            toast('Для переселения гостя сначала откройте смену', 'error');
+            return;
+        }
+        if (source.stay.status === 'SCHEDULED' && !canEditBookings) {
+            toast('Нет права переносить бронирования', 'error');
+            return;
+        }
+
+        let scheduledCheckIn: string | undefined;
+        let scheduledCheckOut: string | undefined;
+        if (source.stay.status === 'SCHEDULED' && targetDay) {
+            const currentStart = new Date(source.stay.scheduledCheckIn);
+            const currentEnd = new Date(source.stay.scheduledCheckOut);
+            const dayDelta = startOfLocalDay(targetDay).getTime() - startOfLocalDay(currentStart).getTime();
+            scheduledCheckIn = new Date(currentStart.getTime() + dayDelta).toISOString();
+            scheduledCheckOut = new Date(currentEnd.getTime() + dayDelta).toISOString();
+        }
+        if (source.roomId === targetRoomId && !scheduledCheckIn) return;
+
+        const sourceRoomLabel = data?.rooms.find((room) => room.id === source.roomId)?.label ?? '—';
+        const targetRoomLabel = data?.rooms.find((room) => room.id === targetRoomId)?.label ?? '—';
+        const isGuestTransfer = source.stay.status === 'CHECKED_IN';
+        const confirmed = await requestConfirmation({
+            title: isGuestTransfer ? 'Подтвердите переселение' : 'Подтвердите перенос брони',
+            description: isGuestTransfer
+                ? `Гость будет переселён из №${sourceRoomLabel} в №${targetRoomLabel}. Исходный номер перейдёт в уборку.`
+                : `№${sourceRoomLabel} → №${targetRoomLabel}${scheduledCheckIn && scheduledCheckOut
+                    ? `\nНовые даты: ${formatDateTime(scheduledCheckIn, hotelTz)} — ${formatDateTime(scheduledCheckOut, hotelTz)}`
+                    : ''}`,
+            confirmLabel: isGuestTransfer ? 'Переселить' : 'Перенести',
+        });
+        if (!confirmed) return;
+
+        setIsMovingStay(true);
+        try {
+            await sendManagerRequest(`/api/rooms/${source.roomId}/stay`, {
+                body: source.stay.status === 'CHECKED_IN'
+                    ? {
+                        shiftId: data?.shift?.id,
+                        intent: 'transfer',
+                        targetRoomId,
+                        transferNote: 'Переселение перетаскиванием',
+                    }
+                    : {
+                        shiftId: data?.shift?.id,
+                        intent: 'move-booking',
+                        stayId: source.stay.id,
+                        targetRoomId,
+                        scheduledCheckIn,
+                        scheduledCheckOut,
+                    },
+            }, source.stay.status === 'CHECKED_IN' ? 'Переселение гостя' : 'Перенос брони');
+            toast(source.stay.status === 'CHECKED_IN' ? 'Гость переселён' : 'Бронь перенесена', 'success');
+            await refreshManagerState();
+        } catch (moveError) {
+            console.error(moveError);
+            toast(moveError instanceof Error ? moveError.message : 'Не удалось выполнить перенос', 'error');
+        } finally {
+            setIsMovingStay(false);
+        }
+    }, [canEditBookings, data?.rooms, data?.shift?.id, draggedStay, hotelTz, isMovingStay, refreshManagerState, requestConfirmation, sendManagerRequest, toast]);
     const managerName = user.displayName?.trim() || user.username?.trim() || 'Менеджер';
     const shiftPayDisplay = typeof compensation?.shiftPayAmount === 'number' ? formatKgs(compensation.shiftPayAmount) : null;
     const shareDisplay = typeof compensation?.revenueSharePct === 'number' ? `${compensation.revenueSharePct}%` : null;
@@ -1097,12 +1176,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 .map((stay) => {
                     const stayStart = Date.parse(stay.scheduledCheckIn);
                     const stayEnd = Date.parse(stay.scheduledCheckOut);
-                    if (!Number.isFinite(stayStart) || !Number.isFinite(stayEnd) || stayEnd <= rangeStart || stayStart >= rangeEnd) {
+                    const effectiveStayEnd = stay.status === 'CHECKED_IN'
+                        ? Math.max(stayEnd, now.getTime() + 1)
+                        : stayEnd;
+                    if (!Number.isFinite(stayStart) || !Number.isFinite(effectiveStayEnd) || effectiveStayEnd <= rangeStart || stayStart >= rangeEnd) {
                         return null;
                     }
 
                     const clampedStart = Math.max(stayStart, rangeStart);
-                    const clampedEnd = Math.min(stayEnd, rangeEnd);
+                    const clampedEnd = Math.min(effectiveStayEnd, rangeEnd);
                     const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
                     const endIndex = Math.min(managerBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
                     const span = Math.max(1, endIndex - startIndex);
@@ -3359,16 +3441,37 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 {!isCollapsed && section.rows.map(({ room, items, laneCount }) => (
                                                                     <div
                                                                         key={`manager-board-room-${room.id}`}
-                                                                        className="grid min-h-[56px] border-b border-slate-200/80 dark:border-white/[0.05]"
+                                                                        className={`grid min-h-[56px] border-b border-slate-200/80 transition dark:border-white/[0.05] ${
+                                                                            dragTargetRoomId === room.id && draggedStay?.roomId !== room.id
+                                                                                ? 'bg-cyan-100/70 ring-2 ring-inset ring-cyan-400/35 dark:bg-cyan-400/10'
+                                                                                : ''
+                                                                        }`}
                                                                         style={{
                                                                             gridTemplateColumns: boardGridTemplate,
                                                                             gridTemplateRows: `repeat(${laneCount}, minmax(52px, auto))`
+                                                                        }}
+                                                                        onDragOver={(event) => {
+                                                                            if (!draggedStay || draggedStay.roomId === room.id) return;
+                                                                            event.preventDefault();
+                                                                            event.dataTransfer.dropEffect = 'move';
+                                                                            setDragTargetRoomId(room.id);
+                                                                        }}
+                                                                        onDragLeave={(event) => {
+                                                                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                                                                setDragTargetRoomId((current) => current === room.id ? null : current);
+                                                                            }
+                                                                        }}
+                                                                        onDrop={(event) => {
+                                                                            event.preventDefault();
+                                                                            void handleStayDrop(room.id);
                                                                         }}
                                                                     >
                                                                         <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night" style={{ gridRow: `1 / span ${laneCount}` }}>
                                                                             <div className="min-w-0">
                                                                                 <p className="truncate text-sm font-semibold text-light-text dark:text-white">№ {room.label}</p>
                                                                                 {room.floor ? <p className="truncate text-[11px] text-slate-500 dark:text-white/35">{room.floor}</p> : null}
+                                                                                {room.status === 'DIRTY' ? <p className="text-[10px] font-medium text-rose-500 dark:text-rose-300/70">Ожидает уборки</p> : null}
+                                                                                {room.status === 'OCCUPIED' ? <p className="text-[10px] font-medium text-amber-600 dark:text-amber-300/70">Сейчас занят</p> : null}
                                                                             </div>
                                                                         </div>
                                                                         {roomBoardDays.map((day, dayIndex) => {
@@ -3380,6 +3483,19 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                     className={`group relative border-l border-slate-200/70 text-left transition hover:bg-cyan-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/25 dark:border-white/[0.04] dark:hover:bg-cyan-400/[0.05] dark:focus:ring-white/15 ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
                                                                                     style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
                                                                                     onClick={() => handleBoardCellClick(room, day)}
+                                                                                    onDragOver={(event) => {
+                                                                                        if (!draggedStay) return;
+                                                                                        if (draggedStay.roomId === room.id && draggedStay.stay.status !== 'SCHEDULED') return;
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        event.dataTransfer.dropEffect = 'move';
+                                                                                        setDragTargetRoomId(room.id);
+                                                                                    }}
+                                                                                    onDrop={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        void handleStayDrop(room.id, day);
+                                                                                    }}
                                                                                     title={isToday ? `Выбрать действие для № ${room.label}` : `Поставить бронь на № ${room.label}`}
                                                                                     aria-label={isToday ? `Выбрать действие для номера ${room.label}` : `Поставить бронь на номер ${room.label}`}
                                                                                 >
@@ -3393,9 +3509,25 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                             <button
                                                                                 key={`manager-board-stay-${item.stay.id}`}
                                                                                 type="button"
-                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
+                                                                                draggable={canDragStay(item.stay) && !isMovingStay}
+                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${
+                                                                                    canDragStay(item.stay) ? 'cursor-grab active:cursor-grabbing' : ''
+                                                                                } ${draggedStay?.stay.id === item.stay.id ? 'opacity-45' : ''} ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
                                                                                 title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
+                                                                                onDragStart={(event) => {
+                                                                                    if (!canDragStay(item.stay)) {
+                                                                                        event.preventDefault();
+                                                                                        return;
+                                                                                    }
+                                                                                    event.dataTransfer.effectAllowed = 'move';
+                                                                                    event.dataTransfer.setData('text/plain', item.stay.id);
+                                                                                    setDraggedStay({ roomId: room.id, stay: item.stay });
+                                                                                }}
+                                                                                onDragEnd={() => {
+                                                                                    setDraggedStay(null);
+                                                                                    setDragTargetRoomId(null);
+                                                                                }}
                                                                                  onClick={() => {
                                                                                      if (item.stay.status === 'CHECKED_IN') {
                                                                                          if (canEditBookings) {
@@ -3463,9 +3595,51 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const scheduledBooking = room.stay?.status === 'SCHEDULED' ? room.stay : null;
                                         const hasScheduledBooking = Boolean(scheduledBooking);
                                         const canCheckInBooking = scheduledBooking ? canCheckInScheduledStay(scheduledBooking) : false;
+                                        const draggableCardStay =
+                                            room.stay && (room.stay.status === 'CHECKED_IN' || room.stay.status === 'SCHEDULED')
+                                                ? room.stay
+                                                : null;
 
                                         return (
-                                            <article key={room.id} className={`min-w-0 rounded-xl border bg-[#f9fafb] px-3 py-2.5 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]' : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}>
+                                            <article
+                                                key={room.id}
+                                                draggable={Boolean(draggableCardStay && canDragStay(draggableCardStay) && !isMovingStay)}
+                                                className={`min-w-0 rounded-xl border bg-[#f9fafb] px-3 py-2.5 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${
+                                                    draggableCardStay && canDragStay(draggableCardStay) ? 'cursor-grab active:cursor-grabbing' : ''
+                                                } ${
+                                                    dragTargetRoomId === room.id && draggedStay?.roomId !== room.id
+                                                        ? 'ring-2 ring-cyan-400/60 dark:ring-cyan-300/45'
+                                                        : ''
+                                                } ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]' : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}
+                                                onDragStart={(event) => {
+                                                    if (!draggableCardStay || !canDragStay(draggableCardStay)) {
+                                                        event.preventDefault();
+                                                        return;
+                                                    }
+                                                    event.dataTransfer.effectAllowed = 'move';
+                                                    event.dataTransfer.setData('text/plain', draggableCardStay.id);
+                                                    setDraggedStay({ roomId: room.id, stay: draggableCardStay });
+                                                }}
+                                                onDragOver={(event) => {
+                                                    if (!draggedStay || draggedStay.roomId === room.id) return;
+                                                    event.preventDefault();
+                                                    event.dataTransfer.dropEffect = 'move';
+                                                    setDragTargetRoomId(room.id);
+                                                }}
+                                                onDragLeave={(event) => {
+                                                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                                        setDragTargetRoomId((current) => current === room.id ? null : current);
+                                                    }
+                                                }}
+                                                onDrop={(event) => {
+                                                    event.preventDefault();
+                                                    void handleStayDrop(room.id);
+                                                }}
+                                                onDragEnd={() => {
+                                                    setDraggedStay(null);
+                                                    setDragTargetRoomId(null);
+                                                }}
+                                            >
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -5727,6 +5901,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             </Card>
                         </div>
                     )}
+                    {confirmationDialog}
 
                 </main>
             </div>
