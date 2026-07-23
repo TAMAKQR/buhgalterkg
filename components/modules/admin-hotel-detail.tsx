@@ -2671,15 +2671,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             </div>
                         ) : null}
                         {prepaidBookingsCount > 0 ? (
-                            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-700/60 dark:text-cyan-100/55">Предоплаты по броням</p>
-                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(prepaidBookingsTotal)}</p>
+                            <div className="rounded-xl border border-cyan-200 bg-cyan-50/70 p-3 text-cyan-900 dark:border-cyan-300/15 dark:bg-cyan-400/[0.06] dark:text-cyan-50">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex min-w-0 items-baseline gap-3">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-700/60 dark:text-cyan-100/50">Предоплаты по броням</p>
+                                        <p className="text-base font-semibold">{formatCurrency(prepaidBookingsTotal)}</p>
                                     </div>
-                                    <Badge label={`${prepaidBookingsCount} броней`} tone="default" />
+                                    <span className="text-xs text-cyan-800/60 dark:text-cyan-50/45">{prepaidBookingsCount} броней</span>
                                 </div>
-                                <div className="mt-4 grid gap-2 lg:grid-cols-2">
+                                <div className="mt-3 overflow-hidden rounded-xl border border-cyan-200/70 bg-white/70 dark:border-cyan-200/10 dark:bg-black/10">
                                     {prepaidBookings.map(({ room, stay }) => {
                                         const paymentParts = [
                                             (stay.cashPaid ?? 0) > 0 ? `нал ${formatCurrency(stay.cashPaid)}` : null,
@@ -2696,22 +2696,25 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <button
                                                 key={`prepaid-booking-${stay.id}`}
                                                 type="button"
-                                                className="min-w-0 rounded-2xl border border-cyan-200/80 bg-white px-3 py-3 text-left transition hover:border-cyan-300 hover:bg-cyan-100/70 dark:border-cyan-200/20 dark:bg-black/15 dark:hover:border-cyan-200/35 dark:hover:bg-cyan-300/10"
+                                                className="grid w-full min-w-0 gap-x-3 gap-y-1 border-b border-cyan-200/60 px-3 py-2 text-left transition last:border-b-0 hover:bg-cyan-100/60 dark:border-cyan-200/10 dark:hover:bg-cyan-300/[0.06] sm:grid-cols-[3.5rem_minmax(9rem,1fr)_minmax(13rem,1.2fr)_auto] sm:items-center"
                                                 onClick={() => handleSelectStayForEdit(room, stay)}
                                             >
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="rounded-lg bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800 dark:bg-white/10 dark:text-cyan-50">№ {room.label}</span>
-                                                    <span className="min-w-0 truncate text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
+                                                <span className="w-fit rounded-md bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800 dark:bg-white/[0.06] dark:text-cyan-50/80">
+                                                    № {room.label}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</p>
+                                                    {bookingContext ? (
+                                                        <p className="truncate text-[11px] text-cyan-800/55 dark:text-cyan-50/40">{bookingContext}</p>
+                                                    ) : null}
                                                 </div>
-                                                <p className="mt-2 text-xs text-cyan-800/75 dark:text-cyan-50/65">
+                                                <p className="text-xs text-cyan-800/70 dark:text-cyan-50/55">
                                                     {formatStayDate(stay.scheduledCheckIn)} — {formatStayDate(stay.scheduledCheckOut)}
                                                 </p>
-                                                <p className="mt-1 text-sm font-semibold text-cyan-800 dark:text-cyan-100">
-                                                    {formatCurrency(stay.amountPaid ?? 0)}{paymentParts ? ` · ${paymentParts}` : ''}
-                                                </p>
-                                                {bookingContext ? (
-                                                    <p className="mt-1 text-xs text-cyan-800/70 dark:text-cyan-50/55">{bookingContext}</p>
-                                                ) : null}
+                                                <div className="min-w-0 sm:text-right">
+                                                    <p className="text-sm font-semibold text-cyan-800 dark:text-cyan-100">{formatCurrency(stay.amountPaid ?? 0)}</p>
+                                                    {paymentParts ? <p className="truncate text-[11px] text-cyan-800/55 dark:text-cyan-50/40">{paymentParts}</p> : null}
+                                                </div>
                                             </button>
                                         );
                                     })}
