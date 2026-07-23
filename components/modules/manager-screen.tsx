@@ -1404,7 +1404,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         { label: 'Б/н', value: formatKgs(shiftCardValue), tone: 'text-slate-900 dark:text-slate-200' },
         { label: 'Расход', value: formatKgs(shiftExpensesTotal), tone: shiftExpensesTotal > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
         { label: 'Занято', value: `${occupiedCount}/${sortedRooms.length}`, tone: 'text-slate-900 dark:text-slate-200' },
-        { label: 'Просрочено', value: String(overdueCount), tone: overdueCount ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
+        { label: 'Не выселены', value: String(overdueCount), tone: overdueCount ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500' },
     ];
 
     const shareMessage = useMemo(() => {
@@ -3355,7 +3355,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-rose-700 transition break-words [overflow-wrap:anywhere] hover:bg-rose-100 dark:border-rose-500/15 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/20"
                                                     onClick={() => setBoardListPopup('overdue')}
                                                 >
-                                                    Просрочено <span className="font-semibold">{boardOverdueItems.length}</span>
+                                                    Не выселены <span className="font-semibold">{boardOverdueItems.length}</span>
                                                 </button>
                                                 <button
                                                     type="button"
@@ -3658,7 +3658,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </button>
                                                         ) : (
                                                             <Badge
-                                                                label={isOverdue ? 'Просрочено' : isOccupied ? 'Занят' : hasScheduledBooking ? 'Бронь' : 'Свободен'}
+                                                                label={isOverdue ? 'Не выселен' : isOccupied ? 'Занят' : hasScheduledBooking ? 'Бронь' : 'Свободен'}
                                                                 tone={isOverdue ? 'danger' : isOccupied || hasScheduledBooking ? 'warning' : 'success'}
                                                             />
                                                         )}
@@ -5374,7 +5374,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             : boardListPopup === 'checkedIn'
                                 ? 'Заселённые'
                                 : boardListPopup === 'overdue'
-                                    ? 'Просрочено'
+                                    ? 'Незакрытые проживания'
                                     : 'Свободные даты';
                         const count = isFreeDatesPopup ? boardFreeDateItems.length : stayItems.length;
                         const periodLabel = `${formatBoardDay(roomBoardRange.start, hotelTz)} - ${formatBoardDay(addDays(roomBoardRange.end, -1), hotelTz)}`;
@@ -5384,7 +5384,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 <Card className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-white/[0.08] bg-ink p-0 text-white shadow-2xl dark:bg-ink">
                                     <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-5">
                                         <div className="min-w-0">
-                                            <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Шахматка · {periodLabel}</p>
+                                            <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">
+                                                {boardListPopup === 'overdue' ? 'На текущий момент' : `Шахматка · ${periodLabel}`}
+                                            </p>
                                             <h3 className="mt-1 text-lg font-semibold">{title}</h3>
                                             <p className="mt-1 text-xs text-white/45">{count} записей</p>
                                         </div>
@@ -5394,7 +5396,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
 
                                     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
-                                        {isFreeDatesPopup ? (
+                                    {boardListPopup === 'overdue' ? (
+                                        <p className="mb-3 rounded-xl border border-amber-300/15 bg-amber-400/[0.07] px-3 py-2 text-xs leading-relaxed text-amber-100/75">
+                                            Здесь показаны гости, которые всё ещё имеют статус «Заселён». Старые записи остаются в списке до фактического выселения.
+                                        </p>
+                                    ) : null}
+                                    {isFreeDatesPopup ? (
                                             boardFreeDateItems.length ? (
                                                 <div className="space-y-2">
                                                     {boardFreeDateItems.map((item) => {
@@ -5448,7 +5455,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 <p className="truncate text-sm font-semibold">№ {item.room.label} · {item.guestLabel}</p>
                                                                 <p className="mt-1 truncate text-xs text-white/55">{item.detailLabel || stayStatusLabel(item.stay.status)}</p>
                                                             </div>
-                                                            <Badge label={item.isOverdue ? 'Просрочено' : stayStatusLabel(item.stay.status)} tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'} />
+                                                            <Badge label={item.isOverdue ? 'Не выселен' : stayStatusLabel(item.stay.status)} tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'} />
                                                         </div>
                                                         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-white/45">
                                                             <span>Заезд: <span className="text-white/75">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>

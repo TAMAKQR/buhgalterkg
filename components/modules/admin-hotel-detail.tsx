@@ -3098,7 +3098,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <p className="mt-0.5 text-base font-semibold text-slate-900 dark:text-white">{roomStatusBuckets.occupied.length}</p>
                                                 </div>
                                                 <div className="bg-slate-50 px-3 py-2.5 dark:bg-[#171b21]">
-                                                    <p className="text-slate-500 dark:text-white/40">Просрочено</p>
+                                                    <p className="text-slate-500 dark:text-white/40">Не выселены</p>
                                                     <p className={`mt-0.5 text-base font-semibold ${roomStatusBuckets.overdue.length ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>{roomStatusBuckets.overdue.length}</p>
                                                 </div>
                                                 <button
@@ -3261,7 +3261,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-rose-700 transition break-words [overflow-wrap:anywhere] hover:bg-rose-100 dark:border-rose-300/35 dark:bg-rose-500/15 dark:text-rose-100 dark:hover:bg-rose-500/20"
                                                                     onClick={() => setBoardListPopup('overdue')}
                                                                 >
-                                                                    Просрочено <span className="font-semibold">{boardOverdueItems.length}</span>
+                                                                    Не выселены <span className="font-semibold">{boardOverdueItems.length}</span>
                                                                 </button>
                                                                 <button
                                                                     type="button"
@@ -5163,7 +5163,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         : boardListPopup === 'checkedIn'
                             ? 'Заселённые'
                             : boardListPopup === 'overdue'
-                                ? 'Просрочено'
+                                ? 'Незакрытые проживания'
                                 : 'Свободные даты';
                     const count = isFreeDatesPopup ? boardFreeDateItems.length : stayItems.length;
                     const periodLabel = `${formatBoardDay(bookingBoardRange.start, hotelTz)} - ${formatBoardDay(addDays(bookingBoardRange.end, -1), hotelTz)}`;
@@ -5173,7 +5173,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             <Card className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-slate-700/55 bg-[#10141b] p-0 text-slate-100 shadow-2xl dark:bg-[#10141b]">
                                 <div className="flex items-start justify-between gap-3 border-b border-slate-700/55 px-4 py-3 sm:px-5">
                                     <div className="min-w-0">
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Шахматка · {periodLabel}</p>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                                            {boardListPopup === 'overdue' ? 'На текущий момент' : `Шахматка · ${periodLabel}`}
+                                        </p>
                                         <h3 className="mt-1 text-lg font-semibold">{title}</h3>
                                         <p className="mt-1 text-xs text-slate-400">{count} записей</p>
                                     </div>
@@ -5183,6 +5185,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 </div>
 
                                 <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                                    {boardListPopup === 'overdue' ? (
+                                        <p className="mb-3 rounded-xl border border-amber-300/15 bg-amber-400/[0.07] px-3 py-2 text-xs leading-relaxed text-amber-100/75">
+                                            Эти гости всё ещё имеют статус «Заселён». Старые даты, включая майские, показываются независимо от выбранного периода, пока проживание не будет закрыто фактическим выселением.
+                                        </p>
+                                    ) : null}
                                     {isFreeDatesPopup ? (
                                         boardFreeDateItems.length ? (
                                             <div className="space-y-2">
@@ -5234,7 +5241,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <p className="mt-1 truncate text-xs text-slate-400">{item.detailLabel || stayStatusLabels[item.stay.status]}</p>
                                                         </div>
                                                         <Badge
-                                                            label={item.isOverdue ? 'Просрочено' : item.stay.status === 'SCHEDULED' ? 'Бронь' : stayStatusLabels[item.stay.status]}
+                                                            label={item.isOverdue ? 'Не выселен' : item.stay.status === 'SCHEDULED' ? 'Бронь' : stayStatusLabels[item.stay.status]}
                                                             tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'}
                                                         />
                                                     </div>

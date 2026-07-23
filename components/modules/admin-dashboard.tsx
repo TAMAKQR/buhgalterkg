@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from "react";
 import { useToast } from '@/components/ui/toast';
 import useSWR from "swr";
 import {
@@ -870,13 +870,27 @@ function CheckboxPicker({ label, options, selected, onChange, emptyLabel }: {
     onChange: (ids: string[]) => void;
     emptyLabel: string;
 }) {
-    const selectedSet = new Set(selected);
+    const detailsRef = useRef<HTMLDetailsElement | null>(null);
+    const [draftSelected, setDraftSelected] = useState(selected);
+    const selectedSet = new Set(draftSelected);
     const buttonLabel = selected.length === 0 ? emptyLabel : selected.length === 1
         ? options.find((option) => option.id === selected[0])?.label ?? "Выбрано: 1"
         : `Выбрано: ${selected.length}`;
 
+    useEffect(() => {
+        if (!detailsRef.current?.open) {
+            setDraftSelected(selected);
+        }
+    }, [selected]);
+
     return (
-        <details className="group relative w-full min-w-0 max-w-full open:z-50">
+        <details
+            ref={detailsRef}
+            className="group relative w-full min-w-0 max-w-full open:z-50"
+            onToggle={(event) => {
+                if (event.currentTarget.open) setDraftSelected(selected);
+            }}
+        >
             <summary className={`${selectClassName} flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden`}>
                 <span className="truncate">{buttonLabel}</span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
@@ -884,13 +898,13 @@ function CheckboxPicker({ label, options, selected, onChange, emptyLabel }: {
             <div className="absolute right-0 z-[100] mt-2 max-h-80 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] sm:min-w-[18rem] dark:border-white/[0.1] dark:bg-[#1a1f26]">
                 <div className="mb-1 flex items-center justify-between px-2 py-1.5">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{label}</span>
-                    {selected.length > 0 && <button type="button" className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400" onClick={() => onChange([])}>Сбросить</button>}
+                    {draftSelected.length > 0 && <button type="button" className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400" onClick={() => setDraftSelected([])}>Сбросить</button>}
                 </div>
                 {options.length === 0 ? <p className="px-2 py-3 text-sm text-slate-400">Нет доступных вариантов</p> : options.map((option) => {
                     const checked = selectedSet.has(option.id);
                     return (
                         <label key={option.id} className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.05]">
-                            <input type="checkbox" className="sr-only" checked={checked} onChange={() => onChange(checked ? selected.filter((id) => id !== option.id) : [...selected, option.id])} />
+                            <input type="checkbox" className="sr-only" checked={checked} onChange={() => setDraftSelected(checked ? draftSelected.filter((id) => id !== option.id) : [...draftSelected, option.id])} />
                             <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border ${checked ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 dark:border-slate-600"}`}>
                                 {checked && <Check className="h-3 w-3" strokeWidth={3} />}
                             </span>
@@ -898,6 +912,19 @@ function CheckboxPicker({ label, options, selected, onChange, emptyLabel }: {
                         </label>
                     );
                 })}
+                <div className="sticky bottom-0 mt-2 border-t border-slate-200 bg-white px-2 pt-2 dark:border-white/[0.08] dark:bg-[#1a1f26]">
+                    <Button
+                        type="button"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                            onChange(draftSelected);
+                            if (detailsRef.current) detailsRef.current.open = false;
+                        }}
+                    >
+                        ОК
+                    </Button>
+                </div>
             </div>
         </details>
     );
