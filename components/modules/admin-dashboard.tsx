@@ -1197,8 +1197,8 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                             {kind === "managers" ? (
                                                 <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
                                                     (item as ManagerRankingItem).isActive
-                                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
-                                                        : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/45"
+                                                        ? "bg-emerald-500/10 text-emerald-400"
+                                                        : "bg-white/[0.04] text-slate-400"
                                                 }`}>
                                                     {(item as ManagerRankingItem).isActive ? "Работает" : "Не работает"}
                                                 </span>
@@ -1297,8 +1297,8 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className, onSele
                                                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
                                                 <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
                                                     manager.isActive
-                                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
-                                                        : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/45"
+                                                        ? "bg-emerald-500/10 text-emerald-400"
+                                                        : "bg-white/[0.04] text-slate-400"
                                                 }`}>
                                                     {manager.isActive ? "Работает" : "Не работает"}
                                                 </span>
