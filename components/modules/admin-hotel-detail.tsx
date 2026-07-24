@@ -3205,6 +3205,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </h3>
                                                     </div>
                                                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 dark:text-white/50">
+                                                        <Input
+                                                            className="h-9 w-full sm:w-64"
+                                                            placeholder="Найти по № бронирования"
+                                                            value={stayHistoryQuery}
+                                                            onChange={(event) => {
+                                                                setStayHistoryQuery(event.target.value);
+                                                                if (event.target.value.trim()) {
+                                                                    setBoardListPopup(null);
+                                                                    setRoomOverviewMode('history');
+                                                                    setIsRoomHistoryExpanded(true);
+                                                                }
+                                                            }}
+                                                        />
                                                         {roomOverviewMode === 'history' && isRoomHistoryExpanded && totalFilteredStayHistory > 0 && (
                                                             <span>{totalFilteredStayHistory} записей</span>
                                                         )}
@@ -3425,11 +3438,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 ) : isRoomHistoryExpanded ? (
                                                     <>
                                                         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px]">
-                                                            <Input
-                                                                placeholder="Поиск: номер, гость, номер брони, телефон, компания, источник"
-                                                                value={stayHistoryQuery}
-                                                                onChange={(event) => setStayHistoryQuery(event.target.value)}
-                                                            />
+                                                            <p className="self-center text-xs text-slate-500 dark:text-white/40">
+                                                                Поиск также находит гостя, телефон, компанию, источник и номер комнаты.
+                                                            </p>
                                                             <Select
                                                                 value={stayHistoryStatus}
                                                                 onChange={(event) => setStayHistoryStatus(event.target.value as StayHistoryStatusFilter)}

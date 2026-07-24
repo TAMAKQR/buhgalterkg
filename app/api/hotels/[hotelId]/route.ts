@@ -405,6 +405,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         }
 
         if (query.view === 'history') {
+            const bookingNumberSearch = query.search
+                ?.replace(/^(?:бронь|бронирование|booking)\s*/i, '')
+                .replace(/^[№#]\s*/, '')
+                .trim();
             const historyStatuses = query.status
                 ? [query.status]
                 : [StayStatus.SCHEDULED, StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT, StayStatus.CANCELLED];
@@ -419,7 +423,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                             { guestPhone: { contains: query.search, mode: 'insensitive' } },
                             { companyName: { contains: query.search, mode: 'insensitive' } },
                             { bookingSource: { contains: query.search, mode: 'insensitive' } },
-                            { bookingNumber: { contains: query.search, mode: 'insensitive' } },
+                            ...(bookingNumberSearch
+                                ? [{ bookingNumber: { contains: bookingNumberSearch, mode: 'insensitive' as const } }]
+                                : []),
                             { notes: { contains: query.search, mode: 'insensitive' } },
                             { room: { label: { contains: query.search, mode: 'insensitive' } } },
                         ],
