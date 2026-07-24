@@ -209,9 +209,7 @@ interface HotelDetailPayload {
         assignmentId: string;
         id: string;
         displayName: string;
-        telegramId?: string | null;
         loginName?: string | null;
-        username?: string | null;
         hasPin?: boolean;
         shiftPayAmount?: number | null;
         revenueSharePct?: number | null;
@@ -275,7 +273,6 @@ interface HotelDetailPayload {
 interface AddManagerForm {
     displayName: string;
     loginName: string;
-    username?: string;
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
@@ -288,7 +285,6 @@ interface UpdateManagerForm {
     assignmentId: string;
     displayName: string;
     loginName: string;
-    username: string;
     pinCode: string;
     shiftPayAmount?: number;
     revenueSharePct?: number;
@@ -657,14 +653,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const formatStayDate = (value?: string | null) => formatDateTime(value, hotelTz, undefined, '—');
 
     const managerForm = useForm<AddManagerForm>({
-        defaultValues: { displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false }
+        defaultValues: { displayName: '', loginName: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false }
     });
     const updateManagerForm = useForm<UpdateManagerForm>({
         defaultValues: {
             assignmentId: '',
             displayName: '',
             loginName: '',
-            username: '',
             pinCode: '',
             shiftPayAmount: undefined,
             revenueSharePct: undefined,
@@ -2220,7 +2215,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 hotelId,
                 displayName: values.displayName.trim(),
                 loginName: values.loginName.trim().toLowerCase(),
-                username: values.username?.trim() || undefined,
                 pinCode: values.pinCode,
                 shiftPayAmount: shiftPayAmount ?? undefined,
                 revenueSharePct: revenueSharePct ?? undefined,
@@ -2229,7 +2223,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 canCancelBookings: values.canCancelBookings
             }
         });
-        managerForm.reset({ displayName: '', loginName: '', username: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
+        managerForm.reset({ displayName: '', loginName: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
         mutate();
     });
 
@@ -2241,7 +2235,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             assignmentId: values.assignmentId,
             displayName: values.displayName.trim() || undefined,
             loginName: values.loginName.trim().toLowerCase() || undefined,
-            username: values.username.trim() || undefined,
             pinCode: values.pinCode.trim() || undefined,
             shiftPayAmount: shiftPayAmount ?? undefined,
             revenueSharePct: revenueSharePct ?? undefined,
@@ -2253,7 +2246,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const hasUpdates =
             Boolean(payload.displayName) ||
             Boolean(payload.loginName) ||
-            Boolean(payload.username) ||
             Boolean(payload.pinCode) ||
             shiftPayAmount !== null ||
             revenueSharePct !== null ||
@@ -2279,7 +2271,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 assignmentId: values.assignmentId,
                 displayName: '',
                 loginName: '',
-                username: '',
                 pinCode: '',
                 shiftPayAmount: undefined,
                 revenueSharePct: undefined,
@@ -2303,7 +2294,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             assignmentId,
             displayName: '',
             loginName: '',
-            username: '',
             pinCode: '',
             shiftPayAmount: target?.shiftPayAmount != null ? toMajorValue(target.shiftPayAmount) : undefined,
             revenueSharePct: target?.revenueSharePct ?? undefined,
@@ -3688,7 +3678,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
+                                                {manager.displayName || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -3814,7 +3804,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         </option>
                                         {data.managers.map((manager) => (
                                             <option key={manager.id} value={manager.id} >
-                                                {manager.displayName || manager.username || manager.loginName || 'Менеджер'}
+                                                {manager.displayName || manager.loginName || 'Менеджер'}
                                             </option>
                                         ))}
                                     </Select>
@@ -4461,7 +4451,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 Логин: {manager.loginName ?? 'не задан'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
-                                                                {manager.username ? `@${manager.username} • ` : ''}
                                                                 PIN {manager.hasPin ? 'настроен' : 'не задан'}
                                                             </p>
                                                             <p className="text-xs text-slate-500 dark:text-white/50">
@@ -4515,7 +4504,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div>
                                                     <p className="text-sm font-semibold text-slate-900 dark:text-white">Добавление менеджера</p>
-                                                    <p className="text-xs text-slate-500 dark:text-white/60">Имя, логин, PIN и @username</p>
+                                                    <p className="text-xs text-slate-500 dark:text-white/60">Имя, логин и PIN</p>
                                                 </div>
                                                 <Button
                                                     type="button"
@@ -4599,7 +4588,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 <span>Отменять будущие брони</span>
                                                             </label>
                                                         </div>
-                                                        <Input placeholder="Подпись / @username (необязательно)" {...managerForm.register('username')} />
                                                         <Button type="submit" className="w-full">
                                                             Добавить менеджера
                                                         </Button>
@@ -4668,10 +4656,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 {updateManagerForm.formState.errors.loginName.message}
                                                             </p>
                                                         )}
-                                                        <Input
-                                                            placeholder={selectedManager?.username ? `@${selectedManager.username}` : '@username (необязательно)'}
-                                                            {...updateManagerForm.register('username')}
-                                                        />
                                                         <Input
                                                             placeholder={selectedManager?.hasPin ? 'Новый PIN (пусто — без изменений)' : 'Новый PIN (6 цифр)'}
                                                             type="password"

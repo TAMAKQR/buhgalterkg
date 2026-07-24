@@ -127,7 +127,6 @@ export async function POST(request: NextRequest) {
             id: managerRecord.id,
             telegramId: managerRecord.telegramId,
             displayName: managerRecord.displayName,
-            username: managerRecord.username,
             avatarUrl: managerRecord.avatarUrl,
             role: managerRecord.role,
             hotels: [{

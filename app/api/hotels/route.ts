@@ -199,7 +199,6 @@ export async function GET(request: NextRequest) {
                             select: {
                                 id: true,
                                 displayName: true,
-                                username: true,
                             },
                         },
                     },
@@ -209,7 +208,6 @@ export async function GET(request: NextRequest) {
             const managerMap = new Map<string, Array<{
                 id: string;
                 displayName: string | null;
-                username: string | null;
                 role: string;
             }>>();
 
@@ -218,7 +216,6 @@ export async function GET(request: NextRequest) {
                 managers.push({
                     id: assignment.user.id,
                     displayName: assignment.user.displayName,
-                    username: assignment.user.username,
                     role: assignment.role,
                 });
                 managerMap.set(assignment.hotelId, managers);
@@ -288,9 +285,7 @@ export async function GET(request: NextRequest) {
                             select: {
                                 id: true,
                                 displayName: true,
-                                telegramId: true,
                                 loginName: true,
-                                username: true,
                             },
                         },
                     },
@@ -484,9 +479,7 @@ export async function GET(request: NextRequest) {
             managers: hotel.assignments.map((assignment) => ({
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
-                telegramId: assignment.user.telegramId,
                 loginName: assignment.user.loginName,
-                username: assignment.user.username,
                 role: assignment.role,
                 hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,

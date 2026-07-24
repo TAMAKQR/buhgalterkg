@@ -4,7 +4,6 @@ export type SessionUser = {
     id: string;
     telegramId: string;
     displayName: string;
-    username?: string | null;
     avatarUrl?: string | null;
     role: UserRole;
     hotels: Array<{ id: string; name: string; address: string }>;

@@ -852,7 +852,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     roomId: stay.roomId,
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
-                    managerName: session.displayName || session.username || null,
+                    managerName: session.displayName || null,
                     roomSnapshotLines,
                 });
             } catch (notificationError) {

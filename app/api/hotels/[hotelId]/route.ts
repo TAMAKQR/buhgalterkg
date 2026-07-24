@@ -207,9 +207,7 @@ const hotelDetailSelect = {
                 select: {
                     id: true,
                     displayName: true,
-                    telegramId: true,
-                    loginName: true,
-                    username: true
+                    loginName: true
                 }
             }
         }
@@ -856,9 +854,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                 assignmentId: assignment.id,
                 id: assignment.user.id,
                 displayName: assignment.user.displayName,
-                telegramId: assignment.user.telegramId,
                 loginName: assignment.user.loginName,
-                username: assignment.user.username,
                 hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct,

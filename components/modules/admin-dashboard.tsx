@@ -153,8 +153,6 @@ type AdminHotelDirectoryItem = {
     managers: Array<{
         id: string;
         displayName: string | null;
-        telegramId?: string | null;
-        username?: string | null;
         role: string;
         hasPin?: boolean;
     }>;
@@ -2335,7 +2333,6 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             for (const manager of hotel.managers) {
                 const label =
                     manager.displayName?.trim() ||
-                    manager.username?.trim() ||
                     'Менеджер';
                 if (!unique.has(manager.id)) {
                     unique.set(manager.id, label);

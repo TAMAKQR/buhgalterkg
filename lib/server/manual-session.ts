@@ -119,7 +119,6 @@ const refreshManualSessionUser = async (snapshot: SessionUser): Promise<SessionU
             id: true,
             telegramId: true,
             displayName: true,
-            username: true,
             avatarUrl: true,
             role: true,
             assignments: {
@@ -157,7 +156,6 @@ const refreshManualSessionUser = async (snapshot: SessionUser): Promise<SessionU
         id: user.id,
         telegramId: user.telegramId,
         displayName: user.displayName,
-        username: user.username,
         avatarUrl: user.avatarUrl,
         role: user.role,
         hotels

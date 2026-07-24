@@ -1334,7 +1334,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     },
                     timezone: room.hotel.timezone,
                     currency: room.hotel.currency,
-                    managerName: session.displayName ?? session.username ?? null,
+                    managerName: session.displayName ?? null,
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram extension notification', notificationError);
@@ -1512,7 +1512,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     toRoomLabel: targetRoom.label,
                     currentCheckOut: updatedStay.scheduledCheckOut?.toISOString(),
                     timezone: room.hotel.timezone,
-                    managerName: session.displayName ?? session.username ?? null,
+                    managerName: session.displayName ?? null,
                 });
             } catch (notificationError) {
                 console.error('Failed to send Telegram transfer notification', notificationError);
@@ -1525,7 +1525,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     roomId: room.id,
                     hotelName: room.hotel.name,
                     roomLabel: room.label,
-                    managerName: session.displayName ?? session.username ?? null,
+                    managerName: session.displayName ?? null,
                     roomSnapshotLines,
                 });
             } catch (notificationError) {
@@ -1580,7 +1580,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                 roomId: room.id,
                 hotelName: room.hotel.name,
                 roomLabel: room.label,
-                managerName: session.displayName ?? session.username ?? null,
+                managerName: session.displayName ?? null,
                 roomSnapshotLines,
             });
         } catch (notificationError) {

@@ -9,7 +9,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { hasConfiguredPin, hashPin, verifyPin } from '@/lib/pin';
 
 export const dynamic = 'force-dynamic';
-const MANUAL_TELEGRAM_PREFIX = 'manual-';
+const INTERNAL_USER_PREFIX = 'manager-';
 const PIN_CONFLICT_MESSAGE = 'Этот PIN уже используется другим менеджером';
 const PIN_SPLIT_MESSAGE = 'PIN назначен нескольким людям. Обновите существующие назначения';
 const LOGIN_CONFLICT_MESSAGE = 'Этот логин уже используется другим пользователем';
@@ -23,9 +23,7 @@ const assignmentSchema = z.object({
     hotelId: z.string().cuid(),
     displayName: z.string().min(2).max(64),
     loginName: loginNameSchema,
-    username: z.string().min(3).max(32).optional(),
     pinCode: z.string().regex(/^[\d]{6}$/),
-    telegramId: z.string().min(3).max(32).optional(),
     shiftPayAmount: z.number().int().nonnegative().optional(),
     revenueSharePct: z.number().int().min(0).max(100).optional(),
     canEditBookings: z.boolean().optional(),
@@ -38,7 +36,6 @@ const updateAssignmentSchema = z
         assignmentId: z.string().cuid(),
         displayName: z.string().min(2).max(64).optional(),
         loginName: loginNameSchema.optional(),
-        username: z.string().min(3).max(32).optional(),
         pinCode: z.string().regex(/^[\d]{6}$/).optional(),
         shiftPayAmount: z.number().int().nonnegative().optional(),
         revenueSharePct: z.number().int().min(0).max(100).optional(),
@@ -50,7 +47,6 @@ const updateAssignmentSchema = z
         (values) =>
             values.displayName !== undefined ||
             values.loginName !== undefined ||
-            values.username !== undefined ||
             values.pinCode !== undefined ||
             values.shiftPayAmount !== undefined ||
             values.revenueSharePct !== undefined ||
@@ -77,8 +73,6 @@ export async function POST(request: NextRequest) {
         const payload = assignmentSchema.parse(body);
         const managerName = payload.displayName.trim();
         const normalizedLoginName = normalizeLoginName(payload.loginName);
-        const normalizedUsername = payload.username?.trim();
-        const normalizedTelegramId = payload.telegramId?.trim();
 
         const hotel = await prisma.hotel.findUnique({ where: { id: payload.hotelId } });
         if (!hotel) {
@@ -88,73 +82,41 @@ export async function POST(request: NextRequest) {
         let user;
         const loginOwner = await prisma.user.findUnique({
             where: { loginName: normalizedLoginName },
-            select: { id: true, telegramId: true }
+            select: { id: true }
         });
 
-        if (normalizedTelegramId) {
-            if (loginOwner && loginOwner.telegramId !== normalizedTelegramId) {
-                return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
-            }
+        const pinAssignments = await prisma.hotelAssignment.findMany({
+            where: { isActive: true },
+            include: { user: true }
+        });
+        const matchingPinAssignments = pinAssignments.filter((assignment) => verifyPin(payload.pinCode, assignment));
+        const uniqueUsers = new Set(matchingPinAssignments.map((assignment) => assignment.userId));
+        if (uniqueUsers.size > 1) {
+            return new NextResponse(PIN_SPLIT_MESSAGE, { status: 409 });
+        }
 
-            const upsertUpdate: Prisma.UserUpdateInput = {
-                displayName: managerName,
-                loginName: normalizedLoginName,
-                role: UserRole.MANAGER
-            };
-            if (normalizedUsername !== undefined) {
-                upsertUpdate.username = normalizedUsername;
-            }
+        const activeOwner = matchingPinAssignments[0]?.user;
+        if (loginOwner && (!activeOwner || loginOwner.id !== activeOwner.id)) {
+            return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
+        }
 
-            user = await prisma.user.upsert({
-                where: { telegramId: normalizedTelegramId },
-                update: upsertUpdate,
-                create: {
-                    telegramId: normalizedTelegramId,
+        if (activeOwner) {
+            user = await prisma.user.update({
+                where: { id: activeOwner.id },
+                data: {
                     displayName: managerName,
-                    loginName: normalizedLoginName,
-                    username: normalizedUsername ?? null,
-                    role: UserRole.MANAGER
+                    loginName: normalizedLoginName
                 }
             });
         } else {
-            const pinAssignments = await prisma.hotelAssignment.findMany({
-                where: { isActive: true },
-                include: { user: true }
-            });
-            const matchingPinAssignments = pinAssignments.filter((assignment) => verifyPin(payload.pinCode, assignment));
-            const uniqueUsers = new Set(matchingPinAssignments.map((assignment) => assignment.userId));
-            if (uniqueUsers.size > 1) {
-                return new NextResponse(PIN_SPLIT_MESSAGE, { status: 409 });
-            }
-
-            const activeOwner = matchingPinAssignments[0]?.user;
-            if (loginOwner && (!activeOwner || loginOwner.id !== activeOwner.id)) {
-                return new NextResponse(LOGIN_CONFLICT_MESSAGE, { status: 409 });
-            }
-
-            if (activeOwner) {
-                const userUpdates: Prisma.UserUpdateInput = {
+            user = await prisma.user.create({
+                data: {
+                    telegramId: `${INTERNAL_USER_PREFIX}${randomUUID()}`,
                     displayName: managerName,
-                    loginName: normalizedLoginName
-                };
-                if (normalizedUsername !== undefined) {
-                    userUpdates.username = normalizedUsername;
+                    loginName: normalizedLoginName,
+                    role: UserRole.MANAGER
                 }
-                user = await prisma.user.update({
-                    where: { id: activeOwner.id },
-                    data: userUpdates
-                });
-            } else {
-                user = await prisma.user.create({
-                    data: {
-                        telegramId: `${MANUAL_TELEGRAM_PREFIX}${randomUUID()}`,
-                        displayName: managerName,
-                        loginName: normalizedLoginName,
-                        username: normalizedUsername ?? null,
-                        role: UserRole.MANAGER
-                    }
-                });
-            }
+            });
         }
 
         const otherActiveAssignments = await prisma.hotelAssignment.findMany({
@@ -209,9 +171,7 @@ export async function POST(request: NextRequest) {
             manager: {
                 id: user.id,
                 displayName: user.displayName,
-                telegramId: user.telegramId,
                 loginName: user.loginName,
-                username: user.username,
                 hasPin: hasConfiguredPin(assignment),
                 shiftPayAmount: assignment.shiftPayAmount,
                 revenueSharePct: assignment.revenueSharePct,
@@ -245,7 +205,7 @@ export async function PATCH(request: NextRequest) {
             return new NextResponse('Assignment not found', { status: 404 });
         }
 
-        const userUpdates: { displayName?: string; loginName?: string; username?: string | null } = {};
+        const userUpdates: { displayName?: string; loginName?: string } = {};
 
         if (payload.displayName) {
             userUpdates.displayName = payload.displayName.trim();
@@ -266,10 +226,6 @@ export async function PATCH(request: NextRequest) {
 
             userUpdates.loginName = normalizedLoginName;
         }
-        if (payload.username) {
-            userUpdates.username = payload.username.trim();
-        }
-
         const operations: Prisma.PrismaPromise<unknown>[] = [];
         const assignmentUpdates: Prisma.HotelAssignmentUpdateInput = {};
 
@@ -354,9 +310,7 @@ export async function PATCH(request: NextRequest) {
             manager: {
                 id: updated.user.id,
                 displayName: updated.user.displayName,
-                telegramId: updated.user.telegramId,
                 loginName: updated.user.loginName,
-                username: updated.user.username,
                 hasPin: hasConfiguredPin(updated),
                 shiftPayAmount: updated.shiftPayAmount,
                 revenueSharePct: updated.revenueSharePct,

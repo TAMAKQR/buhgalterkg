@@ -116,7 +116,6 @@ export async function POST(request: NextRequest) {
             id: user.id,
             telegramId: user.telegramId,
             displayName: user.displayName,
-            username: user.username,
             avatarUrl: user.avatarUrl,
             role: user.role,
             hotels: user.assignments.map((a) => ({

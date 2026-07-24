@@ -112,7 +112,6 @@ async function main() {
         data: {
             telegramId: 'tg-janara',
             displayName: 'Жанара',
-            username: 'janara.manager',
             loginName: 'janara',
             role: 'MANAGER'
         }
@@ -122,7 +121,6 @@ async function main() {
         data: {
             telegramId: 'tg-bermet',
             displayName: 'Бермет',
-            username: 'bermet.manager',
             loginName: 'bermet',
             role: 'MANAGER'
         }
@@ -132,7 +130,6 @@ async function main() {
         data: {
             telegramId: 'tg-aidana',
             displayName: 'Айдана',
-            username: 'aidana.manager',
             loginName: 'aidana',
             role: 'MANAGER'
         }
@@ -142,7 +139,6 @@ async function main() {
         data: {
             telegramId: 'tg-timur',
             displayName: 'Тимур',
-            username: 'timur.manager',
             loginName: 'timur',
             role: 'MANAGER'
         }

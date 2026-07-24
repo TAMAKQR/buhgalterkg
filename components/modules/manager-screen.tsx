@@ -147,7 +147,6 @@ interface ManagerProfileResponse {
     manager: {
         id: string;
         displayName: string;
-        username?: string | null;
     };
     assignment: {
         shiftPayAmount?: number | null;
@@ -935,7 +934,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             setIsMovingStay(false);
         }
     }, [canEditBookings, data?.rooms, data?.shift?.id, draggedStay, hotelTz, isMovingStay, refreshManagerState, requestConfirmation, sendManagerRequest, toast]);
-    const managerName = user.displayName?.trim() || user.username?.trim() || 'Менеджер';
+    const managerName = user.displayName?.trim() || 'Менеджер';
     const shiftPayDisplay = typeof compensation?.shiftPayAmount === 'number' ? formatKgs(compensation.shiftPayAmount) : null;
     const shareDisplay = typeof compensation?.revenueSharePct === 'number' ? `${compensation.revenueSharePct}%` : null;
     const payoutSummary = data?.shift && compensation

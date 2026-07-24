@@ -12,7 +12,6 @@ const manualTemplate: SessionUser = {
     id: "manual-admin",
     telegramId: "manual-admin",
     displayName: ADMIN_DISPLAY_NAME,
-    username: null,
     avatarUrl: null,
     role: "ADMIN",
     hotels: [],

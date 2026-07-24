@@ -118,7 +118,6 @@ export async function GET(request: NextRequest) {
             manager: {
                 id: session.id,
                 displayName: session.displayName,
-                username: session.username
             },
             assignment: assignment
                 ? {
