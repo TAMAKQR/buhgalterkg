@@ -765,7 +765,7 @@ function BusinessTargetCard({
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                         <StatPill label="План затрат за месяц" value={formatCurrency(target.monthlyRequiredRevenue, currency)} />
-                        <StatPill label="Уже заработано" value={formatCurrency(target.monthRevenue, currency)} />
+                        <StatPill label="Выручка за выбранный период" value={formatCurrency(target.monthRevenue, currency)} />
                         <StatPill label="Осталось добрать" value={formatCurrency(target.remainingToTarget, currency)} />
                         <StatPill label="Прогноз выручки по текущему темпу" value={formatCurrency(target.projectedRevenue, currency)} />
                         <StatPill
@@ -2715,8 +2715,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                                                         {(overview.rankings?.hotels ?? []).map((hotel) => (
                                                             <div key={hotel.id} className="rounded-xl bg-slate-50 p-3.5 dark:bg-white/[0.035]">
-                                                                <div className="flex items-start justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{hotel.name}</p><span className="text-xs text-slate-400">{formatPercent(hotel.occupancyRate)}</span></div>
-                                                                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{formatCurrency(hotel.net, hotel.currency || overviewCurrency)}</p>
+                                                                <div className="flex items-start justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{hotel.name}</p><span className="text-xs text-slate-400">Загрузка {formatPercent(hotel.occupancyRate)}</span></div>
+                                                                <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-slate-500">Чистый денежный результат</p>
+                                                                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{formatCurrency(hotel.net, hotel.currency || overviewCurrency)}</p>
                                                                 <p className="mt-1 text-xs text-slate-500">Выручка {formatCurrency(hotel.revenue, hotel.currency || overviewCurrency)} · смен {hotel.shifts}</p>
                                                             </div>
                                                         ))}

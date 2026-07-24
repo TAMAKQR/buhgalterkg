@@ -1,6 +1,6 @@
 'use client';
 
-import useSWR from 'swr';
+import useSWR, { mutate as mutateSWR } from 'swr';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ChevronDown, Plus, Settings2, X } from 'lucide-react';
 
@@ -480,6 +480,11 @@ export const RoomEconomicsPanel = ({
                 method: 'PATCH',
                 body: { items },
             });
+            await mutateSWR(
+                (key) => Array.isArray(key) && key[0] === 'admin-overview',
+                undefined,
+                { revalidate: false },
+            );
             toast('Плановые затраты сохранены', 'success');
             setIsSettingsOpen(false);
             void mutate();

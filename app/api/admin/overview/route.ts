@@ -335,36 +335,36 @@ export async function GET(request: NextRequest) {
 
         const cycleSummaries = targetHotels.map((hotel) => {
             const timeZone = hotel.timezone || countryConfig.timezone;
+            const window = getFinancialCycleWindow(timeZone, hotel.financialCycleStartDay ?? 1);
+            const cycleStartAt = parseDateOnly(toDateKey(window.start), false, timeZone)!;
+            const cycleEndAt = parseDateOnly(toDateKey(window.end), true, timeZone)!;
+            const revenueStartAt = startDate && startDate > cycleStartAt ? startDate : cycleStartAt;
+            const requestedEndAt = endDate ?? new Date();
+            const revenueEndAt = requestedEndAt < cycleEndAt ? requestedEndAt : cycleEndAt;
+
             return {
                 hotel,
                 timeZone,
-                window: getFinancialCycleWindow(timeZone, hotel.financialCycleStartDay ?? 1),
+                window,
+                revenueStartAt,
+                revenueEndAt,
             };
         });
 
         const cycleRevenueResults = cycleSummaries.length
             ? await prisma.$transaction(
-                cycleSummaries.map(({ hotel, timeZone, window }) => prisma.roomStay.aggregate({
+                cycleSummaries.map(({ hotel, revenueStartAt, revenueEndAt }) => prisma.cashEntry.aggregate({
                     where: {
                         hotelId: hotel.id,
-                        status: { in: ["CHECKED_IN", "CHECKED_OUT"] },
-                        OR: [
-                            {
-                                actualCheckIn: {
-                                    gte: parseDateOnly(toDateKey(window.start), false, timeZone),
-                                    lte: parseDateOnly(toDateKey(window.end), true, timeZone),
-                                },
-                            },
-                            {
-                                actualCheckIn: null,
-                                scheduledCheckIn: {
-                                    gte: parseDateOnly(toDateKey(window.start), false, timeZone),
-                                    lte: parseDateOnly(toDateKey(window.end), true, timeZone),
-                                },
-                            },
-                        ],
+                        entryType: LedgerEntryType.CASH_IN,
+                        recordedAt: {
+                            gte: revenueStartAt,
+                            lte: revenueEndAt,
+                        },
+                        ...(managerIds.length ? { managerId: { in: managerIds } } : {}),
+                        ...(shiftIds.length ? { shiftId: { in: shiftIds } } : {}),
                     },
-                    _sum: { amountPaid: true },
+                    _sum: { amount: true },
                 }))
             )
             : [];
@@ -956,8 +956,22 @@ export async function GET(request: NextRequest) {
             monthlyCostPlan.utilities +
             monthlyCostPlan.supplies +
             monthlyCostPlan.other;
-        const cycleMetrics = cycleSummaries.map(({ hotel, window }, index) => {
-            const revenue = cycleRevenueResults[index]?._sum.amountPaid ?? 0;
+        const cycleMetrics = cycleSummaries.map(({ hotel, window, revenueStartAt, revenueEndAt, timeZone }, index) => {
+            const revenue = cycleRevenueResults[index]?._sum.amount ?? 0;
+            const selectedElapsedDays = revenueEndAt >= revenueStartAt
+                ? countInclusiveDays(
+                    {
+                        year: Number(toDateKeyInTimeZone(revenueStartAt, timeZone).slice(0, 4)),
+                        month: Number(toDateKeyInTimeZone(revenueStartAt, timeZone).slice(5, 7)),
+                        day: Number(toDateKeyInTimeZone(revenueStartAt, timeZone).slice(8, 10)),
+                    },
+                    {
+                        year: Number(toDateKeyInTimeZone(revenueEndAt, timeZone).slice(0, 4)),
+                        month: Number(toDateKeyInTimeZone(revenueEndAt, timeZone).slice(5, 7)),
+                        day: Number(toDateKeyInTimeZone(revenueEndAt, timeZone).slice(8, 10)),
+                    },
+                )
+                : 0;
             const employeePayroll = hotel.employees
                     .filter((employee) => employee.payType === 'MONTHLY')
                     .reduce((sum, employee) => sum + employee.payAmount, 0);
@@ -967,17 +981,18 @@ export async function GET(request: NextRequest) {
                     .reduce((sum, item) => sum + item.monthlyAmount, 0) +
                 employeePayroll;
             const remainingRevenue = Math.max(requiredRevenue - revenue, 0);
-            const currentAverage = window.elapsedDays > 0 ? Math.round(revenue / window.elapsedDays) : 0;
-            const requiredAverage = remainingRevenue > 0 && window.remainingDays > 0
-                ? Math.ceil(remainingRevenue / window.remainingDays)
+            const selectedRemainingDays = Math.max(window.totalDays - selectedElapsedDays, 0);
+            const currentAverage = selectedElapsedDays > 0 ? Math.round(revenue / selectedElapsedDays) : 0;
+            const requiredAverage = remainingRevenue > 0 && selectedRemainingDays > 0
+                ? Math.ceil(remainingRevenue / selectedRemainingDays)
                 : 0;
 
             return {
                 label: window.label,
                 cycleStartDay: window.cycleStartDay,
                 totalDays: window.totalDays,
-                elapsedDays: window.elapsedDays,
-                remainingDays: window.remainingDays,
+                elapsedDays: selectedElapsedDays,
+                remainingDays: selectedRemainingDays,
                 revenue,
                 currentAverage,
                 requiredAverage,
