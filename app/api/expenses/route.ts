@@ -17,6 +17,7 @@ const expenseSchema = z.object({
     shiftId: z.string().cuid().optional(),
     categoryId: z.string().cuid().optional(),
     roomId: z.string().cuid().optional(),
+    employeeId: z.string().cuid().optional(),
     amount: z.number().int().positive().optional(),
     method: z.nativeEnum(PaymentMethod),
     currency: z.enum(['KGS', 'KZT', 'USD']).optional(),
@@ -50,6 +51,7 @@ type NormalizedIdempotencyPayload = {
     shiftId: string | null;
     categoryId: string | null;
     roomId: string | null;
+    employeeId: string | null;
     entryType: LedgerEntryType;
     method: PaymentMethod;
     amount: number | null;
@@ -81,6 +83,7 @@ const assertIdempotencyPayloadMatches = (
         && entry.shiftId === expected.shiftId
         && entry.categoryId === expected.categoryId
         && entry.roomId === expected.roomId
+        && entry.employeeId === expected.employeeId
         && moneyMatches
         && normalizeNote(entry.note) === expected.note
         && (expected.recordedAt === null || entry.recordedAt.getTime() === expected.recordedAt.getTime());
@@ -105,6 +108,9 @@ export async function POST(request: NextRequest) {
         if (payload.roomId && payload.entryType !== LedgerEntryType.CASH_OUT) {
             return new NextResponse('Комнату можно указать только для расходов', { status: 400 });
         }
+        if (payload.employeeId && payload.entryType !== LedgerEntryType.CASH_OUT) {
+            return new NextResponse('Выплата сотруднику должна быть расходом', { status: 400 });
+        }
         if (payload.recordedAt && (session.role !== 'ADMIN' || payload.entryType !== LedgerEntryType.CASH_OUT)) {
             return new NextResponse('Дату операции может указывать только администратор для расхода', { status: 403 });
         }
@@ -118,7 +124,7 @@ export async function POST(request: NextRequest) {
             return new NextResponse('Категорию можно указать только для расходов', { status: 400 });
         }
 
-        if (payload.entryType !== LedgerEntryType.MANAGER_PAYOUT && !payload.amount) {
+        if (payload.entryType !== LedgerEntryType.MANAGER_PAYOUT && !payload.employeeId && !payload.amount) {
             return new NextResponse('Укажите сумму операции', { status: 400 });
         }
 
@@ -140,19 +146,24 @@ export async function POST(request: NextRequest) {
                 accountingCurrency: hotel.currency
             })
             : makeDefaultMoneyBreakdown(amount, hotel.currency);
-        const isManagerPayout = payload.entryType === LedgerEntryType.MANAGER_PAYOUT;
+        const isAutomaticPayout = payload.entryType === LedgerEntryType.MANAGER_PAYOUT || Boolean(payload.employeeId);
         const normalizedIdempotencyPayload: NormalizedIdempotencyPayload = {
             hotelId: payload.hotelId,
             shiftId: payload.shiftId ?? null,
             categoryId: payload.categoryId ?? null,
             roomId: payload.roomId ?? null,
+            employeeId: payload.employeeId ?? null,
             entryType: payload.entryType,
             method: payload.method,
-            amount: isManagerPayout ? null : money.accountingAmount,
-            originalAmount: isManagerPayout ? null : money.originalAmount,
-            originalCurrency: isManagerPayout ? null : money.originalCurrency,
-            exchangeRate: isManagerPayout ? null : money.exchangeRate,
-            note: isManagerPayout ? note ?? 'Выплата по ставке' : note,
+            amount: isAutomaticPayout ? null : money.accountingAmount,
+            originalAmount: isAutomaticPayout ? null : money.originalAmount,
+            originalCurrency: isAutomaticPayout ? null : money.originalCurrency,
+            exchangeRate: isAutomaticPayout ? null : money.exchangeRate,
+            note: payload.entryType === LedgerEntryType.MANAGER_PAYOUT
+                ? note ?? 'Выплата по ставке'
+                : payload.employeeId
+                    ? note ?? 'Выплата сотруднику'
+                    : note,
             recordedAt: payload.recordedAt ? recordedAt : null,
         };
 
@@ -340,6 +351,77 @@ export async function POST(request: NextRequest) {
                 }
                 throw error;
             }
+        }
+
+        if (payload.employeeId) {
+            if (!shiftId) return new NextResponse('Для выплаты сотруднику нужна активная смена', { status: 400 });
+            const payoutShiftId = shiftId;
+            const employeeId = payload.employeeId;
+            const entry = await prisma.$transaction(async (tx) => {
+                const [lockedShift] = await tx.$queryRaw<LockedShift[]>(Prisma.sql`
+                    SELECT "id", "hotelId", "managerId", "status"
+                    FROM "Shift" WHERE "id" = ${payoutShiftId} FOR UPDATE
+                `);
+                if (!lockedShift || lockedShift.hotelId !== payload.hotelId || lockedShift.status !== 'OPEN') {
+                    throw new ExpenseResponseError('Активная смена не найдена', 409);
+                }
+                if (session.role === 'MANAGER' && lockedShift.managerId !== session.id) {
+                    throw new ExpenseResponseError('Можно изменять только свою открытую смену', 403);
+                }
+                if (idempotencyKey) {
+                    const existingEntry = await tx.cashEntry.findUnique({ where: { clientOperationId: idempotencyKey } });
+                    if (existingEntry) {
+                        assertIdempotencyPayloadMatches(existingEntry, normalizedIdempotencyPayload);
+                        return existingEntry;
+                    }
+                }
+                const employee = await tx.hotelEmployee.findFirst({
+                    where: { id: employeeId, hotelId: payload.hotelId, isActive: true },
+                    select: { fullName: true, payType: true, payAmount: true, turnoverThreshold: true, highPayAmount: true }
+                });
+                if (!employee) throw new ExpenseResponseError('Сотрудник не найден или не работает', 400);
+                if (employee.payType !== 'SHIFT') {
+                    throw new ExpenseResponseError('Автовыплата доступна сотрудникам со ставкой за смену', 400);
+                }
+                const alreadyPaid = await tx.cashEntry.findFirst({
+                    where: { shiftId: payoutShiftId, employeeId },
+                    select: { id: true }
+                });
+                if (alreadyPaid) throw new ExpenseResponseError('Этому сотруднику уже выплачено за текущую смену', 400);
+                const revenue = await tx.cashEntry.aggregate({
+                    where: { shiftId: payoutShiftId, entryType: LedgerEntryType.CASH_IN },
+                    _sum: { amount: true }
+                });
+                const turnover = revenue._sum.amount ?? 0;
+                const usesHighRate = employee.turnoverThreshold != null
+                    && employee.highPayAmount != null
+                    && turnover >= employee.turnoverThreshold;
+                const payoutAmount = usesHighRate ? employee.highPayAmount! : employee.payAmount;
+                if (payoutAmount <= 0) throw new ExpenseResponseError('Для сотрудника не настроена ставка', 400);
+                return tx.cashEntry.create({
+                    data: {
+                        hotelId: payload.hotelId,
+                        shiftId: payoutShiftId,
+                        managerId: lockedShift.managerId,
+                        employeeId,
+                        clientOperationId: idempotencyKey,
+                        categoryId,
+                        amount: payoutAmount,
+                        originalAmount: payoutAmount,
+                        originalCurrency: hotel.currency,
+                        method: payload.method,
+                        entryType: LedgerEntryType.CASH_OUT,
+                        note: payload.note?.trim() || 'Выплата сотруднику',
+                        meta: {
+                            kind: 'EMPLOYEE_PAYOUT',
+                            turnover,
+                            threshold: employee.turnoverThreshold,
+                            rate: usesHighRate ? 'HIGH' : 'BASE'
+                        }
+                    }
+                });
+            });
+            return NextResponse.json(entry, { status: 201 });
         }
 
         const entryData: Prisma.CashEntryUncheckedCreateInput = {

@@ -121,6 +121,14 @@ interface ManagerStateResponse {
         id: string;
         name: string;
     }>;
+    employees?: Array<{
+        id: string;
+        fullName: string;
+        position: string;
+        payAmount: number;
+        turnoverThreshold?: number | null;
+        highPayAmount?: number | null;
+    }>;
     rooms: Array<{
         id: string;
         label: string;
@@ -180,6 +188,7 @@ interface ExpenseForm {
     exchangeRate?: number;
     note?: string;
     categoryId?: string;
+    employeeId?: string;
     entryType: 'CASH_IN' | 'CASH_OUT' | 'MANAGER_PAYOUT' | 'ADJUSTMENT';
 }
 
@@ -533,7 +542,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const formatDateInputValue = (date: Date) => formatInputValue(date, hotelTz);
 
     const localCashCurrency = (hotelCur === 'KZT' ? 'KZT' : 'KGS') as CashCurrencyCode;
-    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '', currency: localCashCurrency } });
+    const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '', employeeId: '', currency: localCashCurrency } });
     const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: undefined, openingCashUsd: undefined, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '' } });
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
@@ -856,6 +865,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const selectedExpenseEntryType = expenseForm.watch('entryType');
     const selectedExpenseMethod = expenseForm.watch('method');
     const selectedExpenseCurrency = expenseForm.watch('currency');
+    const selectedEmployeeId = expenseForm.watch('employeeId');
+    const selectedEmployee = data?.employees?.find((employee) => employee.id === selectedEmployeeId);
+    const employeePayoutAmount = selectedEmployee
+        ? ((selectedEmployee.turnoverThreshold != null
+            && selectedEmployee.highPayAmount != null
+            && shiftRevenueTotal >= selectedEmployee.turnoverThreshold)
+            ? selectedEmployee.highPayAmount
+            : selectedEmployee.payAmount)
+        : null;
     const compensation = data?.compensation ?? null;
     const canEditBookings = Boolean(compensation?.canEditBookings);
     const canEditStayPayments = Boolean(compensation?.canEditStayPayments);
@@ -1043,6 +1061,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             expenseForm.setValue('amount', pendingPayoutMajor);
         }
     }, [expenseForm, pendingPayoutMajor, selectedExpenseEntryType]);
+
+    useEffect(() => {
+        if (selectedEmployee && employeePayoutAmount != null) {
+            expenseForm.setValue('amount', employeePayoutAmount / 100);
+        }
+    }, [employeePayoutAmount, expenseForm, selectedEmployee]);
 
     const handlePrintShiftReceipt = () => {
         if (typeof window === 'undefined' || !data?.shift || !primaryHotel) {
@@ -1624,6 +1648,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 currency: values.method === 'CASH' ? values.currency : hotelCur,
                 exchangeRate: values.method === 'CASH' && values.currency === 'USD' ? toMinor(values.exchangeRate) : undefined,
                 categoryId: values.entryType === 'CASH_OUT' && values.categoryId ? values.categoryId : undefined,
+                employeeId: values.entryType === 'CASH_OUT' && values.employeeId ? values.employeeId : undefined,
                 note: values.note,
                 entryType: values.entryType
             }
@@ -1636,6 +1661,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             exchangeRate: values.exchangeRate,
             entryType: values.entryType,
             categoryId: values.entryType === 'CASH_OUT' ? values.categoryId ?? '' : '',
+            employeeId: '',
             note: ''
         });
     });
@@ -3910,7 +3936,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                             <Card className="w-full lg:p-5">
                                 <CardHeader title="Касса" />
                                 <form className="grid gap-3 lg:grid-cols-12" onSubmit={handleExpense}>
-                                    <Input className="lg:col-span-2" type="number" step="0.01" placeholder={isAutoManagerPayout ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout} {...expenseForm.register('amount', { valueAsNumber: true })} />
+                                    <Input className="lg:col-span-2" type="number" step="0.01" placeholder={(isAutoManagerPayout || selectedEmployee) ? 'Сумма рассчитывается автоматически' : 'Сумма'} readOnly={isAutoManagerPayout || Boolean(selectedEmployee)} {...expenseForm.register('amount', { valueAsNumber: true })} />
                                     <Select className="min-w-0 max-w-full lg:col-span-2" {...expenseForm.register('method')}>
                                         <option value="CASH">Наличные</option>
                                         <option value="CARD">Безнал</option>
@@ -3931,12 +3957,27 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <option key={category.id} value={category.id}>{category.name}</option>
                                         ))}
                                     </Select>
+                                    <Select className="min-w-0 max-w-full lg:col-span-4" {...expenseForm.register('employeeId')} disabled={selectedExpenseEntryType !== 'CASH_OUT'}>
+                                        <option value="">Обычный расход (не зарплата)</option>
+                                        {(data?.employees ?? []).map((employee) => (
+                                            <option key={employee.id} value={employee.id}>Выплата: {employee.fullName}</option>
+                                        ))}
+                                    </Select>
                                     {selectedExpenseMethod === 'CASH' && selectedExpenseCurrency === 'USD' ? (
                                         <Input className="lg:col-span-3" type="number" step="0.01" placeholder={`Курс USD к ${hotelCur}`} {...expenseForm.register('exchangeRate', { valueAsNumber: true })} />
                                     ) : null}
                                     {isAutoManagerPayout ? (
                                         <p className="text-xs text-slate-500 dark:text-white/50 lg:col-span-12">
                                             Выплата рассчитывается по ставке и проценту менеджера. К выплате сейчас: <span className="font-semibold text-light-text dark:text-white">{formatKgs(payoutSummary?.pending ?? 0)}</span>
+                                        </p>
+                                    ) : null}
+                                    {selectedEmployee && employeePayoutAmount != null ? (
+                                        <p className="text-xs text-slate-500 dark:text-white/50 lg:col-span-12">
+                                            Зарплата рассчитывается автоматически от оборота смены {formatKgs(shiftRevenueTotal)}.
+                                            К выплате {selectedEmployee.fullName}: <span className="font-semibold text-light-text dark:text-white">{formatKgs(employeePayoutAmount)}</span>
+                                            {selectedEmployee.turnoverThreshold != null && selectedEmployee.highPayAmount != null
+                                                ? ` (повышенная ставка с ${formatKgs(selectedEmployee.turnoverThreshold)})`
+                                                : ''}
                                         </p>
                                     ) : null}
                                     <TextArea rows={1} className="lg:col-span-9" placeholder="Комментарий" {...expenseForm.register('note')} />

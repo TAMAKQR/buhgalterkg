@@ -15,6 +15,8 @@ const employeeFields = {
     position: z.string().trim().min(2).max(80),
     payType: payTypeSchema,
     payAmount: z.number().int().min(0).max(2_000_000_000),
+    turnoverThreshold: z.number().int().positive().max(2_000_000_000).nullable().optional(),
+    highPayAmount: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
 };
 const createSchema = z.object(employeeFields);

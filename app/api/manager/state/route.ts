@@ -60,6 +60,18 @@ export async function GET(request: NextRequest) {
                         orderBy: { name: 'asc' },
                         select: { id: true, name: true }
                     },
+                    employees: {
+                        where: { isActive: true, payType: 'SHIFT' },
+                        orderBy: { fullName: 'asc' },
+                        select: {
+                            id: true,
+                            fullName: true,
+                            position: true,
+                            payAmount: true,
+                            turnoverThreshold: true,
+                            highPayAmount: true
+                        }
+                    },
                     rooms: {
                         orderBy: { label: 'asc' },
                         select: {
@@ -354,6 +366,7 @@ export async function GET(request: NextRequest) {
                 id: category.id,
                 name: category.name
             })),
+            employees: hotel.employees,
             shift,
             shiftCash,
             shiftBalances,

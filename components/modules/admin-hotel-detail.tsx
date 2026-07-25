@@ -233,6 +233,8 @@ interface HotelDetailPayload {
         position: string;
         payType: 'MONTHLY' | 'SHIFT' | 'ROOM' | 'PERCENT' | 'OTHER';
         payAmount: number;
+        turnoverThreshold?: number | null;
+        highPayAmount?: number | null;
         isActive: boolean;
         hiredAt?: string | null;
         dismissedAt?: string | null;
@@ -756,7 +758,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isDeletingShift, setIsDeletingShift] = useState(false);
     const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
-    const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', notes: '' });
+    const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
     const [savingEmployee, setSavingEmployee] = useState(false);
     const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
@@ -1609,10 +1611,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     position: employeeForm.position.trim(),
                     payType: employeeForm.payType,
                     payAmount,
+                    turnoverThreshold: employeeForm.payType === 'SHIFT' && employeeForm.turnoverThreshold ? toOptionalMinor(Number(employeeForm.turnoverThreshold)) : null,
+                    highPayAmount: employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount ? toOptionalMinor(Number(employeeForm.highPayAmount)) : null,
                     notes: employeeForm.notes.trim() || null,
                 },
             });
-            setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', notes: '' });
+            setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
             mutate();
             toast('Сотрудник добавлен', 'success');
         } catch (employeeError) {
@@ -4428,6 +4432,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <option value="OTHER">Другая схема</option>
                                             </Select>
                                             <Input type="number" min="0" step="0.01" value={employeeForm.payAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, payAmount: event.target.value }))} placeholder={employeeForm.payType === 'PERCENT' ? 'Процент' : 'Сумма'} />
+                                            {employeeForm.payType === 'SHIFT' ? (
+                                                <>
+                                                    <Input type="number" min="0" step="0.01" value={employeeForm.turnoverThreshold} onChange={(event) => setEmployeeForm((current) => ({ ...current, turnoverThreshold: event.target.value }))} placeholder="Порог оборота, например 200000" />
+                                                    <Input type="number" min="0" step="0.01" value={employeeForm.highPayAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, highPayAmount: event.target.value }))} placeholder="Ставка после порога, например 17000" />
+                                                </>
+                                            ) : null}
                                             <Input className="sm:col-span-2" value={employeeForm.notes} onChange={(event) => setEmployeeForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Комментарий" />
                                             <Button type="button" className="sm:col-span-2" disabled={savingEmployee} onClick={handleCreateEmployee}>
                                                 {savingEmployee ? 'Добавляем…' : 'Добавить сотрудника'}

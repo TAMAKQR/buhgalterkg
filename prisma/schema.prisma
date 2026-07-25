@@ -79,6 +79,8 @@ model HotelEmployee {
   position    String
   payType     String    @default("MONTHLY") @map("pay_type")
   payAmount   Int       @default(0) @map("pay_amount")
+  turnoverThreshold Int? @map("turnover_threshold")
+  highPayAmount Int? @map("high_pay_amount")
   isActive    Boolean   @default(true) @map("is_active")
   hiredAt     DateTime? @map("hired_at")
   dismissedAt DateTime? @map("dismissed_at")
@@ -86,6 +88,7 @@ model HotelEmployee {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   hotel       Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  payouts     CashEntry[]
 
   @@index([hotelId, isActive])
   @@map("hotel_employees")
@@ -384,6 +387,7 @@ model CashEntry {
   hotelId    String
   managerId  String?
   categoryId String?         @map("expense_category_id")
+  employeeId String?         @map("employee_id")
   entryType  LedgerEntryType
   method     PaymentMethod
   amount     Int
@@ -395,6 +399,7 @@ model CashEntry {
   clientOperationId String?       @unique @map("client_operation_id")
   recordedAt DateTime        @default(now())
   expenseCategory ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  employee   HotelEmployee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   stay       RoomStay?       @relation(fields: [stayId], references: [id], onDelete: SetNull)
   room       Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
   hotel      Hotel           @relation(fields: [hotelId], references: [id])
@@ -404,6 +409,7 @@ model CashEntry {
   @@index([stayId])
   @@index([roomId, recordedAt])
   @@index([hotelId, recordedAt])
+  @@index([employeeId, recordedAt])
   @@index([shiftId, recordedAt])
   @@index([hotelId, entryType, recordedAt])
 }
