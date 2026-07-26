@@ -1191,6 +1191,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const roomBoardRows = useMemo(() => {
         const rangeStart = roomBoardRange.start.getTime();
         const rangeEnd = roomBoardRange.end.getTime();
+        const rangeStartKey = formatDateKey(roomBoardRange.start, hotelTz);
+        const rangeStartDay = Date.parse(`${rangeStartKey}T00:00:00Z`);
         const now = new Date();
 
         return sortedRooms.map((room) => {
@@ -1206,10 +1208,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         return null;
                     }
 
-                    const clampedStart = Math.max(stayStart, rangeStart);
-                    const clampedEnd = Math.min(effectiveStayEnd, rangeEnd);
-                    const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
-                    const endIndex = Math.min(managerBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
+                    const stayStartKey = formatDateKey(stay.scheduledCheckIn, hotelTz);
+                    const naturalEndKey = formatDateKey(stay.scheduledCheckOut, hotelTz);
+                    const effectiveEndKey = stay.status === 'CHECKED_IN' && stayEnd <= now.getTime()
+                        ? formatDateKey(addDays(now, 1), hotelTz)
+                        : naturalEndKey;
+                    const stayStartDay = Date.parse(`${stayStartKey}T00:00:00Z`);
+                    const stayEndDay = Date.parse(`${effectiveEndKey}T00:00:00Z`);
+                    const startIndex = Math.max(0, Math.floor((stayStartDay - rangeStartDay) / 86400000));
+                    const endIndex = Math.min(managerBoardDayCount, Math.max(startIndex + 1, Math.round((stayEndDay - rangeStartDay) / 86400000)));
                     const span = Math.max(1, endIndex - startIndex);
                     const isOverdue = stay.status === 'CHECKED_IN' && isPastDate(stay.scheduledCheckOut, now);
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
@@ -1222,7 +1229,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         stay.guestPhone?.trim()
                     ].filter(Boolean).join(' · ');
 
-                    return { stay, startIndex, span, isOverdue, guestLabel, detailLabel };
+                    const durationMs = Math.max(stayEnd - stayStart, 1);
+                    const progressPct = stay.status === 'CHECKED_IN'
+                        ? Math.min(100, Math.max(0, ((now.getTime() - stayStart) / durationMs) * 100))
+                        : 0;
+                    const elapsedDays = Math.max(0, Math.floor((Math.min(now.getTime(), stayEnd) - stayStart) / 86400000));
+                    const remainingDays = Math.max(0, Math.ceil((stayEnd - Math.max(now.getTime(), stayStart)) / 86400000));
+
+                    return { stay, startIndex, span, isOverdue, guestLabel, detailLabel, progressPct, elapsedDays, remainingDays };
                 })
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
                 .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
@@ -1238,7 +1252,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [canUseMealPlan, formatKgs, roomBoardRange, sortedRooms]);
+    }, [canUseMealPlan, formatKgs, hotelTz, roomBoardRange, sortedRooms]);
 
     const roomBoardSections = useMemo(() => {
         const sections = new Map<string, {
@@ -3535,7 +3549,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 key={`manager-board-stay-${item.stay.id}`}
                                                                                 type="button"
                                                                                 draggable={canDragStay(item.stay) && !isMovingStay}
-                                                                                className={`z-10 m-1 min-w-0 rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${
+                                                                                className={`relative z-10 m-1 min-w-0 overflow-hidden rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${
                                                                                     canDragStay(item.stay) ? 'cursor-grab active:cursor-grabbing' : ''
                                                                                 } ${draggedStay?.stay.id === item.stay.id ? 'opacity-45' : ''} ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
@@ -3565,8 +3579,19 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                      }
                                                                                  }}
                                                                             >
-                                                                                <span className="block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className={`mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
+                                                                                {item.stay.status === 'CHECKED_IN' ? (
+                                                                                    <span className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/20 transition-[width]" style={{ width: `${item.progressPct}%` }} />
+                                                                                ) : null}
+                                                                                <span className="relative block truncate font-semibold">{item.guestLabel}</span>
+                                                                                <span className="relative mt-1 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
+                                                                                    <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
+                                                                                    <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
+                                                                                </span>
+                                                                                {item.stay.status === 'CHECKED_IN' ? (
+                                                                                    <span className="relative mt-1 block truncate text-[10px] opacity-75">Прожито {item.elapsedDays} дн. · осталось {item.remainingDays} дн.</span>
+                                                                                ) : (
+                                                                                    <span className={`relative mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
+                                                                                )}
                                                                             </button>
                                                                         ))}
                                                                     </div>

@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useApi } from '@/hooks/useApi';
-import { formatDateTime, formatMoney, parseDateOnly } from '@/lib/timezone';
+import { formatDateKey, formatDateTime, formatMoney, parseDateOnly } from '@/lib/timezone';
 import { useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
@@ -1229,6 +1229,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const bookingBoardRows = useMemo(() => {
         const rangeStart = bookingBoardRange.start.getTime();
         const rangeEnd = bookingBoardRange.end.getTime();
+        const rangeStartKey = formatDateKey(bookingBoardRange.start, hotelTz);
+        const rangeStartDay = Date.parse(`${rangeStartKey}T00:00:00Z`);
 
         const now = new Date();
 
@@ -1245,14 +1247,26 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         return null;
                     }
 
-                    const clampedStart = Math.max(stayStart, rangeStart);
-                    const clampedEnd = Math.min(effectiveStayEnd, rangeEnd);
-                    const startIndex = Math.max(0, Math.floor((clampedStart - rangeStart) / 86400000));
-                    const endIndex = Math.min(bookingBoardDayCount, Math.ceil((clampedEnd - rangeStart) / 86400000));
+                    const stayStartKey = formatDateKey(stay.scheduledCheckIn, hotelTz);
+                    const naturalEndKey = formatDateKey(stay.scheduledCheckOut, hotelTz);
+                    const effectiveEndKey = stay.status === 'CHECKED_IN' && stayEnd <= now.getTime()
+                        ? formatDateKey(addDays(now, 1), hotelTz)
+                        : naturalEndKey;
+                    const stayStartDay = Date.parse(`${stayStartKey}T00:00:00Z`);
+                    const stayEndDay = Date.parse(`${effectiveEndKey}T00:00:00Z`);
+                    const startIndex = Math.max(0, Math.floor((stayStartDay - rangeStartDay) / 86400000));
+                    const endIndex = Math.min(bookingBoardDayCount, Math.max(startIndex + 1, Math.round((stayEndDay - rangeStartDay) / 86400000)));
                     const span = Math.max(1, endIndex - startIndex);
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
                     const checkoutTime = Date.parse(stay.scheduledCheckOut);
                     const isOverdue = stay.status === 'CHECKED_IN' && Number.isFinite(checkoutTime) && checkoutTime < now.getTime();
+
+                    const durationMs = Math.max(stayEnd - stayStart, 1);
+                    const progressPct = stay.status === 'CHECKED_IN'
+                        ? Math.min(100, Math.max(0, ((now.getTime() - stayStart) / durationMs) * 100))
+                        : 0;
+                    const elapsedDays = Math.max(0, Math.floor((Math.min(now.getTime(), stayEnd) - stayStart) / 86400000));
+                    const remainingDays = Math.max(0, Math.ceil((stayEnd - Math.max(now.getTime(), stayStart)) / 86400000));
 
                     return {
                         stay,
@@ -1266,7 +1280,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             stay.bookingSource?.trim(),
                             stay.companyName?.trim(),
                             stay.guestPhone?.trim()
-                        ].filter(Boolean).join(' · ')
+                        ].filter(Boolean).join(' · '),
+                        progressPct,
+                        elapsedDays,
+                        remainingDays
                     };
                 })
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -1283,7 +1300,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [bookingBoardRange, hotelCur, sortedRooms]);
+    }, [bookingBoardRange, hotelCur, hotelTz, sortedRooms]);
 
     const boardStayListItems = useMemo(() => {
         return bookingBoardRows.flatMap((row) =>
@@ -3386,7 +3403,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 key={`booking-board-stay-${item.stay.id}`}
                                                                                 type="button"
                                                                                 draggable={(item.stay.status === 'SCHEDULED' || item.stay.status === 'CHECKED_IN') && !isMovingBoardStay}
-                                                                                className={`z-10 m-1 min-w-0 cursor-grab rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
+                                                                                className={`relative z-10 m-1 min-w-0 cursor-grab overflow-hidden rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
                                                                                     draggedBoardStay?.stay.id === item.stay.id ? 'opacity-45' : ''
                                                                                 } ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
@@ -3407,8 +3424,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     item.stay.notes?.trim()
                                                                                 ].filter(Boolean).join(' · ')}
                                                                             >
-                                                                                <span className="block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className={`mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
+                                                                                {item.stay.status === 'CHECKED_IN' ? (
+                                                                                    <span className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/20 transition-[width]" style={{ width: `${item.progressPct}%` }} />
+                                                                                ) : null}
+                                                                                <span className="relative block truncate font-semibold">{item.guestLabel}</span>
+                                                                                <span className="relative mt-1 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
+                                                                                    <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
+                                                                                    <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
+                                                                                </span>
+                                                                                {item.stay.status === 'CHECKED_IN' ? (
+                                                                                    <span className="relative mt-1 block truncate text-[10px] opacity-75">Прожито {item.elapsedDays} дн. · осталось {item.remainingDays} дн.</span>
+                                                                                ) : (
+                                                                                    <span className={`relative mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
+                                                                                )}
                                                                             </button>
                                                                         ))}
                                                                         {!items.length ? (
