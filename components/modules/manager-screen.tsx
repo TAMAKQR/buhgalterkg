@@ -31,7 +31,7 @@ import {
     type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Sparkles, Users, WalletCards } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Search, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -55,6 +55,14 @@ type ManagerRoomStay = {
     bookingNumber?: string | null;
     mealPlan?: string[] | null;
     notes?: string | null;
+};
+
+type BookingSearchResult = ManagerRoomStay & {
+    room: {
+        id: string;
+        label: string;
+        floor?: string | null;
+    };
 };
 
 interface ManagerStateResponse {
@@ -492,6 +500,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [offlineSyncError, setOfflineSyncError] = useState<string | null>(null);
     const [offlineRejectedNotice, setOfflineRejectedNotice] = useState<string | null>(null);
     const [roomBoardStartOffset, setRoomBoardStartOffset] = useState(0);
+    const [bookingSearch, setBookingSearch] = useState('');
+    const [bookingSearchResults, setBookingSearchResults] = useState<BookingSearchResult[]>([]);
+    const [isBookingSearchLoading, setIsBookingSearchLoading] = useState(false);
+    const [bookingSearchError, setBookingSearchError] = useState<string | null>(null);
 
     const handleLogout = async () => {
         if (offlineScope) {
@@ -2322,6 +2334,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         });
     };
 
+    const handleBookingSearch = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const query = bookingSearch.trim();
+        if (!hotelId || query.length < 3) {
+            setBookingSearchError('Введите минимум 3 символа номера брони');
+            setBookingSearchResults([]);
+            return;
+        }
+
+        setIsBookingSearchLoading(true);
+        setBookingSearchError(null);
+        try {
+            const result = await get<{ stays: BookingSearchResult[] }>(
+                `/api/manager/bookings/search?hotelId=${encodeURIComponent(hotelId)}&bookingNumber=${encodeURIComponent(query)}`
+            );
+            setBookingSearchResults(result.stays);
+            if (!result.stays.length) setBookingSearchError('Бронирование не найдено');
+        } catch (searchError) {
+            setBookingSearchResults([]);
+            setBookingSearchError(searchError instanceof Error ? searchError.message : 'Не удалось выполнить поиск');
+        } finally {
+            setIsBookingSearchLoading(false);
+        }
+    };
+
     const canCheckInScheduledStay = useCallback((stay: ManagerRoomStay) => {
         const todayKey = formatDateKey(new Date(), hotelTz);
         const checkInKey = formatDateKey(stay.scheduledCheckIn, hotelTz);
@@ -3358,6 +3395,50 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                         </div>
                                     </div>
+                                    <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={handleBookingSearch}>
+                                        <div className="relative min-w-0 flex-1">
+                                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                                            <Input
+                                                value={bookingSearch}
+                                                onChange={(event) => {
+                                                    setBookingSearch(event.target.value);
+                                                    setBookingSearchError(null);
+                                                    if (!event.target.value.trim()) setBookingSearchResults([]);
+                                                }}
+                                                className="pl-9"
+                                                inputMode="numeric"
+                                                placeholder="Поиск по номеру брони"
+                                                aria-label="Поиск по номеру брони"
+                                            />
+                                        </div>
+                                        <Button type="submit" size="sm" variant="secondary" disabled={isBookingSearchLoading}>
+                                            {isBookingSearchLoading ? 'Ищем…' : 'Найти бронь'}
+                                        </Button>
+                                    </form>
+                                    {bookingSearchError ? <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{bookingSearchError}</p> : null}
+                                    {bookingSearchResults.length ? (
+                                        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                            {bookingSearchResults.map((stay) => (
+                                                <button
+                                                    key={stay.id}
+                                                    type="button"
+                                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-cyan-400 hover:bg-cyan-50/60 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-cyan-400/50 dark:hover:bg-cyan-400/[0.06]"
+                                                    onClick={() => showBookingDetails({
+                                                        id: stay.room.id,
+                                                        label: stay.room.label,
+                                                        floor: stay.room.floor,
+                                                        status: stay.status === 'CHECKED_IN' ? 'OCCUPIED' : 'AVAILABLE',
+                                                        stay,
+                                                        stays: [stay],
+                                                    }, stay)}
+                                                >
+                                                    <span className="block truncate text-sm font-semibold text-slate-800 dark:text-white">№ {stay.bookingNumber} · {stay.guestName || 'Гость'}</span>
+                                                    <span className="mt-0.5 block text-xs text-slate-500 dark:text-white/50">Комната {stay.room.label} · {formatBoardDay(new Date(stay.scheduledCheckIn), hotelTz)} — {formatBoardDay(new Date(stay.scheduledCheckOut), hotelTz)}</span>
+                                                    <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-white/35">{stayStatusLabel(stay.status)}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : null}
                                 </div>
                                 {roomViewMode === 'board' ? (
                                     <div className="fixed inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[#f4f6f8] p-3 text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
