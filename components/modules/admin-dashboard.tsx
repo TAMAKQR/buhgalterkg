@@ -17,6 +17,8 @@ import {
     KeyRound,
     Link2,
     LogOut,
+    PanelLeftClose,
+    PanelLeftOpen,
     Pencil,
     Plus,
     Settings2,
@@ -1745,6 +1747,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const { country, withCountry } = useCountryContext();
     const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+    const [isDesktopSidebarExpanded, setIsDesktopSidebarExpanded] = useState(false);
     const handleLogout = async () => {
         if (onLogout) {
             await onLogout();
@@ -2486,16 +2489,19 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
     return (
         <div className="min-h-screen bg-[#f6f7f9] text-light-text dark:bg-[#0c0f13]">
-            <div className="lg:grid lg:min-h-screen lg:grid-cols-[15rem_minmax(0,1fr)]">
-                <aside className="hidden border-r border-slate-200/80 bg-white px-4 py-5 dark:border-white/[0.07] dark:bg-[#111418] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
-                    <div className="flex items-center gap-3 border-b border-slate-200 pb-5 dark:border-white/[0.06]">
+            <div className={`lg:grid lg:min-h-screen ${isDesktopSidebarExpanded ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : 'lg:grid-cols-[4.75rem_minmax(0,1fr)]'}`}>
+                <aside className={`hidden border-r border-slate-200/80 bg-white py-5 dark:border-white/[0.07] dark:bg-[#111418] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col ${isDesktopSidebarExpanded ? 'px-4' : 'px-2'}`}>
+                    <div className={`flex items-center border-b border-slate-200 pb-5 dark:border-white/[0.06] ${isDesktopSidebarExpanded ? 'gap-3' : 'flex-col gap-2'}`}>
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white dark:bg-white dark:text-slate-950">
                             <Building2 className="h-5 w-5" aria-hidden="true" />
                         </div>
-                        <div className="min-w-0">
+                        <div className={`min-w-0 flex-1 ${isDesktopSidebarExpanded ? '' : 'hidden'}`}>
                             <p className="text-sm font-semibold text-slate-950 dark:text-white">Hotel Ops</p>
                             <p className="truncate text-xs text-slate-500 dark:text-white/42">{user.displayName}</p>
                         </div>
+                        <button type="button" onClick={() => setIsDesktopSidebarExpanded((value) => !value)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-white/[0.06] dark:hover:text-white" aria-label={isDesktopSidebarExpanded ? 'Свернуть боковую панель' : 'Раскрыть боковую панель'} title={isDesktopSidebarExpanded ? 'Свернуть меню' : 'Раскрыть меню'}>
+                            {isDesktopSidebarExpanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+                        </button>
                     </div>
 
                     <nav className="mt-5 space-y-1">
@@ -2507,27 +2513,29 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
-                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active
+                                    title={!isDesktopSidebarExpanded ? tab.label : undefined}
+                                    aria-label={tab.label}
+                                    className={`group flex w-full items-center rounded-lg py-2.5 text-left transition-colors ${isDesktopSidebarExpanded ? 'gap-3 px-3' : 'justify-center px-2'} ${active
                                         ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
                                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-white"
                                         }`}
                                 >
                                     <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                    <span className="min-w-0 flex-1">
+                                    <span className={`min-w-0 flex-1 ${isDesktopSidebarExpanded ? '' : 'hidden'}`}>
                                         <span className="block truncate text-sm font-medium">{tab.label}</span>
                                         <span className={`block truncate text-[11px] ${active ? "text-blue-500/70 dark:text-blue-300/60" : "text-slate-400 dark:text-slate-600"}`}>{tab.description}</span>
                                     </span>
-                                    {tab.hint ? <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/14 text-white dark:bg-slate-900/8 dark:text-slate-500" : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/38"}`}>{tab.hint}</span> : null}
+                                    {tab.hint && isDesktopSidebarExpanded ? <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/14 text-white dark:bg-slate-900/8 dark:text-slate-500" : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/38"}`}>{tab.hint}</span> : null}
                                 </button>
                             );
                         })}
                     </nav>
 
-                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.06]">
+                    <div className={`mt-auto border-t border-slate-200 pt-4 dark:border-white/[0.06] ${isDesktopSidebarExpanded ? 'flex items-center justify-between gap-2' : 'flex flex-col items-center gap-2'}`}>
                         <ThemeToggle />
-                        <Button type="button" size="sm" variant="ghost" className="gap-2" onClick={handleLogout}>
+                        <Button type="button" size={isDesktopSidebarExpanded ? "sm" : "icon"} variant="ghost" className={isDesktopSidebarExpanded ? "gap-2" : "h-9 w-9"} onClick={handleLogout} aria-label="Выйти" title="Выйти">
                             <LogOut className="h-4 w-4" aria-hidden="true" />
-                            Выйти
+                            {isDesktopSidebarExpanded ? 'Выйти' : null}
                         </Button>
                     </div>
                 </aside>

@@ -31,7 +31,7 @@ import {
     type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, Pencil, QrCode, RotateCw, Search, Sparkles, Users, WalletCards } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, QrCode, RotateCw, Search, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -563,6 +563,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [isCheckInConfirmationOpen, setIsCheckInConfirmationOpen] = useState(false);
     const checkInSubmissionRef = useRef(false);
     const [activePanel, setActivePanel] = useState<PanelKey>('rooms');
+    const [isDesktopSidebarExpanded, setIsDesktopSidebarExpanded] = useState(false);
     const [roomViewMode, setRoomViewMode] = useState<RoomViewMode>('cards');
     const [collapsedBoardSections, setCollapsedBoardSections] = useState<Record<string, boolean>>({});
     const [isBoardPortraitPhone, setIsBoardPortraitPhone] = useState(false);
@@ -3138,12 +3139,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     return (
         <div className="min-h-screen bg-[#f4f6f8] text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200">
-            <div className="lg:grid lg:min-h-screen lg:grid-cols-[16rem_minmax(0,1fr)]">
-                <aside className="hidden border-r border-slate-200/80 bg-white px-4 py-5 text-slate-600 dark:border-white/[0.07] dark:bg-[#111418] dark:text-slate-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+            <div className={`lg:grid lg:min-h-screen ${isDesktopSidebarExpanded ? 'lg:grid-cols-[16rem_minmax(0,1fr)]' : 'lg:grid-cols-[4.75rem_minmax(0,1fr)]'}`}>
+                <aside className={`hidden border-r border-slate-200/80 bg-white py-5 text-slate-600 dark:border-white/[0.07] dark:bg-[#111418] dark:text-slate-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden ${isDesktopSidebarExpanded ? 'px-4' : 'px-2'}`}>
                     <div className="border-b border-slate-200/80 pb-4 dark:border-slate-700/45">
-                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{primaryHotel.name}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{managerName}</p>
-                        {data?.shift ? (
+                        <div className={`flex items-center ${isDesktopSidebarExpanded ? 'justify-between gap-2' : 'justify-center'}`}>
+                            {isDesktopSidebarExpanded ? <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{primaryHotel.name}</p><p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{managerName}</p></div> : null}
+                            <button type="button" onClick={() => setIsDesktopSidebarExpanded((value) => !value)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100" aria-label={isDesktopSidebarExpanded ? 'Свернуть боковую панель' : 'Раскрыть боковую панель'} title={isDesktopSidebarExpanded ? 'Свернуть меню' : 'Раскрыть меню'}>
+                                {isDesktopSidebarExpanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+                            </button>
+                        </div>
+                        {data?.shift && isDesktopSidebarExpanded ? (
                             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-slate-100/60 px-3 py-2 dark:border-slate-700/55 dark:bg-slate-800/35">
                                 <div className="min-w-0">
                                     <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Смена</p>
@@ -3162,23 +3167,25 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActivePanel(tab.id)}
-                                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active
+                                    title={!isDesktopSidebarExpanded ? tab.label : undefined}
+                                    aria-label={tab.label}
+                                    className={`group flex w-full items-center rounded-lg py-2.5 text-left transition-colors ${isDesktopSidebarExpanded ? 'gap-3 px-3' : 'justify-center px-2'} ${active
                                         ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
                                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-slate-200'
                                         }`}
                                 >
                                     <tab.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                    <span className="min-w-0 flex-1">
+                                    <span className={`min-w-0 flex-1 ${isDesktopSidebarExpanded ? '' : 'hidden'}`}>
                                         <span className="block truncate text-sm font-semibold">{tab.label}</span>
                                         <span className={`block truncate text-[11px] ${active ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}>{panelMeta[tab.id].description}</span>
                                     </span>
-                                    {tab.hint ? <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${active ? 'bg-slate-300/70 text-slate-600 dark:bg-slate-900/30 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>{tab.hint}</span> : null}
+                                    {tab.hint && isDesktopSidebarExpanded ? <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${active ? 'bg-slate-300/70 text-slate-600 dark:bg-slate-900/30 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>{tab.hint}</span> : null}
                                 </button>
                             );
                         })}
                     </nav>
 
-                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-200/80 pt-3 dark:border-slate-700/45">
+                    <div className={`mt-auto border-t border-slate-200/80 pt-3 dark:border-slate-700/45 ${isDesktopSidebarExpanded ? 'flex items-center justify-between gap-2' : 'flex flex-col items-center gap-1'}`}>
                         <ThemeToggle />
                         <div className="flex items-center gap-1.5">
                             <Button
