@@ -1052,6 +1052,20 @@ export async function GET(request: NextRequest) {
             dayMap.set(day, entry);
         }
 
+        // Preserve calendar continuity for charts: days without ledger entries
+        // must remain visible instead of being skipped on the x-axis.
+        if (startDate && endDate) {
+            const startKey = toDateKeyInTimeZone(startDate, countryConfig.timezone);
+            const endKey = toDateKeyInTimeZone(endDate, countryConfig.timezone);
+            const cursor = new Date(`${startKey}T12:00:00.000Z`);
+            const last = new Date(`${endKey}T12:00:00.000Z`);
+            for (let guard = 0; cursor <= last && guard < 3_660; guard += 1) {
+                const key = cursor.toISOString().slice(0, 10);
+                if (!dayMap.has(key)) dayMap.set(key, { cashIn: 0, cashOut: 0, collections: 0 });
+                cursor.setUTCDate(cursor.getUTCDate() + 1);
+            }
+        }
+
         const dailySeries = Array.from(dayMap.entries())
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, values]) => ({ date, ...values }));

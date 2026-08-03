@@ -1604,9 +1604,34 @@ const ExpenseStructureChart = ({ cashOut, collections, payouts, adjustments, cur
 /* ── Line Chart: Доход / Расход по дням ──────────────── */
 
 type DailyPoint = { date: string; cashIn: number; cashOut: number; collections: number };
+type ChartInterval = "auto" | "day" | "week" | "month";
 
-const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: string }) => {
-    if (!data.length) return null;
+const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZone: string }) => {
+    const [interval, setInterval] = useState<ChartInterval>("auto");
+    if (!rawData.length) return null;
+
+    const spanDays = Math.max(1, Math.round((Date.parse(`${rawData.at(-1)?.date}T12:00:00Z`) - Date.parse(`${rawData[0].date}T12:00:00Z`)) / 86_400_000) + 1);
+    const resolvedInterval: Exclude<ChartInterval, "auto"> = interval === "auto"
+        ? spanDays <= 45 ? "day" : spanDays <= 180 ? "week" : "month"
+        : interval;
+    const bucketKey = (dateKey: string) => {
+        if (resolvedInterval === "day") return dateKey;
+        if (resolvedInterval === "month") return `${dateKey.slice(0, 7)}-01`;
+        const date = new Date(`${dateKey}T12:00:00.000Z`);
+        const day = date.getUTCDay() || 7;
+        date.setUTCDate(date.getUTCDate() - day + 1);
+        return date.toISOString().slice(0, 10);
+    };
+    const buckets = new Map<string, DailyPoint>();
+    for (const point of rawData) {
+        const key = bucketKey(point.date);
+        const bucket = buckets.get(key) ?? { date: key, cashIn: 0, cashOut: 0, collections: 0 };
+        bucket.cashIn += point.cashIn;
+        bucket.cashOut += point.cashOut;
+        bucket.collections += point.collections;
+        buckets.set(key, bucket);
+    }
+    const data = Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     const dailyAxisDateFormatter = new Intl.DateTimeFormat("ru-RU", {
         day: "numeric",
@@ -1687,7 +1712,17 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
 
     return (
         <Card className="col-span-1 lg:col-span-4 p-4">
-            <p className="mb-2 text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Доход / Расход по дням</p>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <p className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-white/35">Доход / Расход</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-white/40">{resolvedInterval === "day" ? "По дням" : resolvedInterval === "week" ? "По неделям" : "По месяцам"} · {data.length} точек</p>
+                </div>
+                <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs dark:border-white/[0.08] dark:bg-white/[0.04]" aria-label="Интервал графика">
+                    {([['auto', 'Авто'], ['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц']] as const).map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setInterval(value)} className={`rounded-md px-2.5 py-1.5 transition ${interval === value ? 'bg-white font-medium text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-white/45 dark:hover:text-white'}`}>{label}</button>
+                    ))}
+                </div>
+            </div>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
                 {/* grid */}
                 {gridSteps.map((v) => (
@@ -1712,6 +1747,7 @@ const DailyLineChart = ({ data, timeZone }: { data: DailyPoint[]; timeZone: stri
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
+                        <title>{`${formatAxisDate(d.date)} · Доход ${formatShort(d.cashIn)} · Расход ${formatShort(d.cashOut)} · Инкассация ${formatShort(d.collections)}`}</title>
                         <circle cx={toX(i)} cy={toY(d.cashIn)} r="1.9" fill="#34d399" stroke="rgba(15,23,42,0.35)" strokeWidth="0.45" />
                         <circle cx={toX(i)} cy={toY(d.cashOut)} r="1.9" fill="#f87171" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />
                         {d.collections > 0 && <circle cx={toX(i)} cy={toY(d.collections)} r="1.9" fill="#22d3ee" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />}
