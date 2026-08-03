@@ -1639,8 +1639,10 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
         timeZone,
     });
 
-    const W = 600;
-    const H = 200;
+    // Give every period a fixed visual slot. Dense monthly series should scroll
+    // horizontally instead of compressing dates into an unreadable chart.
+    const W = Math.max(720, data.length * 52 + 88);
+    const H = 240;
     const PX = 44;
     const PY = 24;
     const PB = 32;
@@ -1705,10 +1707,16 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
         if (Number.isNaN(date.getTime())) {
             return value;
         }
+        if (resolvedInterval === "day") return String(day || 1);
+        if (resolvedInterval === "month") {
+            return new Intl.DateTimeFormat("ru-RU", { month: "short", year: "2-digit", timeZone }).format(date).replace('.', '');
+        }
         return dailyAxisDateFormatter.format(date).replace('.', '');
     };
-
-    const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+    const formatExact = (value: number) => new Intl.NumberFormat("ru-RU", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    }).format(value / 100);
 
     return (
         <Card className="col-span-1 lg:col-span-4 p-4">
@@ -1723,7 +1731,8 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
                     ))}
                 </div>
             </div>
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+            <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
+            <svg viewBox={`0 0 ${W} ${H}`} className="h-[280px] max-w-none" style={{ width: `${W}px` }} preserveAspectRatio="xMidYMid meet">
                 {/* grid */}
                 {gridSteps.map((v) => (
                     <g key={v}>
@@ -1747,21 +1756,20 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
                 {/* dots */}
                 {data.map((d, i) => (
                     <g key={d.date}>
-                        <title>{`${formatAxisDate(d.date)} · Доход ${formatShort(d.cashIn)} · Расход ${formatShort(d.cashOut)} · Инкассация ${formatShort(d.collections)}`}</title>
+                        <title>{`${d.date} · Доход ${formatExact(d.cashIn)} · Расход ${formatExact(d.cashOut)} · Инкассация ${formatExact(d.collections)}`}</title>
                         <circle cx={toX(i)} cy={toY(d.cashIn)} r="1.9" fill="#34d399" stroke="rgba(15,23,42,0.35)" strokeWidth="0.45" />
                         <circle cx={toX(i)} cy={toY(d.cashOut)} r="1.9" fill="#f87171" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />
                         {d.collections > 0 && <circle cx={toX(i)} cy={toY(d.collections)} r="1.9" fill="#22d3ee" stroke="rgba(15,23,42,0.28)" strokeWidth="0.45" />}
                     </g>
                 ))}
                 {/* x labels */}
-                {data.map((d, i) =>
-                    i % labelEvery === 0 ? (
-                        <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="8.5" opacity="0.9">
-                            {formatAxisDate(d.date)}
-                        </text>
-                    ) : null,
-                )}
+                {data.map((d, i) => (
+                    <text key={`lbl-${d.date}`} x={toX(i)} y={H - 6} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9" opacity="0.95">
+                        {formatAxisDate(d.date)}
+                    </text>
+                ))}
             </svg>
+            </div>
             <div className="mt-2 flex items-center justify-center gap-5 text-[11px] text-slate-600 dark:text-white/50">
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block h-2 w-4 rounded-sm bg-emerald-400" />
