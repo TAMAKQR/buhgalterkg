@@ -19,7 +19,7 @@ import { useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 import { RoomEconomicsPanel } from '@/components/modules/room-economics-panel';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Archive, Pencil, Trash2 } from 'lucide-react';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -1658,13 +1658,15 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     };
 
-    const handleDeleteRoom = async (roomId: string) => {
+    const handleRemoveRoom = async (roomId: string, mode: 'archive' | 'delete') => {
         const room = data?.rooms.find((item) => item.id === roomId);
         const roomLabel = room?.label ? `№ ${room.label}` : 'этот номер';
         if (!await requestConfirmation({
-            title: `Удалить ${roomLabel}?`,
-            description: 'История проживания по номеру также будет удалена.',
-            confirmLabel: 'Удалить номер',
+            title: mode === 'archive' ? `Архивировать ${roomLabel}?` : `Удалить ${roomLabel} навсегда?`,
+            description: mode === 'archive'
+                ? 'Номер будет скрыт из активного списка. История проживания и финансовые данные сохранятся.'
+                : 'Удалить можно только пустой номер без броней, проживаний и финансовых операций. Это действие нельзя отменить.',
+            confirmLabel: mode === 'archive' ? 'Архивировать' : 'Удалить навсегда',
             tone: 'danger',
         })) {
             return;
@@ -1674,13 +1676,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         try {
             await request('/api/rooms', {
                 method: 'DELETE',
-                body: { roomId }
+                body: { roomId, mode }
             });
             mutate();
-            toast('Номер удалён', 'success');
+            toast(mode === 'archive' ? 'Номер перенесён в архив' : 'Номер удалён', 'success');
         } catch (roomError) {
             console.error(roomError);
-            toast('Не удалось удалить номер', 'error');
+            toast(
+                roomError instanceof Error
+                    ? roomError.message
+                    : mode === 'archive' ? 'Не удалось архивировать номер' : 'Не удалось удалить номер',
+                'error',
+            );
         } finally {
             setRemovingRoomId((current) => (current === roomId ? null : current));
         }
@@ -3510,13 +3517,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             >
                                                                                 Бронь
                                                                             </button>
+                                                                            {room.isActive ? <button
+                                                                                type="button"
+                                                                                className="grid h-7 w-7 place-items-center rounded-lg text-amber-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 dark:text-amber-300/70 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+                                                                                onClick={() => handleRemoveRoom(room.id, 'archive')}
+                                                                                disabled={removingRoomId === room.id}
+                                                                                title="Архивировать номер"
+                                                                                aria-label="Архивировать номер"
+                                                                            >
+                                                                                {removingRoomId === room.id ? '…' : <Archive className="h-3.5 w-3.5" aria-hidden="true" />}
+                                                                            </button> : null}
                                                                             <button
                                                                                 type="button"
                                                                                 className="grid h-7 w-7 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300/70 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                                                                                onClick={() => handleDeleteRoom(room.id)}
+                                                                                onClick={() => handleRemoveRoom(room.id, 'delete')}
                                                                                 disabled={removingRoomId === room.id}
-                                                                                title="Удалить номер"
-                                                                                aria-label="Удалить номер"
+                                                                                title="Удалить номер навсегда"
+                                                                                aria-label="Удалить номер навсегда"
                                                                             >
                                                                                 {removingRoomId === room.id ? '…' : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
                                                                             </button>
@@ -5101,13 +5118,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             >
                                                                 <Pencil className="h-4 w-4" aria-hidden="true" />
                                                             </button>
+                                                            {room.isActive ? <button
+                                                                type="button"
+                                                                className="grid h-8 w-8 place-items-center rounded-lg text-amber-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 dark:text-amber-300/70 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+                                                                onClick={() => handleRemoveRoom(room.id, 'archive')}
+                                                                disabled={removingRoomId === room.id}
+                                                                title="Архивировать номер"
+                                                                aria-label="Архивировать номер"
+                                                            >
+                                                                {removingRoomId === room.id ? '…' : <Archive className="h-4 w-4" aria-hidden="true" />}
+                                                            </button> : null}
                                                             <button
                                                                 type="button"
                                                                 className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300/70 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                                                                onClick={() => handleDeleteRoom(room.id)}
+                                                                onClick={() => handleRemoveRoom(room.id, 'delete')}
                                                                 disabled={removingRoomId === room.id}
-                                                                title="Удалить номер"
-                                                                aria-label="Удалить номер"
+                                                                title="Удалить номер навсегда"
+                                                                aria-label="Удалить номер навсегда"
                                                             >
                                                                 {removingRoomId === room.id ? '…' : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                                                             </button>

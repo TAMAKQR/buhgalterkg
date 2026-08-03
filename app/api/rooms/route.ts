@@ -22,7 +22,8 @@ const createRoomsSchema = z.object({
 });
 
 const deleteRoomSchema = z.object({
-    roomId: z.string().cuid()
+    roomId: z.string().cuid(),
+    mode: z.enum(['archive', 'delete']).default('archive'),
 });
 
 const updateRoomSchema = z
@@ -281,19 +282,56 @@ export async function DELETE(request: NextRequest) {
 
         const payload = deleteRoomSchema.parse(body);
 
-        const room = await prisma.room.findUnique({ where: { id: payload.roomId } });
-        if (!room) {
-            return new NextResponse('Room not found', { status: 404 });
+        if (payload.mode === 'archive') {
+            await archiveRoom(payload.roomId);
+            return NextResponse.json({ success: true, archived: true, roomId: payload.roomId });
         }
 
-        await archiveRoom(room.id);
+        await prisma.$transaction(async (tx) => {
+            await lockRoomsForStayMutation(tx, [payload.roomId]);
+            const room = await tx.room.findUnique({
+                where: { id: payload.roomId },
+                select: {
+                    id: true,
+                    currentStayId: true,
+                    _count: {
+                        select: {
+                            stays: true,
+                            transfersFrom: true,
+                            transfersTo: true,
+                            ledgerEntries: true,
+                        },
+                    },
+                },
+            });
+            if (!room) {
+                throw new SessionError('Номер не найден', 404);
+            }
+            if (room.currentStayId) {
+                throw new SessionError('Нельзя удалить номер с активным гостем', 409);
+            }
+            if (room._count.stays > 0) {
+                throw new SessionError(
+                    'У номера есть брони или история проживания. Архивируйте номер, чтобы сохранить данные.',
+                    409,
+                );
+            }
+            if (room._count.ledgerEntries > 0 || room._count.transfersFrom > 0 || room._count.transfersTo > 0) {
+                throw new SessionError(
+                    'У номера есть финансовые операции или история переводов. Его можно только архивировать.',
+                    409,
+                );
+            }
 
-        return NextResponse.json({ success: true, archived: true, roomId: room.id });
+            await tx.room.delete({ where: { id: room.id } });
+        });
+
+        return NextResponse.json({ success: true, deleted: true, roomId: payload.roomId });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }
-        return handleApiError(error, 'Failed to archive room');
+        return handleApiError(error, 'Failed to remove room');
     }
 }
 
