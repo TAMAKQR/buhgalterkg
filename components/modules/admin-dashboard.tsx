@@ -1641,7 +1641,8 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
 
     // Give every period a fixed visual slot. Dense monthly series should scroll
     // horizontally instead of compressing dates into an unreadable chart.
-    const W = Math.max(720, data.length * 52 + 88);
+    const isScrollableDailyChart = resolvedInterval === "day";
+    const W = isScrollableDailyChart ? Math.max(720, data.length * 52 + 88) : 900;
     const H = 240;
     const PX = 44;
     const PY = 24;
@@ -1731,8 +1732,8 @@ const DailyLineChart = ({ data: rawData, timeZone }: { data: DailyPoint[]; timeZ
                     ))}
                 </div>
             </div>
-            <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
-            <svg viewBox={`0 0 ${W} ${H}`} className="h-[280px] max-w-none" style={{ width: `${W}px` }} preserveAspectRatio="xMidYMid meet">
+            <div className={isScrollableDailyChart ? "overflow-x-auto pb-1 [scrollbar-width:thin]" : "w-full pb-1"}>
+            <svg viewBox={`0 0 ${W} ${H}`} className={isScrollableDailyChart ? "h-[280px] max-w-none" : "h-[280px] w-full"} style={isScrollableDailyChart ? { width: `${W}px` } : undefined} preserveAspectRatio="xMidYMid meet">
                 {/* grid */}
                 {gridSteps.map((v) => (
                     <g key={v}>
