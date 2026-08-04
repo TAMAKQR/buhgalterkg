@@ -16,9 +16,23 @@ const escapeTelegramHtml = (value: string) =>
         .replace(/>/g, "&gt;");
 
 const formatCleaningSnapshotLine = (line: string) => {
+    if (!line) {
+        return '';
+    }
     const safeLine = escapeTelegramHtml(line);
-    return /нужна уборка/i.test(line) ? `<b>${safeLine}</b>` : safeLine;
+    if (/^[🕐📋]/u.test(line) || line.endsWith(':')) {
+        return `<b>${safeLine}</b>`;
+    }
+    const roomLine = safeLine.match(/^([^—]+)( — )(.*)$/u);
+    if (roomLine) {
+        const status = /нужна уборка|просрочен/i.test(line) ? `<b>${roomLine[3]}</b>` : roomLine[3];
+        return `<b>${roomLine[1].trim()}</b>${roomLine[2]}${status}`;
+    }
+    return /нужна уборка|просрочен/i.test(line) ? `<b>${safeLine}</b>` : safeLine;
 };
+
+const joinTelegramLines = (lines: Array<string | null | undefined>) =>
+    lines.filter((line): line is string => line !== null && line !== undefined).join('\n');
 
 export type CheckInNotificationPayload = {
     hotelName: string;
@@ -218,17 +232,17 @@ export const notifyCleaningCrew = async (payload: CleaningNotificationPayload) =
         return;
     }
 
-    const text = [
+    const text = joinTelegramLines([
         "🧹 <b>Требуется уборка</b>",
+        "",
         `<b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
         `<b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
         payload.managerName ? `<b>Менеджер:</b> ${escapeTelegramHtml(payload.managerName)}` : null,
+        "",
         "<b>Просьба подтвердить уборку после завершения.</b>",
         payload.roomSnapshotLines?.length ? '' : null,
         ...(payload.roomSnapshotLines ?? []).map(formatCleaningSnapshotLine)
-    ]
-        .filter(Boolean)
-        .join("\n");
+    ]);
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
@@ -272,18 +286,18 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
 
     const tz = payload.timezone;
 
-    const text = [
-        "🛎 Гость заселился",
-        `Отель: ${payload.hotelName}`,
-        `Номер: ${payload.roomLabel}`,
-        payload.guestName ? `Гость: ${payload.guestName}` : null,
-        `Планируемый выезд: ${formatDate(payload.checkOut, tz)}`,
-        "Пожалуйста, уберите номер перед выездом гостя.",
+    const text = joinTelegramLines([
+        "🛎 <b>Гость заселился</b>",
+        "",
+        `🏨 <b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
+        `🚪 <b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
+        payload.guestName ? `👤 <b>Гость:</b> ${escapeTelegramHtml(payload.guestName)}` : null,
+        `🕐 <b>Плановый выезд:</b> ${escapeTelegramHtml(formatDate(payload.checkOut, tz))}`,
+        "",
+        "ℹ️ Учитывайте это время при планировании уборки.",
         payload.roomSnapshotLines?.length ? '' : null,
-        ...(payload.roomSnapshotLines ?? [])
-    ]
-        .filter(Boolean)
-        .join("\n");
+        ...(payload.roomSnapshotLines ?? []).map(formatCleaningSnapshotLine),
+    ]);
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
@@ -291,7 +305,8 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: payload.chatId,
-            text
+            text,
+            parse_mode: "HTML",
         })
     });
 
@@ -318,19 +333,19 @@ export const notifyCleaningCrewAboutCheckOut = async (payload: CleaningCheckOutN
         return;
     }
 
-    const text = [
+    const text = joinTelegramLines([
         "🚪 <b>Гость выселился</b>",
-        `<b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
-        `<b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
-        payload.guestName ? `<b>Гость:</b> ${escapeTelegramHtml(payload.guestName)}` : null,
-        `<b>Время выселения:</b> ${escapeTelegramHtml(formatDate(payload.actualCheckOut, payload.timezone))}`,
-        payload.managerName ? `<b>Менеджер:</b> ${escapeTelegramHtml(payload.managerName)}` : null,
+        "",
+        `🏨 <b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
+        `🚪 <b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
+        payload.guestName ? `👤 <b>Гость:</b> ${escapeTelegramHtml(payload.guestName)}` : null,
+        `🕐 <b>Время выселения:</b> ${escapeTelegramHtml(formatDate(payload.actualCheckOut, payload.timezone))}`,
+        payload.managerName ? `👨‍💼 <b>Менеджер:</b> ${escapeTelegramHtml(payload.managerName)}` : null,
+        "",
         "🧹 <b>Теперь требуется уборка номера.</b>",
         payload.roomSnapshotLines?.length ? '' : null,
         ...(payload.roomSnapshotLines ?? []).map(formatCleaningSnapshotLine),
-    ]
-        .filter(Boolean)
-        .join("\n");
+    ]);
 
     const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
         method: "POST",
