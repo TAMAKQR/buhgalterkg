@@ -259,6 +259,7 @@ export type CleaningCheckInNotificationPayload = {
     chatId?: string | null;
     hotelName: string;
     roomLabel: string;
+    guestName?: string | null;
     checkOut?: string | null;
     timezone?: string;
     roomSnapshotLines?: string[];
@@ -275,6 +276,7 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
         "🛎 Гость заселился",
         `Отель: ${payload.hotelName}`,
         `Номер: ${payload.roomLabel}`,
+        payload.guestName ? `Гость: ${payload.guestName}` : null,
         `Планируемый выезд: ${formatDate(payload.checkOut, tz)}`,
         "Пожалуйста, уберите номер перед выездом гостя.",
         payload.roomSnapshotLines?.length ? '' : null,
@@ -296,5 +298,59 @@ export const notifyCleaningCrewAboutCheckIn = async (payload: CleaningCheckInNot
     if (!response.ok) {
         const detail = await response.text();
         throw new Error(`Failed to notify cleaning crew about check-in: ${detail}`);
+    }
+};
+
+export type CleaningCheckOutNotificationPayload = {
+    chatId?: string | null;
+    roomId: string;
+    hotelName: string;
+    roomLabel: string;
+    guestName?: string | null;
+    actualCheckOut?: string | null;
+    timezone?: string;
+    managerName?: string | null;
+    roomSnapshotLines?: string[];
+};
+
+export const notifyCleaningCrewAboutCheckOut = async (payload: CleaningCheckOutNotificationPayload) => {
+    if (!payload.chatId) {
+        return;
+    }
+
+    const text = [
+        "🚪 <b>Гость выселился</b>",
+        `<b>Отель:</b> ${escapeTelegramHtml(payload.hotelName)}`,
+        `<b>Номер:</b> ${escapeTelegramHtml(payload.roomLabel)}`,
+        payload.guestName ? `<b>Гость:</b> ${escapeTelegramHtml(payload.guestName)}` : null,
+        `<b>Время выселения:</b> ${escapeTelegramHtml(formatDate(payload.actualCheckOut, payload.timezone))}`,
+        payload.managerName ? `<b>Менеджер:</b> ${escapeTelegramHtml(payload.managerName)}` : null,
+        "🧹 <b>Теперь требуется уборка номера.</b>",
+        payload.roomSnapshotLines?.length ? '' : null,
+        ...(payload.roomSnapshotLines ?? []).map(formatCleaningSnapshotLine),
+    ]
+        .filter(Boolean)
+        .join("\n");
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+        method: "POST",
+        signal: AbortSignal.timeout(10_000),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: payload.chatId,
+            text,
+            parse_mode: "HTML",
+            reply_markup: {
+                inline_keyboard: [[{
+                    text: 'УБРАНО',
+                    callback_data: `clean:${payload.roomId}`,
+                }]],
+            },
+        }),
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to notify cleaning crew about check-out: ${detail}`);
     }
 };

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError, SessionError } from '@/lib/server/errors';
-import { notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { notifyCleaningCrewAboutCheckIn, notifyCleaningCrewAboutCheckOut } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
@@ -835,6 +835,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     chatId: hotel.cleaningChatId,
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
+                    guestName: persistedStay.guestName,
                     checkOut: persistedStay.scheduledCheckOut?.toISOString() || stay.scheduledCheckOut?.toISOString(),
                     timezone: hotel.timezone,
                     roomSnapshotLines,
@@ -847,11 +848,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // Уведомление при выселении
         if (!wasCheckedOut && nowCheckedOut) {
             try {
-                await notifyCleaningCrew({
+                await notifyCleaningCrewAboutCheckOut({
                     chatId: hotel.cleaningChatId,
                     roomId: stay.roomId,
                     hotelName: hotel.name,
                     roomLabel: stay.room.label,
+                    guestName: persistedStay.guestName,
+                    actualCheckOut: persistedStay.actualCheckOut?.toISOString(),
+                    timezone: hotel.timezone,
                     managerName: session.displayName || null,
                     roomSnapshotLines,
                 });

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelOperatorAccess } from '@/lib/permissions';
-import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyAdminAboutStayTransfer, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn } from '@/lib/server/telegram-notify';
+import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyAdminAboutStayTransfer, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn, notifyCleaningCrewAboutCheckOut } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
 import { CancellationPaymentAction, LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus, UserRole } from '@prisma/client';
 import { handleApiError, SessionError } from '@/lib/server/errors';
@@ -1169,6 +1169,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     chatId: room.hotel.cleaningChatId,
                     hotelName: room.hotel.name,
                     roomLabel: room.label,
+                    guestName: stay.guestName,
                     checkOut: scheduledCheckOutIso,
                     timezone: room.hotel.timezone,
                     roomSnapshotLines,
@@ -1575,11 +1576,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         try {
             const roomSnapshotLines = await buildCleaningRoomSnapshotLines(room.hotelId, room.hotel.timezone);
-            await notifyCleaningCrew({
+            await notifyCleaningCrewAboutCheckOut({
                 chatId: room.hotel.cleaningChatId,
                 roomId: room.id,
                 hotelName: room.hotel.name,
                 roomLabel: room.label,
+                guestName: updatedStay.guestName,
+                actualCheckOut: updatedStay.actualCheckOut?.toISOString(),
+                timezone: room.hotel.timezone,
                 managerName: session.displayName ?? null,
                 roomSnapshotLines,
             });

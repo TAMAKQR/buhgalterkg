@@ -50,7 +50,7 @@ const formatDateTime = (value: Date, timezone?: string, includeDate = false) =>
     }).format(value);
 
 const buildRoomStatusLabel = (room: RoomWithLatestStay, timezone?: string) => {
-    const latestStay = room.stays[0];
+    const latestStay = room.stays.find((stay) => stay.status === StayStatus.CHECKED_IN) ?? room.stays[0];
 
     if (latestStay?.status === StayStatus.CHECKED_IN) {
         const now = new Date();
@@ -87,8 +87,7 @@ export const buildCleaningRoomSnapshotLines = async (hotelId: string, timezone?:
             status: true,
             stays: {
                 where: { status: { in: [StayStatus.CHECKED_IN, StayStatus.SCHEDULED] } },
-                orderBy: { scheduledCheckIn: 'desc' },
-                take: 1,
+                orderBy: { scheduledCheckIn: 'asc' },
                 select: {
                     status: true,
                     scheduledCheckIn: true,
@@ -111,7 +110,27 @@ export const buildCleaningRoomSnapshotLines = async (hotelId: string, timezone?:
         grouped.set(floor, current);
     }
 
-    const lines: string[] = ['📋 Комнаты из базы отеля'];
+    const occupiedRooms = sorted
+        .map((room) => ({
+            room,
+            stay: room.stays.find((stay) => stay.status === StayStatus.CHECKED_IN),
+        }))
+        .filter((entry): entry is typeof entry & { stay: NonNullable<typeof entry.stay> } => Boolean(entry.stay))
+        .sort((first, second) => first.stay.scheduledCheckOut.getTime() - second.stay.scheduledCheckOut.getTime());
+
+    const lines: string[] = ['🕐 Плановые выезды по порядку'];
+
+    if (occupiedRooms.length) {
+        const now = new Date();
+        for (const { room, stay } of occupiedRooms) {
+            const overdue = stay.scheduledCheckOut.getTime() < now.getTime() ? ' · просрочен' : '';
+            lines.push(`№${room.label} — ${formatDateTime(stay.scheduledCheckOut, timezone, true)}${overdue}`);
+        }
+    } else {
+        lines.push('Сейчас заселённых номеров нет.');
+    }
+
+    lines.push('', '📋 Общий список комнат');
 
     for (const [floor, floorRooms] of grouped) {
         lines.push(`${floor}:`);
