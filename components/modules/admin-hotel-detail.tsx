@@ -759,6 +759,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
     const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
+    const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
     const [savingEmployee, setSavingEmployee] = useState(false);
     const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
     const [removingRoomId, setRemovingRoomId] = useState<string | null>(null);
@@ -1613,31 +1614,61 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     };
 
-    const handleCreateEmployee = async () => {
+    const resetEmployeeForm = () => {
+        setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
+        setEditingEmployeeId(null);
+    };
+
+    const handleEditEmployee = (employee: HotelDetailPayload['employees'][number]) => {
+        setEditingEmployeeId(employee.id);
+        setEmployeeForm({
+            fullName: employee.fullName,
+            position: employee.position,
+            payType: employee.payType,
+            payAmount: String(toMajorValue(employee.payAmount) ?? ''),
+            turnoverThreshold: String(toMajorValue(employee.turnoverThreshold) ?? ''),
+            highPayAmount: String(toMajorValue(employee.highPayAmount) ?? ''),
+            notes: employee.notes ?? '',
+        });
+    };
+
+    const handleSaveEmployee = async () => {
         const payAmount = toOptionalMinor(Number(employeeForm.payAmount));
         if (!employeeForm.fullName.trim() || !employeeForm.position.trim() || payAmount == null) {
             toast('Заполните имя, должность и оплату сотрудника', 'error');
             return;
         }
+        const turnoverThreshold = employeeForm.payType === 'SHIFT' && employeeForm.turnoverThreshold
+            ? toOptionalMinor(Number(employeeForm.turnoverThreshold))
+            : null;
+        const highPayAmount = employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount
+            ? toOptionalMinor(Number(employeeForm.highPayAmount))
+            : null;
+        if ((turnoverThreshold == null) !== (highPayAmount == null)) {
+            toast('Укажите одновременно порог оборота и ставку после порога', 'error');
+            return;
+        }
         setSavingEmployee(true);
         try {
             await request(`/api/admin/hotels/${hotelId}/employees`, {
-                method: 'POST',
+                method: editingEmployeeId ? 'PATCH' : 'POST',
                 body: {
+                    ...(editingEmployeeId ? { id: editingEmployeeId } : {}),
                     fullName: employeeForm.fullName.trim(),
                     position: employeeForm.position.trim(),
                     payType: employeeForm.payType,
                     payAmount,
-                    turnoverThreshold: employeeForm.payType === 'SHIFT' && employeeForm.turnoverThreshold ? toOptionalMinor(Number(employeeForm.turnoverThreshold)) : null,
-                    highPayAmount: employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount ? toOptionalMinor(Number(employeeForm.highPayAmount)) : null,
+                    turnoverThreshold,
+                    highPayAmount,
                     notes: employeeForm.notes.trim() || null,
                 },
             });
-            setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
+            const wasEditing = Boolean(editingEmployeeId);
+            resetEmployeeForm();
             mutate();
-            toast('Сотрудник добавлен', 'success');
+            toast(wasEditing ? 'Сотрудник обновлён' : 'Сотрудник добавлен', 'success');
         } catch (employeeError) {
-            toast(employeeError instanceof Error ? employeeError.message : 'Не удалось добавить сотрудника', 'error');
+            toast(employeeError instanceof Error ? employeeError.message : 'Не удалось сохранить сотрудника', 'error');
         } finally {
             setSavingEmployee(false);
         }
@@ -4454,19 +4485,35 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             OTHER: 'другое',
                                                         } as Record<string, string>)[employee.payType] ?? employee.payType}: {employee.payType === 'PERCENT' ? formatPercentage(employee.payAmount / 100) : formatCurrency(employee.payAmount)}
                                                     </p>
+                                                    {employee.payType === 'SHIFT' && employee.turnoverThreshold != null && employee.highPayAmount != null ? (
+                                                        <p className="text-xs text-slate-500 dark:text-white/50">
+                                                            При кассе от {formatCurrency(employee.turnoverThreshold)}: {formatCurrency(employee.highPayAmount)}
+                                                        </p>
+                                                    ) : null}
                                                 </div>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    disabled={updatingEmployeeId === employee.id}
-                                                    onClick={() => handleEmployeeStatus(employee.id, !employee.isActive)}
-                                                >
-                                                    {employee.isActive ? 'Не работает' : 'Вернуть'}
-                                                </Button>
+                                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                                    <Button type="button" size="sm" variant="ghost" onClick={() => handleEditEmployee(employee)}>
+                                                        Редактировать
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        disabled={updatingEmployeeId === employee.id}
+                                                        onClick={() => handleEmployeeStatus(employee.id, !employee.isActive)}
+                                                    >
+                                                        {employee.isActive ? 'Не работает' : 'Вернуть'}
+                                                    </Button>
+                                                </div>
                                             </div>
                                         ))}
                                         <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2 dark:border-white/[0.07]">
+                                            {editingEmployeeId ? (
+                                                <div className="flex items-center justify-between gap-2 sm:col-span-2">
+                                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Редактирование сотрудника</p>
+                                                    <Button type="button" size="sm" variant="ghost" onClick={resetEmployeeForm}>Отмена</Button>
+                                                </div>
+                                            ) : null}
                                             <Input value={employeeForm.fullName} onChange={(event) => setEmployeeForm((current) => ({ ...current, fullName: event.target.value }))} placeholder="Имя сотрудника" />
                                             <Input value={employeeForm.position} onChange={(event) => setEmployeeForm((current) => ({ ...current, position: event.target.value }))} placeholder="Должность: горничная, маркетолог…" />
                                             <Select value={employeeForm.payType} onChange={(event) => setEmployeeForm((current) => ({ ...current, payType: event.target.value }))}>
@@ -4484,8 +4531,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 </>
                                             ) : null}
                                             <Input className="sm:col-span-2" value={employeeForm.notes} onChange={(event) => setEmployeeForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Комментарий" />
-                                            <Button type="button" className="sm:col-span-2" disabled={savingEmployee} onClick={handleCreateEmployee}>
-                                                {savingEmployee ? 'Добавляем…' : 'Добавить сотрудника'}
+                                            <Button type="button" className="sm:col-span-2" disabled={savingEmployee} onClick={handleSaveEmployee}>
+                                                {savingEmployee ? 'Сохраняем…' : editingEmployeeId ? 'Сохранить изменения' : 'Добавить сотрудника'}
                                             </Button>
                                         </div>
                                     </div>
