@@ -377,7 +377,14 @@ export async function POST(request: NextRequest) {
                 }
                 const employee = await tx.hotelEmployee.findFirst({
                     where: { id: employeeId, hotelId: payload.hotelId, isActive: true },
-                    select: { fullName: true, payType: true, payAmount: true, turnoverThreshold: true, highPayAmount: true }
+                    select: {
+                        fullName: true,
+                        payType: true,
+                        payAmount: true,
+                        turnoverThreshold: true,
+                        highPayAmount: true,
+                        bonusTiers: { orderBy: { threshold: 'desc' }, select: { threshold: true, bonus: true } },
+                    }
                 });
                 if (!employee) throw new ExpenseResponseError('Сотрудник не найден или не работает', 400);
                 if (employee.payType !== 'SHIFT') {
@@ -393,11 +400,15 @@ export async function POST(request: NextRequest) {
                     _sum: { amount: true }
                 });
                 const turnover = revenue._sum.amount ?? 0;
-                const usesHighRate = employee.turnoverThreshold != null
+                const matchedTier = employee.bonusTiers.find((tier) => turnover >= tier.threshold);
+                const legacyBonus = !matchedTier
+                    && employee.turnoverThreshold != null
                     && employee.highPayAmount != null
-                    && turnover >= employee.turnoverThreshold;
-                const payoutAmount = usesHighRate ? employee.highPayAmount! : employee.payAmount;
-                const cashBonus = usesHighRate ? Math.max(payoutAmount - employee.payAmount, 0) : 0;
+                    && turnover >= employee.turnoverThreshold
+                    ? Math.max(employee.highPayAmount - employee.payAmount, 0)
+                    : 0;
+                const cashBonus = matchedTier?.bonus ?? legacyBonus;
+                const payoutAmount = employee.payAmount + cashBonus;
                 if (payoutAmount <= 0) throw new ExpenseResponseError('Для сотрудника не настроена ставка', 400);
                 return tx.cashEntry.create({
                     data: {
@@ -416,10 +427,10 @@ export async function POST(request: NextRequest) {
                         meta: {
                             kind: 'EMPLOYEE_PAYOUT',
                             turnover,
-                            threshold: employee.turnoverThreshold,
+                            threshold: matchedTier?.threshold ?? employee.turnoverThreshold,
                             basePay: employee.payAmount,
                             cashBonus,
-                            rate: usesHighRate ? 'BONUS' : 'BASE'
+                            rate: cashBonus > 0 ? 'BONUS' : 'BASE'
                         }
                     }
                 });

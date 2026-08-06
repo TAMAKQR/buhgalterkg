@@ -235,6 +235,7 @@ interface HotelDetailPayload {
         payAmount: number;
         turnoverThreshold?: number | null;
         highPayAmount?: number | null;
+        bonusTiers?: Array<{ id?: string; threshold: number; bonus: number }>;
         isActive: boolean;
         hiredAt?: string | null;
         dismissedAt?: string | null;
@@ -758,7 +759,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isDeletingShift, setIsDeletingShift] = useState(false);
     const [confirmDeleteShift, setConfirmDeleteShift] = useState(false);
     const [removingManagerId, setRemovingManagerId] = useState<string | null>(null);
-    const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
+    const [employeeForm, setEmployeeForm] = useState({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', bonusTiers: [] as Array<{ threshold: string; bonus: string }>, notes: '' });
     const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
     const [savingEmployee, setSavingEmployee] = useState(false);
     const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
@@ -1615,7 +1616,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const resetEmployeeForm = () => {
-        setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', turnoverThreshold: '', highPayAmount: '', notes: '' });
+        setEmployeeForm({ fullName: '', position: '', payType: 'MONTHLY', payAmount: '', bonusTiers: [], notes: '' });
         setEditingEmployeeId(null);
     };
 
@@ -1626,10 +1627,17 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             position: employee.position,
             payType: employee.payType,
             payAmount: String(toMajorValue(employee.payAmount) ?? ''),
-            turnoverThreshold: String(toMajorValue(employee.turnoverThreshold) ?? ''),
-            highPayAmount: String(toMajorValue(
-                employee.highPayAmount != null ? Math.max(employee.highPayAmount - employee.payAmount, 0) : null,
-            ) ?? ''),
+            bonusTiers: employee.bonusTiers?.length
+                ? employee.bonusTiers.map((tier) => ({
+                    threshold: String(toMajorValue(tier.threshold) ?? ''),
+                    bonus: String(toMajorValue(tier.bonus) ?? ''),
+                }))
+                : employee.turnoverThreshold != null && employee.highPayAmount != null
+                    ? [{
+                        threshold: String(toMajorValue(employee.turnoverThreshold) ?? ''),
+                        bonus: String(toMajorValue(Math.max(employee.highPayAmount - employee.payAmount, 0)) ?? ''),
+                    }]
+                    : [],
             notes: employee.notes ?? '',
         });
     };
@@ -1640,17 +1648,21 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             toast('Заполните имя, должность и оплату сотрудника', 'error');
             return;
         }
-        const turnoverThreshold = employeeForm.payType === 'SHIFT' && employeeForm.turnoverThreshold
-            ? toOptionalMinor(Number(employeeForm.turnoverThreshold))
-            : null;
-        const cashBonus = employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount
-            ? toOptionalMinor(Number(employeeForm.highPayAmount))
-            : null;
-        if ((turnoverThreshold == null) !== (cashBonus == null)) {
-            toast('Укажите одновременно порог кассы и бонус', 'error');
+        const bonusTiers = employeeForm.payType === 'SHIFT'
+            ? employeeForm.bonusTiers.map((tier) => ({
+                threshold: toOptionalMinor(Number(tier.threshold)),
+                bonus: toOptionalMinor(Number(tier.bonus)),
+            }))
+            : [];
+        if (bonusTiers.some((tier) => tier.threshold == null || tier.bonus == null || tier.threshold <= 0 || tier.bonus <= 0)) {
+            toast('Заполните порог кассы и бонус для каждого уровня', 'error');
             return;
         }
-        const highPayAmount = cashBonus != null ? payAmount + cashBonus : null;
+        const normalizedBonusTiers = bonusTiers.map((tier) => ({ threshold: tier.threshold!, bonus: tier.bonus! }));
+        if (new Set(normalizedBonusTiers.map((tier) => tier.threshold)).size !== normalizedBonusTiers.length) {
+            toast('Пороги бонусов не должны повторяться', 'error');
+            return;
+        }
         setSavingEmployee(true);
         try {
             await request(`/api/admin/hotels/${hotelId}/employees`, {
@@ -1661,8 +1673,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     position: employeeForm.position.trim(),
                     payType: employeeForm.payType,
                     payAmount,
-                    turnoverThreshold,
-                    highPayAmount,
+                    turnoverThreshold: null,
+                    highPayAmount: null,
+                    bonusTiers: normalizedBonusTiers,
                     notes: employeeForm.notes.trim() || null,
                 },
             });
@@ -4488,9 +4501,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             OTHER: 'другое',
                                                         } as Record<string, string>)[employee.payType] ?? employee.payType}: {employee.payType === 'PERCENT' ? formatPercentage(employee.payAmount / 100) : formatCurrency(employee.payAmount)}
                                                     </p>
-                                                    {employee.payType === 'SHIFT' && employee.turnoverThreshold != null && employee.highPayAmount != null ? (
+                                                    {employee.payType === 'SHIFT' && (employee.bonusTiers?.length || (employee.turnoverThreshold != null && employee.highPayAmount != null)) ? (
                                                         <p className="text-xs text-slate-500 dark:text-white/50">
-                                                            Бонусы за кассу: от {formatCurrency(employee.turnoverThreshold)} +{formatCurrency(Math.max(employee.highPayAmount - employee.payAmount, 0))}
+                                                            Бонусы за кассу: {(employee.bonusTiers?.length
+                                                                ? employee.bonusTiers
+                                                                : [{ threshold: employee.turnoverThreshold!, bonus: Math.max(employee.highPayAmount! - employee.payAmount, 0) }]
+                                                            ).map((tier) => `от ${formatCurrency(tier.threshold)} +${formatCurrency(tier.bonus)}`).join(' · ')}
                                                         </p>
                                                     ) : null}
                                                 </div>
@@ -4531,10 +4547,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <>
                                                     <div className="sm:col-span-2">
                                                         <p className="text-sm font-medium text-slate-900 dark:text-white">Бонусы за кассу</p>
-                                                        <p className="text-xs text-slate-500 dark:text-white/50">Как у менеджеров: при достижении порога бонус добавляется к ставке за смену.</p>
+                                                        <p className="text-xs text-slate-500 dark:text-white/50">Добавьте уровни как у менеджеров. Применится самый высокий достигнутый бонус.</p>
                                                     </div>
-                                                    <Input type="number" min="0" step="0.01" value={employeeForm.turnoverThreshold} onChange={(event) => setEmployeeForm((current) => ({ ...current, turnoverThreshold: event.target.value }))} placeholder="Порог кассы, например 30000" />
-                                                    <Input type="number" min="0" step="0.01" value={employeeForm.highPayAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, highPayAmount: event.target.value }))} placeholder="Бонус, например 500" />
+                                                    {employeeForm.bonusTiers.map((tier, index) => (
+                                                        <div key={index} className="grid gap-2 sm:col-span-2 sm:grid-cols-[1fr_1fr_auto]">
+                                                            <Input type="number" min="0" step="0.01" value={tier.threshold} onChange={(event) => setEmployeeForm((current) => ({ ...current, bonusTiers: current.bonusTiers.map((item, itemIndex) => itemIndex === index ? { ...item, threshold: event.target.value } : item) }))} placeholder="Порог кассы, например 30000" />
+                                                            <Input type="number" min="0" step="0.01" value={tier.bonus} onChange={(event) => setEmployeeForm((current) => ({ ...current, bonusTiers: current.bonusTiers.map((item, itemIndex) => itemIndex === index ? { ...item, bonus: event.target.value } : item) }))} placeholder="Бонус, например 500" />
+                                                            <Button type="button" size="sm" variant="ghost" onClick={() => setEmployeeForm((current) => ({ ...current, bonusTiers: current.bonusTiers.filter((_, itemIndex) => itemIndex !== index) }))}>
+                                                                Удалить
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                                    <Button type="button" size="sm" variant="ghost" className="sm:col-span-2" disabled={employeeForm.bonusTiers.length >= 10} onClick={() => setEmployeeForm((current) => ({ ...current, bonusTiers: [...current.bonusTiers, { threshold: '', bonus: '' }] }))}>
+                                                        Добавить порог бонуса
+                                                    </Button>
                                                 </>
                                             ) : null}
                                             <Input className="sm:col-span-2" value={employeeForm.notes} onChange={(event) => setEmployeeForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Комментарий" />

@@ -10,6 +10,13 @@ import { getSessionUser } from '@/lib/server/session';
 export const dynamic = 'force-dynamic';
 
 const payTypeSchema = z.enum(['MONTHLY', 'SHIFT', 'ROOM', 'PERCENT', 'OTHER']);
+const bonusTiersSchema = z.array(z.object({
+    threshold: z.number().int().positive().max(2_000_000_000),
+    bonus: z.number().int().positive().max(2_000_000_000),
+})).max(10).refine(
+    (tiers) => new Set(tiers.map((tier) => tier.threshold)).size === tiers.length,
+    'Пороги бонусов не должны повторяться',
+);
 const employeeFields = {
     fullName: z.string().trim().min(2).max(100),
     position: z.string().trim().min(2).max(80),
@@ -17,12 +24,12 @@ const employeeFields = {
     payAmount: z.number().int().min(0).max(2_000_000_000),
     turnoverThreshold: z.number().int().positive().max(2_000_000_000).nullable().optional(),
     highPayAmount: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+    bonusTiers: bonusTiersSchema.optional(),
     notes: z.string().trim().max(500).nullable().optional(),
 };
 const createSchema = z.object(employeeFields);
-const updateSchema = z.object({
+const updateSchema = createSchema.partial().extend({
     id: z.string().cuid(),
-    ...Object.fromEntries(Object.entries(employeeFields).map(([key, value]) => [key, value.optional()])),
     isActive: z.boolean().optional(),
 });
 const archiveSchema = z.object({ id: z.string().cuid() });
@@ -40,8 +47,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const payload = createSchema.parse(await request.json());
         const hotel = await findHotel(hotelId, getCountryFromRequest(request));
         if (!hotel) return new NextResponse('Объект не найден', { status: 404 });
+        const { bonusTiers = [], ...employeeData } = payload;
         const employee = await prisma.hotelEmployee.create({
-            data: { hotelId, ...payload, hiredAt: new Date() },
+            data: {
+                hotelId,
+                ...employeeData,
+                hiredAt: new Date(),
+                bonusTiers: { create: bonusTiers },
+            },
+            include: { bonusTiers: { orderBy: { threshold: 'asc' } } },
         });
         return NextResponse.json({ employee }, { status: 201 });
     } catch (error) {
@@ -60,17 +74,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!hotel) return new NextResponse('Объект не найден', { status: 404 });
         const existing = await prisma.hotelEmployee.findFirst({ where: { id: payload.id, hotelId }, select: { id: true } });
         if (!existing) return new NextResponse('Сотрудник не найден', { status: 404 });
-        const { id, isActive, ...fields } = payload;
-        const employee = await prisma.hotelEmployee.update({
-            where: { id },
-            data: {
-                ...fields,
-                ...(isActive !== undefined ? {
-                    isActive,
-                    dismissedAt: isActive ? null : new Date(),
-                    ...(isActive ? { hiredAt: new Date() } : {}),
-                } : {}),
-            },
+        const { id, isActive, bonusTiers, ...fields } = payload;
+        const employee = await prisma.$transaction(async (tx) => {
+            if (bonusTiers !== undefined) {
+                await tx.employeeBonusTier.deleteMany({ where: { employeeId: id } });
+            }
+            return tx.hotelEmployee.update({
+                where: { id },
+                data: {
+                    ...fields,
+                    ...(bonusTiers !== undefined ? { bonusTiers: { create: bonusTiers } } : {}),
+                    ...(isActive !== undefined ? {
+                        isActive,
+                        dismissedAt: isActive ? null : new Date(),
+                        ...(isActive ? { hiredAt: new Date() } : {}),
+                    } : {}),
+                },
+                include: { bonusTiers: { orderBy: { threshold: 'asc' } } },
+            });
         });
         return NextResponse.json({ employee });
     } catch (error) {

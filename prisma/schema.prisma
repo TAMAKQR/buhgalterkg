@@ -89,9 +89,23 @@ model HotelEmployee {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   hotel       Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   payouts     CashEntry[]
+  bonusTiers  EmployeeBonusTier[]
 
   @@index([hotelId, isActive])
   @@map("hotel_employees")
+}
+
+model EmployeeBonusTier {
+  id         String        @id @default(cuid())
+  employeeId String        @map("employee_id")
+  threshold  Int
+  bonus      Int
+  createdAt  DateTime      @default(now()) @map("created_at")
+  employee   HotelEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, threshold])
+  @@index([employeeId])
+  @@map("employee_bonus_tiers")
 }
 
 model HotelPlannedCostItem {

@@ -69,7 +69,11 @@ export async function GET(request: NextRequest) {
                             position: true,
                             payAmount: true,
                             turnoverThreshold: true,
-                            highPayAmount: true
+                            highPayAmount: true,
+                            bonusTiers: {
+                                orderBy: { threshold: 'desc' },
+                                select: { id: true, threshold: true, bonus: true },
+                            },
                         }
                     },
                     rooms: {

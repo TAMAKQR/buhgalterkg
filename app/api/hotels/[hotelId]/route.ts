@@ -152,6 +152,12 @@ const hotelDetailSelect = {
             position: true,
             payType: true,
             payAmount: true,
+            turnoverThreshold: true,
+            highPayAmount: true,
+            bonusTiers: {
+                orderBy: { threshold: 'asc' },
+                select: { id: true, threshold: true, bonus: true },
+            },
             isActive: true,
             hiredAt: true,
             dismissedAt: true,

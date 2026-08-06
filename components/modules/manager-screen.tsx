@@ -136,6 +136,7 @@ interface ManagerStateResponse {
         payAmount: number;
         turnoverThreshold?: number | null;
         highPayAmount?: number | null;
+        bonusTiers?: Array<{ id: string; threshold: number; bonus: number }>;
     }>;
     rooms: Array<{
         id: string;
@@ -880,12 +881,16 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const selectedExpenseCurrency = expenseForm.watch('currency');
     const selectedEmployeeId = expenseForm.watch('employeeId');
     const selectedEmployee = data?.employees?.find((employee) => employee.id === selectedEmployeeId);
+    const selectedEmployeeBonusTier = selectedEmployee?.bonusTiers?.find((tier) => shiftRevenueTotal >= tier.threshold) ?? null;
+    const selectedEmployeeLegacyBonus = !selectedEmployeeBonusTier
+        && selectedEmployee?.turnoverThreshold != null
+        && selectedEmployee.highPayAmount != null
+        && shiftRevenueTotal >= selectedEmployee.turnoverThreshold
+        ? Math.max(selectedEmployee.highPayAmount - selectedEmployee.payAmount, 0)
+        : 0;
+    const selectedEmployeeCashBonus = selectedEmployeeBonusTier?.bonus ?? selectedEmployeeLegacyBonus;
     const employeePayoutAmount = selectedEmployee
-        ? ((selectedEmployee.turnoverThreshold != null
-            && selectedEmployee.highPayAmount != null
-            && shiftRevenueTotal >= selectedEmployee.turnoverThreshold)
-            ? selectedEmployee.highPayAmount
-            : selectedEmployee.payAmount)
+        ? selectedEmployee.payAmount + selectedEmployeeCashBonus
         : null;
     const compensation = data?.compensation ?? null;
     const canEditBookings = Boolean(compensation?.canEditBookings);
@@ -4088,8 +4093,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <p className="text-xs text-slate-500 dark:text-white/50 lg:col-span-12">
                                             Зарплата рассчитывается автоматически от оборота смены {formatKgs(shiftRevenueTotal)}.
                                             К выплате {selectedEmployee.fullName}: <span className="font-semibold text-light-text dark:text-white">{formatKgs(employeePayoutAmount)}</span>
-                                            {selectedEmployee.turnoverThreshold != null && selectedEmployee.highPayAmount != null
-                                                ? ` (бонус +${formatKgs(Math.max(selectedEmployee.highPayAmount - selectedEmployee.payAmount, 0))} при кассе от ${formatKgs(selectedEmployee.turnoverThreshold)})`
+                                            {selectedEmployeeCashBonus > 0
+                                                ? ` (бонус +${formatKgs(selectedEmployeeCashBonus)} при кассе от ${formatKgs(selectedEmployeeBonusTier?.threshold ?? selectedEmployee.turnoverThreshold ?? 0)})`
                                                 : ''}
                                         </p>
                                     ) : null}
