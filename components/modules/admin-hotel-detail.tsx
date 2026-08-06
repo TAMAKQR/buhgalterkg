@@ -1627,7 +1627,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             payType: employee.payType,
             payAmount: String(toMajorValue(employee.payAmount) ?? ''),
             turnoverThreshold: String(toMajorValue(employee.turnoverThreshold) ?? ''),
-            highPayAmount: String(toMajorValue(employee.highPayAmount) ?? ''),
+            highPayAmount: String(toMajorValue(
+                employee.highPayAmount != null ? Math.max(employee.highPayAmount - employee.payAmount, 0) : null,
+            ) ?? ''),
             notes: employee.notes ?? '',
         });
     };
@@ -1641,13 +1643,14 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const turnoverThreshold = employeeForm.payType === 'SHIFT' && employeeForm.turnoverThreshold
             ? toOptionalMinor(Number(employeeForm.turnoverThreshold))
             : null;
-        const highPayAmount = employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount
+        const cashBonus = employeeForm.payType === 'SHIFT' && employeeForm.highPayAmount
             ? toOptionalMinor(Number(employeeForm.highPayAmount))
             : null;
-        if ((turnoverThreshold == null) !== (highPayAmount == null)) {
-            toast('Укажите одновременно порог оборота и ставку после порога', 'error');
+        if ((turnoverThreshold == null) !== (cashBonus == null)) {
+            toast('Укажите одновременно порог кассы и бонус', 'error');
             return;
         }
+        const highPayAmount = cashBonus != null ? payAmount + cashBonus : null;
         setSavingEmployee(true);
         try {
             await request(`/api/admin/hotels/${hotelId}/employees`, {
@@ -4487,7 +4490,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </p>
                                                     {employee.payType === 'SHIFT' && employee.turnoverThreshold != null && employee.highPayAmount != null ? (
                                                         <p className="text-xs text-slate-500 dark:text-white/50">
-                                                            При кассе от {formatCurrency(employee.turnoverThreshold)}: {formatCurrency(employee.highPayAmount)}
+                                                            Бонусы за кассу: от {formatCurrency(employee.turnoverThreshold)} +{formatCurrency(Math.max(employee.highPayAmount - employee.payAmount, 0))}
                                                         </p>
                                                     ) : null}
                                                 </div>
@@ -4526,8 +4529,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <Input type="number" min="0" step="0.01" value={employeeForm.payAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, payAmount: event.target.value }))} placeholder={employeeForm.payType === 'PERCENT' ? 'Процент' : 'Сумма'} />
                                             {employeeForm.payType === 'SHIFT' ? (
                                                 <>
-                                                    <Input type="number" min="0" step="0.01" value={employeeForm.turnoverThreshold} onChange={(event) => setEmployeeForm((current) => ({ ...current, turnoverThreshold: event.target.value }))} placeholder="Порог оборота, например 200000" />
-                                                    <Input type="number" min="0" step="0.01" value={employeeForm.highPayAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, highPayAmount: event.target.value }))} placeholder="Ставка после порога, например 17000" />
+                                                    <div className="sm:col-span-2">
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">Бонусы за кассу</p>
+                                                        <p className="text-xs text-slate-500 dark:text-white/50">Как у менеджеров: при достижении порога бонус добавляется к ставке за смену.</p>
+                                                    </div>
+                                                    <Input type="number" min="0" step="0.01" value={employeeForm.turnoverThreshold} onChange={(event) => setEmployeeForm((current) => ({ ...current, turnoverThreshold: event.target.value }))} placeholder="Порог кассы, например 30000" />
+                                                    <Input type="number" min="0" step="0.01" value={employeeForm.highPayAmount} onChange={(event) => setEmployeeForm((current) => ({ ...current, highPayAmount: event.target.value }))} placeholder="Бонус, например 500" />
                                                 </>
                                             ) : null}
                                             <Input className="sm:col-span-2" value={employeeForm.notes} onChange={(event) => setEmployeeForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Комментарий" />

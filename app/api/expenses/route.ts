@@ -397,6 +397,7 @@ export async function POST(request: NextRequest) {
                     && employee.highPayAmount != null
                     && turnover >= employee.turnoverThreshold;
                 const payoutAmount = usesHighRate ? employee.highPayAmount! : employee.payAmount;
+                const cashBonus = usesHighRate ? Math.max(payoutAmount - employee.payAmount, 0) : 0;
                 if (payoutAmount <= 0) throw new ExpenseResponseError('Для сотрудника не настроена ставка', 400);
                 return tx.cashEntry.create({
                     data: {
@@ -416,7 +417,9 @@ export async function POST(request: NextRequest) {
                             kind: 'EMPLOYEE_PAYOUT',
                             turnover,
                             threshold: employee.turnoverThreshold,
-                            rate: usesHighRate ? 'HIGH' : 'BASE'
+                            basePay: employee.payAmount,
+                            cashBonus,
+                            rate: usesHighRate ? 'BONUS' : 'BASE'
                         }
                     }
                 });

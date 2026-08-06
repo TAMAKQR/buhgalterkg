@@ -4089,7 +4089,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             Зарплата рассчитывается автоматически от оборота смены {formatKgs(shiftRevenueTotal)}.
                                             К выплате {selectedEmployee.fullName}: <span className="font-semibold text-light-text dark:text-white">{formatKgs(employeePayoutAmount)}</span>
                                             {selectedEmployee.turnoverThreshold != null && selectedEmployee.highPayAmount != null
-                                                ? ` (повышенная ставка с ${formatKgs(selectedEmployee.turnoverThreshold)})`
+                                                ? ` (бонус +${formatKgs(Math.max(selectedEmployee.highPayAmount - selectedEmployee.payAmount, 0))} при кассе от ${formatKgs(selectedEmployee.turnoverThreshold)})`
                                                 : ''}
                                         </p>
                                     ) : null}
