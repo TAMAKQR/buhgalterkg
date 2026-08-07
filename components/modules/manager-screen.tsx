@@ -1426,7 +1426,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const showGroupPaymentAmountField = Boolean(groupCheckIn && groupCheckIn.paymentMode !== 'POSTPAY_UNKNOWN' && groupCheckIn.paymentMode !== 'POSTPAY');
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
-    const availableCount = useMemo(() => sortedRooms.filter((r) => r.status === 'AVAILABLE').length, [sortedRooms]);
+    const availableNowRooms = useMemo(
+        () => sortedRooms.filter((room) => room.status === 'AVAILABLE' && room.stay?.status !== 'SCHEDULED'),
+        [sortedRooms],
+    );
+    const availableCount = availableNowRooms.length;
     const overdueCount = useMemo(() => {
         const now = new Date();
         return sortedRooms.filter((room) => room.status === 'OCCUPIED' && isPastDate(room.stay?.scheduledCheckOut, now)).length;
@@ -3407,6 +3411,26 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                         </div>
                                     </div>
+                                    <div
+                                        className={`mt-3 flex flex-col gap-2 rounded-lg border px-3 py-2.5 sm:flex-row sm:items-center ${availableNowRooms.length
+                                            ? 'border-emerald-200 bg-emerald-50/90 dark:border-emerald-400/25 dark:bg-emerald-400/[0.08]'
+                                            : 'border-amber-200 bg-amber-50/90 dark:border-amber-400/25 dark:bg-amber-400/[0.08]'
+                                        }`}
+                                        aria-live="polite"
+                                    >
+                                        <span className={`shrink-0 text-sm font-semibold ${availableNowRooms.length ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'}`}>
+                                            {availableNowRooms.length ? `Свободны сейчас: ${availableNowRooms.length}` : 'Свободных номеров сейчас нет'}
+                                        </span>
+                                        {availableNowRooms.length ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {availableNowRooms.map((room) => (
+                                                    <span key={`available-room-${room.id}`} className="rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-300/30 dark:bg-emerald-400/10 dark:text-emerald-100">
+                                                        № {room.label}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                    </div>
                                     <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={handleBookingSearch}>
                                         <div className="relative min-w-0 flex-1">
                                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -3738,6 +3762,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const scheduledBooking = room.stay?.status === 'SCHEDULED' ? room.stay : null;
                                         const hasScheduledBooking = Boolean(scheduledBooking);
                                         const canCheckInBooking = scheduledBooking ? canCheckInScheduledStay(scheduledBooking) : false;
+                                        const isImmediatelyAvailable = room.status === 'AVAILABLE' && !hasScheduledBooking;
                                         const draggableCardStay =
                                             room.stay && (room.stay.status === 'CHECKED_IN' || room.stay.status === 'SCHEDULED')
                                                 ? room.stay
@@ -3753,7 +3778,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     dragTargetRoomId === room.id && draggedStay?.roomId !== room.id
                                                         ? 'ring-2 ring-cyan-400/60 dark:ring-cyan-300/45'
                                                         : ''
-                                                } ${tariffPending ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]' : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}
+                                                } ${tariffPending
+                                                    ? 'border-fuchsia-200/90 ring-1 ring-fuchsia-200/70 hover:border-fuchsia-300 dark:border-fuchsia-300/25 dark:bg-fuchsia-400/[0.045] dark:ring-fuchsia-300/15 dark:hover:bg-fuchsia-400/[0.06]'
+                                                    : isImmediatelyAvailable
+                                                        ? 'border-emerald-300 bg-emerald-50/90 ring-1 ring-emerald-200/80 hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-400/35 dark:bg-emerald-400/[0.09] dark:ring-emerald-400/15 dark:hover:border-emerald-300/55 dark:hover:bg-emerald-400/[0.13]'
+                                                        : 'border-slate-200/90 dark:border-slate-700/55 dark:bg-slate-800/35 dark:hover:border-slate-600/80 dark:hover:bg-slate-800/50'}`}
                                                 onDragStart={(event) => {
                                                     if (!draggableCardStay || !canDragStay(draggableCardStay)) {
                                                         event.preventDefault();
@@ -3786,7 +3815,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                                            <span className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">№ {room.label}</span>
+                                                            <span className={`min-w-0 break-words text-base font-bold ${isImmediatelyAvailable ? 'text-emerald-800 dark:text-emerald-100' : 'text-slate-900 dark:text-slate-100'}`}>№ {room.label}</span>
                                                         {room.status === 'DIRTY' ? (
                                                             <button
                                                                 type="button"
