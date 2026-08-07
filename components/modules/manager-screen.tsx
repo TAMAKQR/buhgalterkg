@@ -185,6 +185,27 @@ interface ManagerProfileResponse {
             paid: number;
             pending: number;
         };
+        stays: Array<{
+            id: string;
+            guestName?: string | null;
+            guestPhone?: string | null;
+            companyName?: string | null;
+            status: string;
+            scheduledCheckIn: string;
+            scheduledCheckOut: string;
+            actualCheckIn?: string | null;
+            actualCheckOut?: string | null;
+            bookingSource?: string | null;
+            bookingNumber?: string | null;
+            totalAmount?: number | null;
+            amountPaid?: number | null;
+            cashPaid?: number | null;
+            cardPaid?: number | null;
+            onlinePaid?: number | null;
+            tariffPending?: boolean | null;
+            notes?: string | null;
+            room: { label: string; floor?: string | null };
+        }>;
     }>;
 }
 
@@ -4260,11 +4281,62 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <span>Факт: {selectedShift.closingCash != null ? formatKgs(selectedShift.closingCash) : '—'}</span>
                                             <span>Итог наличных: {selectedShift.handoverCash != null ? formatKgs(selectedShift.handoverCash) : '—'}</span>
                                         </div>
-                                        <p className="mt-2 text-xs">
-                                            Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}
-                                        </p>
-                                    </div>
-                                ) : (
+                                         <p className="mt-2 text-xs">
+                                             Выплачено {formatKgs(selectedShift.payout.paid)} из {formatKgs(selectedShift.payout.expected)} • Осталось {formatKgs(selectedShift.payout.pending)}
+                                         </p>
+                                         <div className="mt-4 border-t border-slate-200 pt-4 dark:border-white/10">
+                                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                                 <p className="font-semibold text-slate-900 dark:text-white">Проживания в смене</p>
+                                                 <span className="text-xs text-slate-500 dark:text-white/45">{selectedShift.stays.length} записей</span>
+                                             </div>
+                                             {selectedShift.stays.length ? (
+                                                 <div className="grid gap-3 xl:grid-cols-2">
+                                                     {selectedShift.stays.map((stay) => {
+                                                         const paid = stay.amountPaid ?? 0;
+                                                         const remaining = stay.totalAmount == null ? null : Math.max(stay.totalAmount - paid, 0);
+                                                         const paymentParts = [
+                                                             stay.cashPaid ? `нал ${formatKgs(stay.cashPaid)}` : null,
+                                                             stay.cardPaid ? `безнал ${formatKgs(stay.cardPaid)}` : null,
+                                                             stay.onlinePaid ? `онлайн ${formatKgs(stay.onlinePaid)}` : null,
+                                                         ].filter(Boolean);
+                                                         return (
+                                                             <article key={stay.id} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.035]">
+                                                                 <div className="flex flex-wrap items-start justify-between gap-2">
+                                                                     <div>
+                                                                         <p className="font-semibold text-slate-900 dark:text-white">№{stay.room.label} · {stay.guestName?.trim() || 'Гость не указан'}</p>
+                                                                         <p className="text-[11px] text-slate-500 dark:text-white/45">{stay.room.floor || 'Раздел не указан'}</p>
+                                                                     </div>
+                                                                     <Badge label={stayStatusLabel(stay.status)} tone={stay.status === 'CHECKED_IN' ? 'warning' : stay.status === 'CHECKED_OUT' ? 'success' : 'default'} />
+                                                                 </div>
+                                                                 <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                                                                     <div className="rounded-lg bg-slate-50 p-2 dark:bg-white/[0.04]">
+                                                                         <p className="font-semibold text-slate-700 dark:text-white/75">По плану</p>
+                                                                         <p>Заезд: {formatDateTime(stay.scheduledCheckIn, hotelTz)}</p>
+                                                                         <p>Выезд: {formatDateTime(stay.scheduledCheckOut, hotelTz)}</p>
+                                                                     </div>
+                                                                     <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-400/[0.06]">
+                                                                         <p className="font-semibold text-emerald-800 dark:text-emerald-200">Фактически</p>
+                                                                         <p>Заехал: {stay.actualCheckIn ? formatDateTime(stay.actualCheckIn, hotelTz) : 'не зафиксировано'}</p>
+                                                                         <p>Выехал: {stay.actualCheckOut ? formatDateTime(stay.actualCheckOut, hotelTz) : stay.status === 'CHECKED_IN' ? 'ещё проживает' : 'не зафиксировано'}</p>
+                                                                     </div>
+                                                                 </div>
+                                                                 <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-white/60">
+                                                                     <p><span className="font-semibold text-slate-800 dark:text-white/80">Источник:</span> {stay.bookingSource?.trim() || 'прямое заселение'}{stay.bookingNumber?.trim() ? ` · бронь №${stay.bookingNumber.trim()}` : ''}</p>
+                                                                     {(stay.companyName || stay.guestPhone) ? <p><span className="font-semibold text-slate-800 dark:text-white/80">Контакты:</span> {[stay.companyName?.trim(), stay.guestPhone?.trim()].filter(Boolean).join(' · ')}</p> : null}
+                                                                     <p><span className="font-semibold text-slate-800 dark:text-white/80">Оплата:</span> {stay.tariffPending ? 'тариф уточняется' : stay.totalAmount != null ? `${formatKgs(paid)} из ${formatKgs(stay.totalAmount)}${remaining ? ` · долг ${formatKgs(remaining)}` : ' · оплачено'}` : `тариф не указан · оплачено ${formatKgs(paid)}`}</p>
+                                                                     {paymentParts.length ? <p><span className="font-semibold text-slate-800 dark:text-white/80">Разбивка:</span> {paymentParts.join(' · ')}</p> : null}
+                                                                     {stay.notes?.trim() ? <p><span className="font-semibold text-slate-800 dark:text-white/80">Примечание:</span> {stay.notes.trim()}</p> : null}
+                                                                 </div>
+                                                             </article>
+                                                         );
+                                                     })}
+                                                 </div>
+                                             ) : (
+                                                 <p className="text-xs text-slate-500 dark:text-white/45">В этой смене проживания не оформлялись.</p>
+                                             )}
+                                         </div>
+                                     </div>
+                                 ) : (
                                     <p className="mt-4 text-sm text-slate-600 dark:text-white/60">Нет смен, подходящих под фильтр.</p>
                                 )}
                                 {filteredProfileShifts.length > 1 && (

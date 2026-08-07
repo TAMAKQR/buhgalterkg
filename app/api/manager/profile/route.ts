@@ -54,6 +54,43 @@ export async function GET(request: NextRequest) {
             })
             : [];
 
+        const stayHistory = shiftIds.length
+            ? await prisma.roomStay.findMany({
+                where: { shiftId: { in: shiftIds }, hotelId },
+                orderBy: { scheduledCheckIn: 'desc' },
+                select: {
+                    id: true,
+                    shiftId: true,
+                    guestName: true,
+                    guestPhone: true,
+                    companyName: true,
+                    status: true,
+                    scheduledCheckIn: true,
+                    scheduledCheckOut: true,
+                    actualCheckIn: true,
+                    actualCheckOut: true,
+                    bookingSource: true,
+                    bookingNumber: true,
+                    totalAmount: true,
+                    amountPaid: true,
+                    cashPaid: true,
+                    cardPaid: true,
+                    onlinePaid: true,
+                    tariffPending: true,
+                    notes: true,
+                    room: { select: { label: true, floor: true } }
+                }
+            })
+            : [];
+
+        const staysByShift = new Map<string, typeof stayHistory>();
+        for (const stay of stayHistory) {
+            if (!stay.shiftId) continue;
+            const bucket = staysByShift.get(stay.shiftId) ?? [];
+            bucket.push(stay);
+            staysByShift.set(stay.shiftId, bucket);
+        }
+
         const ledgerTotals = new Map<string, { cashIn: number; payouts: number }>();
         for (const shiftId of shiftIds) {
             ledgerTotals.set(shiftId, { cashIn: 0, payouts: 0 });
@@ -110,7 +147,8 @@ export async function GET(request: NextRequest) {
                     expected: payout.expected,
                     paid: payout.paid,
                     pending: payout.pending
-                }
+                },
+                stays: staysByShift.get(shift.id) ?? []
             };
         });
 
