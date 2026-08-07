@@ -1426,9 +1426,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const showGroupPaymentAmountField = Boolean(groupCheckIn && groupCheckIn.paymentMode !== 'POSTPAY_UNKNOWN' && groupCheckIn.paymentMode !== 'POSTPAY');
 
     const occupiedCount = useMemo(() => sortedRooms.filter((r) => r.status === 'OCCUPIED').length, [sortedRooms]);
+    const currentHotelDateKey = formatDateKey(new Date(), hotelTz);
     const availableNowRooms = useMemo(
-        () => sortedRooms.filter((room) => room.status === 'AVAILABLE' && room.stay?.status !== 'SCHEDULED'),
-        [sortedRooms],
+        () => sortedRooms.filter((room) => {
+            if (room.status !== 'AVAILABLE') return false;
+            if (room.stay?.status !== 'SCHEDULED') return true;
+            const bookingDateKey = formatDateKey(room.stay.scheduledCheckIn, hotelTz);
+            return Boolean(currentHotelDateKey && bookingDateKey && bookingDateKey > currentHotelDateKey);
+        }),
+        [currentHotelDateKey, hotelTz, sortedRooms],
     );
     const availableCount = availableNowRooms.length;
     const overdueCount = useMemo(() => {
@@ -3760,9 +3766,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         const contactLabel = [room.stay?.companyName?.trim(), room.stay?.guestPhone?.trim()].filter(Boolean).join(' · ');
                                         const roomMealLabels = canUseMealPlan ? mealPlanLabels(room.stay?.mealPlan) : [];
                                         const scheduledBooking = room.stay?.status === 'SCHEDULED' ? room.stay : null;
-                                        const hasScheduledBooking = Boolean(scheduledBooking);
-                                        const canCheckInBooking = scheduledBooking ? canCheckInScheduledStay(scheduledBooking) : false;
-                                        const isImmediatelyAvailable = room.status === 'AVAILABLE' && !hasScheduledBooking;
+                                         const hasScheduledBooking = Boolean(scheduledBooking);
+                                         const canCheckInBooking = scheduledBooking ? canCheckInScheduledStay(scheduledBooking) : false;
+                                         const hasFutureBooking = Boolean(scheduledBooking && !canCheckInBooking);
+                                         const isImmediatelyAvailable = room.status === 'AVAILABLE' && (!hasScheduledBooking || hasFutureBooking);
                                         const draggableCardStay =
                                             room.stay && (room.stay.status === 'CHECKED_IN' || room.stay.status === 'SCHEDULED')
                                                 ? room.stay
@@ -3829,10 +3836,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 {updatingCleaningRoomId === room.id ? '...' : 'Уборка'}
                                                             </button>
                                                         ) : (
-                                                            <Badge
-                                                                label={isOverdue ? 'Не выселен' : isOccupied ? 'Занят' : hasScheduledBooking ? 'Бронь' : 'Свободен'}
-                                                                tone={isOverdue ? 'danger' : isOccupied || hasScheduledBooking ? 'warning' : 'success'}
-                                                            />
+                                                             <Badge
+                                                                 label={isOverdue ? 'Не выселен' : isOccupied ? 'Занят' : hasFutureBooking ? 'Свободен сейчас' : hasScheduledBooking ? 'Бронь сегодня' : 'Свободен'}
+                                                                 tone={isOverdue ? 'danger' : isOccupied || (hasScheduledBooking && !hasFutureBooking) ? 'warning' : 'success'}
+                                                             />
                                                         )}
                                                         </div>
                                                         {room.floor ? <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{room.floor}</p> : null}
@@ -3940,6 +3947,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         }}
                                                         title={room.stay.status === 'SCHEDULED' ? 'Открыть бронь' : 'Редактировать проживание'}
                                                     >
+                                                        {hasFutureBooking ? (
+                                                            <p className="break-words font-semibold text-amber-700 dark:text-amber-200">Будущая бронь с {formatDateTime(room.stay.scheduledCheckIn, hotelTz)}</p>
+                                                        ) : null}
                                                         <p className="break-words font-medium text-slate-800 dark:text-white/70">{guestLabel}</p>
                                                         {roomMealLabels.length ? (
                                                             <div className="flex flex-wrap gap-1">
