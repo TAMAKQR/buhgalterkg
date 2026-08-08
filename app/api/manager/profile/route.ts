@@ -7,6 +7,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { hasConfiguredPin } from '@/lib/pin';
+import { isStayIncomeNote } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,11 +47,10 @@ export async function GET(request: NextRequest) {
             })
             : [];
 
-        const stayRevenueGroups = shiftIds.length
-            ? await prisma.roomStay.groupBy({
-                by: ['shiftId'],
-                where: { shiftId: { in: shiftIds }, hotelId },
-                _sum: { amountPaid: true, onlinePaid: true }
+        const stayIncomeEntries = shiftIds.length
+            ? await prisma.cashEntry.findMany({
+                where: { shiftId: { in: shiftIds }, hotelId, entryType: LedgerEntryType.CASH_IN },
+                select: { shiftId: true, amount: true, note: true }
             })
             : [];
 
@@ -97,11 +97,9 @@ export async function GET(request: NextRequest) {
         }
 
         const stayRevenueMap = new Map<string, number>();
-        for (const group of stayRevenueGroups) {
-            if (group.shiftId) {
-                const online = group._sum.onlinePaid ?? 0;
-                stayRevenueMap.set(group.shiftId, Math.max((group._sum.amountPaid ?? 0) - online, 0));
-            }
+        for (const entry of stayIncomeEntries) {
+            if (!entry.shiftId || !isStayIncomeNote(entry.note)) continue;
+            stayRevenueMap.set(entry.shiftId, (stayRevenueMap.get(entry.shiftId) ?? 0) + entry.amount);
         }
 
         for (const group of ledgerGroups) {

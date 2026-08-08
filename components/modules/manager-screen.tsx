@@ -3762,7 +3762,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         ) : null}
                                     </div>
                                 ) : (
-                                    <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                    <div className="grid gap-1.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                         {sortedRooms.map((room) => {
                                         const isOccupied = room.status === 'OCCUPIED';
                                         const isOverdue = isOccupied && isPastDate(room.stay?.scheduledCheckOut);
@@ -3800,7 +3800,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             <article
                                                 key={room.id}
                                                 draggable={Boolean(draggableCardStay && canDragStay(draggableCardStay) && !isMovingStay)}
-                                                className={`min-w-0 rounded-xl border bg-[#f9fafb] px-3 py-2.5 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${
+                                                className={`min-w-0 rounded-xl border bg-[#f9fafb] px-2.5 py-2 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.32)] transition hover:border-slate-300 hover:bg-white dark:shadow-none ${
                                                     draggableCardStay && canDragStay(draggableCardStay) ? 'cursor-grab active:cursor-grabbing' : ''
                                                 } ${
                                                     dragTargetRoomId === room.id && draggedStay?.roomId !== room.id
@@ -3840,7 +3840,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     setDragTargetRoomId(null);
                                                 }}
                                             >
-                                                <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start justify-between gap-2">
                                                     <div className="min-w-0">
                                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                                             <span className={`min-w-0 break-words text-base font-bold ${isImmediatelyAvailable ? 'text-emerald-800 dark:text-emerald-100' : 'text-slate-900 dark:text-slate-100'}`}>№ {room.label}</span>
@@ -3863,7 +3863,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                              />
                                                         )}
                                                         </div>
-                                                        {room.floor ? <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{room.floor}</p> : null}
+                                                        {room.floor ? <p className="mt-0.5 truncate text-[10px] leading-tight text-slate-500 dark:text-slate-400">{room.floor}</p> : null}
                                                     </div>
                                                     {isOccupied ? (
                                                         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -3871,7 +3871,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                  type="button"
                                                                  size="icon"
                                                                  variant="secondary"
-                                                                 className="h-8 w-8 rounded-lg"
+                                                                 className="h-7 w-7 rounded-md"
                                                                 disabled={!hasOpenShift || !availableTransferRooms.length}
                                                                 onClick={() => showTransferModal(room)}
                                                                 title="Переселить"
@@ -3883,7 +3883,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                 className="h-8 w-8 rounded-lg"
+                                                                  className="h-7 w-7 rounded-md"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => showExtendModal(room)}
                                                                 title="Продлить"
@@ -3896,7 +3896,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                      type="button"
                                                                      size="icon"
                                                                      variant="secondary"
-                                                                      className="h-8 w-8 rounded-lg"
+                                                                       className="h-7 w-7 rounded-md"
                                                                      onClick={() => showPaymentAdjustModal(room)}
                                                                      title="Исправить суммы"
                                                                      aria-label={`Исправить суммы в номере ${room.label}`}
@@ -3908,7 +3908,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                  type="button"
                                                                  size="icon"
                                                                 variant="ghost"
-                                                                className="h-8 w-8 rounded-lg text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
+                                                                className="h-7 w-7 rounded-md text-rose-600 hover:text-rose-700 dark:text-rose-300/70 dark:hover:text-rose-300"
                                                                 disabled={!hasOpenShift}
                                                                 onClick={() => showCheckoutConfirm(room, guestLabel)}
                                                                 title="Выселить"
@@ -3923,7 +3923,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 w-8 rounded-lg"
+                                                                 className="h-7 w-7 rounded-md"
                                                                 onClick={() => showBookingModal(room)}
                                                                 title="Поставить бронь"
                                                                 aria-label={`Поставить бронь на номер ${room.label}`}
@@ -3934,7 +3934,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="secondary"
-                                                                className="h-8 w-8 rounded-lg"
+                                                                 className="h-7 w-7 rounded-md"
                                                                 disabled={!hasOpenShift || room.status !== 'AVAILABLE'}
                                                                 onClick={() => {
                                                                     if (scheduledBooking && canCheckInBooking) {
@@ -3954,7 +3954,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 {room.stay && (
                                                     <button
                                                         type="button"
-                                                        className={`mt-1 block w-full space-y-1 rounded-xl px-2 py-1.5 text-left text-[11px] leading-snug transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:hover:bg-white/[0.06] ${isOverdue ? 'text-rose-700 dark:text-rose-300' : 'text-slate-600 dark:text-white/45'}`}
+                                                        className={`mt-0.5 block w-full space-y-0.5 rounded-lg px-1.5 py-1 text-left text-[10px] leading-tight transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:hover:bg-white/[0.06] ${isOverdue ? 'text-rose-700 dark:text-rose-300' : 'text-slate-600 dark:text-white/45'}`}
                                                         onClick={() => {
                                                             if (room.stay?.status === 'SCHEDULED') {
                                                                 showBookingDetails(room, room.stay);

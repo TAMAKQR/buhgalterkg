@@ -9,6 +9,7 @@ import { handleApiError } from '@/lib/server/errors';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { calculateBonusFromTiers } from '@/lib/bonus';
 import { convertCashToAccounting, makeDefaultMoneyBreakdown } from '@/lib/currency';
+import { isStayIncomeNote } from '@/lib/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -272,7 +273,7 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    const [assignment, ledgerGroups, bonusTiers, stayRevenue] = await Promise.all([
+                    const [assignment, ledgerGroups, bonusTiers, stayIncomeEntries] = await Promise.all([
                         tx.hotelAssignment.findFirst({
                             where: { hotelId: payload.hotelId, userId: lockedShift.managerId, isActive: true },
                             select: { shiftPayAmount: true, revenueSharePct: true }
@@ -286,9 +287,13 @@ export async function POST(request: NextRequest) {
                             where: { hotelId: payload.hotelId },
                             orderBy: { threshold: 'asc' }
                         }),
-                        tx.roomStay.aggregate({
-                            where: { shiftId: payoutShiftId, hotelId: payload.hotelId },
-                            _sum: { amountPaid: true, onlinePaid: true }
+                        tx.cashEntry.findMany({
+                            where: {
+                                shiftId: payoutShiftId,
+                                hotelId: payload.hotelId,
+                                entryType: LedgerEntryType.CASH_IN,
+                            },
+                            select: { amount: true, note: true }
                         })
                     ]);
 
@@ -298,7 +303,13 @@ export async function POST(request: NextRequest) {
 
                     const cashIn = ledgerGroups.find((group) => group.entryType === LedgerEntryType.CASH_IN)?._sum.amount ?? 0;
                     const payouts = ledgerGroups.find((group) => group.entryType === LedgerEntryType.MANAGER_PAYOUT)?._sum.amount ?? 0;
-                    const settledStayRevenue = Math.max((stayRevenue._sum.amountPaid ?? 0) - (stayRevenue._sum.onlinePaid ?? 0), 0);
+                    // The bonus belongs to the shift in which money was received. This includes
+                    // extensions of stays opened during an earlier shift, but excludes expenses,
+                    // payouts, collections and unrelated cash replenishments.
+                    const settledStayRevenue = stayIncomeEntries.reduce(
+                        (total, entry) => isStayIncomeNote(entry.note) ? total + entry.amount : total,
+                        0
+                    );
                     const shiftBonus = calculateBonusFromTiers(settledStayRevenue, bonusTiers);
                     const payout = calculateManagerPayout({
                         shiftPayAmount: assignment.shiftPayAmount,

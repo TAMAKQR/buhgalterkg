@@ -9,7 +9,7 @@ import { calculateBonusFromTiers } from '@/lib/bonus';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { sanitizeExtranetNames } from '@/lib/stays';
-import { isCollectionLedgerEntry } from '@/lib/ledger';
+import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
 import { hasConfiguredPin } from '@/lib/pin';
 import { httpUrlSchema } from '@/lib/http-url';
 
@@ -544,7 +544,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
             return new NextResponse(`Board range must not exceed ${MAX_BOARD_RANGE_DAYS} days`, { status: 400 });
         }
 
-        const [operationalRoomStays, ledgerGroups, collectionEntries, shiftLedgerGroups, bonusTiers, stayRevenueByShift, pendingOnlineGroups, postpaidCandidateStays, prepaidBookingAggregate, prepaidBookingPreview] = await prisma.$transaction([
+        const [operationalRoomStays, ledgerGroups, collectionEntries, shiftLedgerGroups, bonusTiers, stayIncomeEntriesByShift, pendingOnlineGroups, postpaidCandidateStays, prepaidBookingAggregate, prepaidBookingPreview] = await prisma.$transaction([
             prisma.roomStay.findMany({
                 where: {
                     hotelId,
@@ -594,15 +594,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                 orderBy: { threshold: 'asc' },
                 select: { id: true, threshold: true, bonus: true, bonusPct: true }
             }),
-            prisma.roomStay.groupBy({
-                by: ['shiftId'],
-                orderBy: { shiftId: 'asc' },
+            prisma.cashEntry.findMany({
                 where: {
                     hotelId,
                     shiftId: { in: visibleShiftIds },
-                    status: { in: [StayStatus.CHECKED_IN, StayStatus.CHECKED_OUT] }
+                    entryType: LedgerEntryType.CASH_IN,
                 },
-                _sum: { amountPaid: true, onlinePaid: true }
+                select: { shiftId: true, amount: true, note: true },
             }),
             prisma.roomStay.groupBy({
                 by: ['shiftId'],
@@ -735,11 +733,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
         const shiftStayRevenue = new Map<string, number>();
         const shiftPendingOnline = new Map<string, number>();
-        for (const group of stayRevenueByShift) {
+        for (const entry of stayIncomeEntriesByShift) {
+            if (!entry.shiftId || !isStayIncomeNote(entry.note)) continue;
+            shiftStayRevenue.set(entry.shiftId, (shiftStayRevenue.get(entry.shiftId) ?? 0) + entry.amount);
+        }
+        for (const group of pendingOnlineGroups) {
             if (group.shiftId) {
-                const online = group._sum?.onlinePaid ?? 0;
-                shiftStayRevenue.set(group.shiftId, Math.max((group._sum?.amountPaid ?? 0) - online, 0));
-                shiftPendingOnline.set(group.shiftId, online);
+                shiftPendingOnline.set(group.shiftId, group._sum?.onlinePaid ?? 0);
             }
         }
 
