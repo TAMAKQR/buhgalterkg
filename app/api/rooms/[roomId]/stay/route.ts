@@ -128,6 +128,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             return new NextResponse('Оплата на сайте отключена для этого объекта', { status: 403 });
         }
 
+        if (
+            payload.cashCurrency === 'USD' &&
+            (payload.cashOriginalAmount ?? 0) <= 0 &&
+            ((payload.cardAmount ?? 0) > 0 || (payload.onlineAmount ?? 0) > 0)
+        ) {
+            return new NextResponse(
+                'USD и курс относятся только к наличным. Укажите сумму долларов в поле «Наличные» или выберите валюту отеля',
+                { status: 400 }
+            );
+        }
+
         const guestProfile = payload.guestProfileId
             ? await prisma.guestProfile.findUnique({
                 where: { id: payload.guestProfileId },

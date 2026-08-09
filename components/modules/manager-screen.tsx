@@ -2885,6 +2885,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             setCheckInError('Укажите курс для оплаты в долларах');
             return;
         }
+        if (
+            checkInModal.cashCurrency === 'USD' &&
+            cashValue <= 0 &&
+            (cardValue > 0 || onlineValue > 0)
+        ) {
+            setCheckInError(`USD и курс относятся только к полю «Наличные». Введите сумму долларов в поле «Наличные» или выберите ${hotelCur}.`);
+            return;
+        }
 
         if (hasModalBookingSource && !bookingNumber) {
             setCheckInError('Укажите номер бронирования');
@@ -5402,7 +5410,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             {showPaymentInputsInModal ? (
                                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-5 [&>*]:min-w-0">
                                                     <div>
-                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'book' ? 'Предоплата нал' : checkInModal.mode === 'extend' ? 'Доплата нал' : 'Наличные'}</label>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash">{checkInModal.mode === 'book' ? 'Предоплата наличными' : checkInModal.mode === 'extend' ? 'Доплата наличными' : 'Наличные'}</label>
                                                         <Input
                                                             id="modal-cash"
                                                             type="number"
@@ -5419,7 +5427,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-currency">Валюта</label>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-currency">Валюта наличных</label>
                                                         <Select
                                                             id="modal-cash-currency"
                                                             value={checkInModal.cashCurrency}
@@ -5435,7 +5443,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                     {checkInModal.cashCurrency === 'USD' ? (
                                                         <div>
-                                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-rate">Курс</label>
+                                                            <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-cash-rate">Курс 1 USD → {hotelCur}</label>
                                                             <Input
                                                                 id="modal-cash-rate"
                                                                 type="number"
@@ -5487,6 +5495,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             disabled={!canUseOnlinePayments}
                                                         />
                                                     </div>}
+                                                    {checkInModal.cashCurrency === 'USD' ? (
+                                                        <div className="rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-[11px] text-cyan-100 sm:col-span-5">
+                                                            {Number(checkInModal.cashAmount || 0) > 0 && Number(checkInModal.cashExchangeRate || 0) > 0
+                                                                ? <>Наличные: {formatCurrencyAmount(toMinor(Number(checkInModal.cashAmount)), 'USD')} × {Number(checkInModal.cashExchangeRate)} = {formatKgs(toMinor(convertCashMajorToAccountingMajor(Number(checkInModal.cashAmount), 'USD', Number(checkInModal.cashExchangeRate))))}</>
+                                                                : <>Курс применяется только к сумме в поле «Наличные». Безнал и оплата на сайте всегда вводятся в {hotelCur}.</>}
+                                                        </div>
+                                                    ) : null}
                                                 </div>
                                             ) : null}
                                         </>
@@ -5559,18 +5574,29 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     </div>
                                     <div className="flex items-start justify-between gap-3 border-t border-slate-200 pt-3 dark:border-white/[0.08]">
                                         <span className="text-xs text-slate-500 dark:text-white/45">Оплата</span>
-                                        <span className="text-right text-sm font-semibold text-emerald-600 dark:text-emerald-300">
-                                            {formatKgs(
-                                                checkInModal.existingPaid
-                                                + toMinor(convertCashMajorToAccountingMajor(
-                                                    Number(checkInModal.cashAmount || 0),
-                                                    checkInModal.cashCurrency,
-                                                    Number(checkInModal.cashExchangeRate || 0)
-                                                ))
-                                                + toMinor(Number(checkInModal.cardAmount || 0))
-                                                + toMinor(Number(checkInModal.onlineAmount || 0))
-                                            )}
-                                        </span>
+                                        <div className="text-right text-xs">
+                                            {Number(checkInModal.cashAmount || 0) > 0 ? (
+                                                <p className="text-slate-600 dark:text-white/60">
+                                                    Наличные: {checkInModal.cashCurrency === 'USD'
+                                                        ? <>{formatCurrencyAmount(toMinor(Number(checkInModal.cashAmount)), 'USD')} × {Number(checkInModal.cashExchangeRate || 0)} = {formatKgs(toMinor(convertCashMajorToAccountingMajor(Number(checkInModal.cashAmount), 'USD', Number(checkInModal.cashExchangeRate || 0))))}</>
+                                                        : formatKgs(toMinor(Number(checkInModal.cashAmount)))}
+                                                </p>
+                                            ) : null}
+                                            {Number(checkInModal.cardAmount || 0) > 0 ? <p className="text-slate-600 dark:text-white/60">Безнал: {formatKgs(toMinor(Number(checkInModal.cardAmount)))}</p> : null}
+                                            {Number(checkInModal.onlineAmount || 0) > 0 ? <p className="text-slate-600 dark:text-white/60">На сайте: {formatKgs(toMinor(Number(checkInModal.onlineAmount)))}</p> : null}
+                                            <p className="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                                                Итого: {formatKgs(
+                                                    checkInModal.existingPaid
+                                                    + toMinor(convertCashMajorToAccountingMajor(
+                                                        Number(checkInModal.cashAmount || 0),
+                                                        checkInModal.cashCurrency,
+                                                        Number(checkInModal.cashExchangeRate || 0)
+                                                    ))
+                                                    + toMinor(Number(checkInModal.cardAmount || 0))
+                                                    + toMinor(Number(checkInModal.onlineAmount || 0))
+                                                )}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
 
