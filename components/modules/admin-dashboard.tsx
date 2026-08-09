@@ -44,6 +44,7 @@ import { Input, TextArea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { ExelySyncPanel } from "@/components/modules/exely-sync-panel";
 
 type PaymentSplit = {
     cash: number;
@@ -3577,7 +3578,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                 <div className="rounded-xl border border-slate-200/80 px-4 dark:border-white/[0.06]">
                                                     <ToggleRow title="Использовать экстранеты" description="Показывать источники внешних площадок в бронированиях и отчетах." name="usesExtranets" checked={editForm.usesExtranets} onChange={handleEditFieldChange} disabled={isUpdatingHotel} />
                                                 </div>
-                                                {editForm.usesExtranets ? <div className="max-w-xl rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-white/[0.06] dark:bg-white/[0.025]">
+                                                 {editForm.usesExtranets ? <div className="max-w-xl rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-white/[0.06] dark:bg-white/[0.025]">
                                                     <Field label="Список экстранетов" htmlFor="edit-extranetNames" hint="По одному в строке">
                                                         <TextArea
                                                             id="edit-extranetNames"
@@ -3589,8 +3590,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                             disabled={!selectedHotelId || isUpdatingHotel}
                                                         />
                                                     </Field>
-                                                </div> : null}
-                                            </SettingsGroup>
+                                                 </div> : null}
+                                                 {selectedHotelId ? <ExelySyncPanel hotelId={selectedHotelId} country={country} /> : null}
+                                             </SettingsGroup>
                                             ) : null}
                                             {manageSection === "finance" ? (
                                             <SettingsGroup>

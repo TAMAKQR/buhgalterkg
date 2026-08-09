@@ -70,6 +70,8 @@ model Hotel {
   roomCostCategories RoomCostCategory[]
   plannedCostItems  HotelPlannedCostItem[]
   employees         HotelEmployee[]
+  exelyConnection   ExelyConnection?
+  exelyReservationRooms ExelyReservationRoom[]
 }
 
 model HotelEmployee {
@@ -335,12 +337,55 @@ model RoomStay {
   room              Room           @relation("RoomStayHistory", fields: [roomId], references: [id])
   shift             Shift?         @relation(fields: [shiftId], references: [id])
   transfers         StayTransfer[]
+  exelyReservationRoom ExelyReservationRoom?
 
   @@index([hotelId, groupRef])
   @@index([guestProfileId])
   @@index([roomId, status, scheduledCheckIn, scheduledCheckOut])
   @@index([hotelId, status, scheduledCheckIn])
   @@index([shiftId])
+}
+
+model ExelyConnection {
+  id                    String   @id @default(cuid())
+  hotelId               String   @unique @map("hotel_id")
+  isEnabled             Boolean  @default(false) @map("is_enabled")
+  propertyId            String   @map("property_id")
+  clientId              String   @map("client_id")
+  clientSecretEncrypted String   @db.Text @map("client_secret_encrypted")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  hotel                 Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@map("exely_connections")
+}
+
+model ExelyReservationRoom {
+  id                 String    @id @default(cuid())
+  hotelId            String    @map("hotel_id")
+  bookingNumber      String    @map("booking_number")
+  roomStayIndex      String    @map("room_stay_index")
+  bookingStatus      String    @map("booking_status")
+  guestName          String?   @map("guest_name")
+  source             String?
+  roomTypeId         String?   @map("room_type_id")
+  roomTypeName       String?   @map("room_type_name")
+  scheduledCheckIn   DateTime  @map("scheduled_check_in")
+  scheduledCheckOut  DateTime  @map("scheduled_check_out")
+  currencyCode       String?   @map("currency_code")
+  totalAmount        Decimal?  @db.Decimal(18, 2) @map("total_amount")
+  prepaidAmount      Decimal?  @db.Decimal(18, 2) @map("prepaid_amount")
+  assignedStayId     String?   @unique @map("assigned_stay_id")
+  lastSyncedAt       DateTime  @default(now()) @map("last_synced_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  hotel              Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  assignedStay       RoomStay? @relation(fields: [assignedStayId], references: [id], onDelete: SetNull)
+
+  @@unique([hotelId, bookingNumber, roomStayIndex])
+  @@index([hotelId, bookingStatus, scheduledCheckIn])
+  @@index([hotelId, assignedStayId])
+  @@map("exely_reservation_rooms")
 }
 
 model StayTransfer {

@@ -31,7 +31,7 @@ import {
     type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, QrCode, RotateCw, Search, Sparkles, Users, WalletCards } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, PanelLeftClose, PanelLeftOpen, Pencil, QrCode, Search, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -396,8 +396,7 @@ type PanelKey = 'rooms' | 'shift' | 'cash' | 'history';
 type RoomViewMode = 'cards' | 'board';
 type BoardListPopupKind = 'scheduled' | 'checkedIn' | 'overdue' | 'freeDates';
 
-const managerBoardDayCount = 14;
-const managerBoardMaxOffset = managerBoardDayCount * 26;
+const managerBoardMaxOffset = 364;
 
 const getRoomStays = (room: ManagerStateResponse['rooms'][number]) => {
     const secondaryStays = room.stays ?? [];
@@ -588,7 +587,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [isDesktopSidebarExpanded, setIsDesktopSidebarExpanded] = useState(false);
     const [roomViewMode, setRoomViewMode] = useState<RoomViewMode>('cards');
     const [collapsedBoardSections, setCollapsedBoardSections] = useState<Record<string, boolean>>({});
-    const [isBoardPortraitPhone, setIsBoardPortraitPhone] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [selectedShiftId, setSelectedShiftId] = useState<string>('');
     const [historyStatus, setHistoryStatus] = useState<'ALL' | 'OPEN' | 'CLOSED'>('ALL');
@@ -627,6 +625,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [cancelBookingError, setCancelBookingError] = useState<string | null>(null);
     const [updatingCleaningRoomId, setUpdatingCleaningRoomId] = useState<string | null>(null);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
+    const [boardStayActions, setBoardStayActions] = useState<{ room: ManagerStateResponse['rooms'][number]; guestName: string } | null>(null);
+    const [boardScale, setBoardScale] = useState<'fit' | 'compact' | 'medium' | 'wide'>('fit');
+    const managerBoardDayCount = boardScale === 'compact' ? 28 : boardScale === 'medium' ? 18 : boardScale === 'wide' ? 14 : 21;
+    const roomBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const saved = window.localStorage.getItem('ops-board-scale');
+        if (saved === 'fit' || saved === 'compact' || saved === 'medium' || saved === 'wide') setBoardScale(saved);
+    }, []);
     const [draggedStay, setDraggedStay] = useState<{ roomId: string; stay: ManagerRoomStay } | null>(null);
     const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
     const [isMovingStay, setIsMovingStay] = useState(false);
@@ -639,44 +646,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         setRoomViewMode('board');
         setBoardDayAction(null);
         setBoardListPopup(null);
-
-        if (typeof document !== 'undefined' && !document.fullscreenElement) {
-            void document.documentElement.requestFullscreen?.().catch(() => undefined);
-        }
     }, []);
-
-    const closeBoardView = useCallback(() => {
-        setRoomViewMode('cards');
-        setBoardDayAction(null);
-        setBoardListPopup(null);
-
-        if (typeof document !== 'undefined' && document.fullscreenElement) {
-            void document.exitFullscreen?.().catch(() => undefined);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (roomViewMode !== 'board' || typeof window === 'undefined') {
-            setIsBoardPortraitPhone(false);
-            return;
-        }
-
-        const previousOverflow = document.body.style.overflow;
-        const updateOrientationHint = () => {
-            setIsBoardPortraitPhone(window.innerWidth < 768 && window.innerHeight > window.innerWidth);
-        };
-
-        document.body.style.overflow = 'hidden';
-        updateOrientationHint();
-        window.addEventListener('resize', updateOrientationHint);
-        window.addEventListener('orientationchange', updateOrientationHint);
-
-        return () => {
-            document.body.style.overflow = previousOverflow;
-            window.removeEventListener('resize', updateOrientationHint);
-            window.removeEventListener('orientationchange', updateOrientationHint);
-        };
-    }, [roomViewMode]);
 
     useEffect(() => {
         clearLegacyManagerOfflineData();
@@ -1220,12 +1190,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
         const firstDay = addDays(hotelToday, roomBoardStartOffset);
         return Array.from({ length: managerBoardDayCount }, (_, index) => addDays(firstDay, index));
-    }, [hotelTodayKey, hotelTz, roomBoardStartOffset]);
+    }, [hotelTodayKey, hotelTz, managerBoardDayCount, roomBoardStartOffset]);
 
     const roomBoardRange = useMemo(() => {
         const start = roomBoardDays[0] ?? startOfLocalDay(new Date());
         return { start, end: addDays(start, managerBoardDayCount) };
-    }, [roomBoardDays]);
+    }, [managerBoardDayCount, roomBoardDays]);
 
     const roomBoardRows = useMemo(() => {
         const rangeStart = roomBoardRange.start.getTime();
@@ -1291,7 +1261,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [canUseMealPlan, formatKgs, hotelTz, roomBoardRange, sortedRooms]);
+    }, [canUseMealPlan, formatKgs, hotelTz, managerBoardDayCount, roomBoardRange, sortedRooms]);
 
     const roomBoardSections = useMemo(() => {
         const sections = new Map<string, {
@@ -1318,7 +1288,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return Array.from(sections.values());
     }, [roomBoardRows]);
 
-    const boardGridTemplate = `82px repeat(${managerBoardDayCount}, minmax(118px, 1fr))`;
+    const boardDayWidth = boardScale === 'compact' ? 52 : boardScale === 'medium' ? 84 : 118;
+    const boardGridTemplate = boardScale === 'fit'
+        ? `160px repeat(${managerBoardDayCount}, minmax(60px, 1fr))`
+        : `160px repeat(${managerBoardDayCount}, minmax(${boardDayWidth}px, 1fr))`;
+    const boardContentWidth = boardScale === 'fit'
+        ? '100%'
+        : `${160 + managerBoardDayCount * boardDayWidth}px`;
 
     const boardStayListItems = useMemo(() => {
         return roomBoardRows.flatMap((row) =>
@@ -1384,7 +1360,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
             return gaps;
         });
-    }, [roomBoardRange.start, roomBoardRows]);
+    }, [managerBoardDayCount, roomBoardRange.start, roomBoardRows]);
 
     const toggleBoardSection = (key: string) => {
         setCollapsedBoardSections((current) => ({
@@ -3432,7 +3408,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 className={`inline-flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-center leading-tight transition break-words [overflow-wrap:anywhere] ${roomViewMode === 'board' ? 'bg-slate-200/95 text-slate-900 shadow-sm dark:bg-slate-700/70 dark:text-slate-100' : 'hover:text-slate-800 dark:hover:text-slate-200'}`}
                                                 onClick={openBoardView}
                                             >
-                                                <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
                                                 Шахматка
                                             </button>
                                         </div>
@@ -3504,20 +3479,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     ) : null}
                                 </div>
                                 {roomViewMode === 'board' ? (
-                                    <div className="fixed inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[#f4f6f8] p-3 text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
-                                        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 pb-3 dark:border-white/[0.07]">
-                                            <div className="min-w-0">
-                                                <p className="truncate text-xs text-slate-500 dark:text-white/40">{primaryHotel.name}</p>
-                                                <h2 className="mt-0.5 text-lg font-semibold text-slate-900 dark:text-white">Шахматка</h2>
-                                            </div>
-                                            <div className="flex shrink-0 items-center gap-3">
-                                                <p className="hidden text-xs text-slate-500 dark:text-white/40 sm:block">{formatBoardDay(roomBoardRange.start, hotelTz)} — {formatBoardDay(addDays(roomBoardRange.end, -1), hotelTz)}</p>
-                                                <Button type="button" size="icon" variant="secondary" className="h-9 w-9" onClick={closeBoardView} title="Закрыть шахматку" aria-label="Закрыть шахматку">
-                                                    <Minimize2 className="h-4 w-4" aria-hidden="true" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                                    <div className="rounded-xl border border-slate-200/80 bg-[#f4f6f8] p-3 text-slate-800 dark:border-white/[0.07] dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
+                                        <div className="sticky top-0 z-40 -mx-1 bg-[#f4f6f8]/95 px-1 backdrop-blur-md dark:bg-[#0c0f13]/95">
+                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-slate-200/80 py-2 dark:border-white/[0.07]">
                                             <div className="flex flex-wrap gap-1.5">
                                                 <button
                                                     type="button"
@@ -3548,7 +3512,23 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
                                                 </button>
                                             </div>
-                                            <div className="flex items-center gap-2">
+                                             <div className="flex items-center gap-2">
+                                                <select
+                                                    value={boardScale}
+                                                    onChange={(event) => {
+                                                        const value = event.target.value as 'fit' | 'compact' | 'medium' | 'wide';
+                                                        setBoardScale(value);
+                                                        window.localStorage.setItem('ops-board-scale', value);
+                                                    }}
+                                                    className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none dark:border-white/15 dark:bg-white/[0.04] dark:text-white/75"
+                                                    title="Масштаб шахматки"
+                                                    aria-label="Масштаб шахматки"
+                                                >
+                                                    <option value="fit">По ширине</option>
+                                                    <option value="compact">Компактно</option>
+                                                    <option value="medium">Средне</option>
+                                                    <option value="wide">Широко</option>
+                                                </select>
                                                 <Button
                                                     type="button"
                                                     size="sm"
@@ -3580,21 +3560,32 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </Button>
                                             </div>
                                         </div>
-                                        <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]">
-                                            <div className="scrollbar-none h-full overflow-auto bg-transparent overscroll-contain">
-                                                <div className="w-max min-w-full">
-                                                    <div
-                                                        className="sticky top-0 z-30 grid border-y border-slate-200 bg-light-bg text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 dark:border-white/[0.06] dark:bg-night dark:text-white/55"
-                                                        style={{ gridTemplateColumns: boardGridTemplate }}
-                                                    >
-                                                        <div className="sticky left-0 z-40 border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night">Номер</div>
-                                                        {roomBoardDays.map((day) => (
-                                                            <div key={`manager-board-day-${day.toISOString()}`} className="border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
-                                                                <p>{formatBoardDay(day, hotelTz)}</p>
-                                                                <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                        <div ref={roomBoardHeaderScrollRef} className="overflow-x-hidden rounded-t-xl border-x border-t border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]">
+                                            <div className="min-w-full" style={{ width: boardContentWidth }}>
+                                                <div
+                                                    className="grid border-y border-slate-200 bg-light-bg text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 dark:border-white/[0.06] dark:bg-night dark:text-white/55"
+                                                    style={{ gridTemplateColumns: boardGridTemplate }}
+                                                >
+                                                    <div className="sticky left-0 z-40 border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night">Номер</div>
+                                                    {roomBoardDays.map((day) => (
+                                                        <div key={`manager-board-day-${day.toISOString()}`} className="border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
+                                                            <p>{formatBoardDay(day, hotelTz)}</p>
+                                                            <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        </div>
+                                        <div
+                                            className="relative overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]"
+                                            onScroll={(event) => {
+                                                if (roomBoardHeaderScrollRef.current) {
+                                                    roomBoardHeaderScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+                                                }
+                                            }}
+                                        >
+                                            <div className="min-w-full" style={{ width: boardContentWidth }}>
                                                     {roomBoardSections.map((section) => {
                                                         const isCollapsed = Boolean(collapsedBoardSections[section.key]);
                                                         return (
@@ -3624,14 +3615,14 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 {!isCollapsed && section.rows.map(({ room, items, laneCount }) => (
                                                                     <div
                                                                         key={`manager-board-room-${room.id}`}
-                                                                        className={`grid min-h-[56px] border-b border-slate-200/80 transition dark:border-white/[0.05] ${
+                                                                        className={`grid min-h-[36px] border-b border-slate-200/80 transition dark:border-white/[0.05] ${
                                                                             dragTargetRoomId === room.id && draggedStay?.roomId !== room.id
                                                                                 ? 'bg-cyan-100/70 ring-2 ring-inset ring-cyan-400/35 dark:bg-cyan-400/10'
                                                                                 : ''
                                                                         }`}
                                                                         style={{
                                                                             gridTemplateColumns: boardGridTemplate,
-                                                                            gridTemplateRows: `repeat(${laneCount}, minmax(52px, auto))`
+                                                                            gridTemplateRows: `repeat(${laneCount}, minmax(34px, auto))`
                                                                         }}
                                                                         onDragOver={(event) => {
                                                                             if (!draggedStay || draggedStay.roomId === room.id) return;
@@ -3649,12 +3640,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                             void handleStayDrop(room.id);
                                                                         }}
                                                                     >
-                                                                        <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night" style={{ gridRow: `1 / span ${laneCount}` }}>
-                                                                            <div className="min-w-0">
-                                                                                <p className="truncate text-sm font-semibold text-light-text dark:text-white">№ {room.label}</p>
-                                                                                {room.floor ? <p className="truncate text-[11px] text-slate-500 dark:text-white/35">{room.floor}</p> : null}
-                                                                                {room.status === 'DIRTY' ? <p className="text-[10px] font-medium text-rose-500 dark:text-rose-300/70">Ожидает уборки</p> : null}
-                                                                                {room.status === 'OCCUPIED' ? <p className="text-[10px] font-medium text-amber-600 dark:text-amber-300/70">Сейчас занят</p> : null}
+                                                                        <div className="sticky left-0 z-20 flex items-center border-r border-slate-200 bg-light-bg px-3 py-1 dark:border-white/[0.06] dark:bg-night" style={{ gridRow: `1 / span ${laneCount}` }}>
+                                                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                                                <p className="truncate text-sm font-semibold text-light-text dark:text-white" title={`№ ${room.label}`}>№ {room.label}</p>
+                                                                                {room.floor ? <span className="shrink-0 text-[10px] text-slate-400 dark:text-white/30">{room.floor}</span> : null}
+                                                                                {room.status === 'DIRTY' ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Ожидает уборки"><span className="sr-only">Ожидает уборки</span></span> : null}
+                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
                                                                             </div>
                                                                         </div>
                                                                         {roomBoardDays.map((day, dayIndex) => {
@@ -3693,7 +3684,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 key={`manager-board-stay-${item.stay.id}`}
                                                                                 type="button"
                                                                                 draggable={canDragStay(item.stay) && !isMovingStay}
-                                                                                className={`relative z-10 m-1 min-w-0 overflow-hidden rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm ${
+                                                                                className={`relative z-10 m-0.5 min-w-0 overflow-hidden rounded-md border px-2 py-0.5 text-left text-[11px] leading-tight shadow-sm ${
                                                                                     canDragStay(item.stay) ? 'cursor-grab active:cursor-grabbing' : ''
                                                                                 } ${draggedStay?.stay.id === item.stay.id ? 'opacity-45' : ''} ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
@@ -3713,11 +3704,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 }}
                                                                                  onClick={() => {
                                                                                      if (item.stay.status === 'CHECKED_IN') {
-                                                                                         if (canEditBookings) {
-                                                                                             showEditStayModal(room, item.stay);
-                                                                                         } else {
-                                                                                             showExtendModal(room);
-                                                                                         }
+                                                                                         setBoardStayActions({ room, guestName: item.guestLabel });
                                                                                      } else {
                                                                                          showBookingDetails(room, item.stay);
                                                                                      }
@@ -3727,15 +3714,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                     <span className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/20 transition-[width]" style={{ width: `${item.progressPct}%` }} />
                                                                                 ) : null}
                                                                                 <span className="relative block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className="relative mt-1 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
+                                                                                <span className="relative mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
                                                                                     <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
                                                                                     <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
                                                                                 </span>
-                                                                                {item.stay.status === 'CHECKED_IN' ? (
-                                                                                    <span className="relative mt-1 block truncate text-[10px] opacity-75">Прожито {item.elapsedDays} дн. · осталось {item.remainingDays} дн.</span>
-                                                                                ) : (
-                                                                                    <span className={`relative mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabel(item.stay.status)}</span>
-                                                                                )}
                                                                             </button>
                                                                         ))}
                                                                     </div>
@@ -3743,23 +3725,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             </div>
                                                         );
                                                     })}
-                                                </div>
                                             </div>
                                             <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-slate-300/70 dark:bg-white/15" />
                                             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-slate-300/70 dark:bg-white/15" />
                                         </div>
-                                        {isBoardPortraitPhone ? (
-                                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0c0f13]/96 px-6 text-center text-white backdrop-blur-sm">
-                                                <div className="max-w-xs">
-                                                    <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-blue-300">
-                                                        <RotateCw className="h-6 w-6" aria-hidden="true" />
-                                                    </span>
-                                                    <h3 className="mt-4 text-lg font-semibold">Поверните телефон</h3>
-                                                    <p className="mt-2 text-sm leading-relaxed text-white/55">Для шахматки нужен горизонтальный экран — так будут видны номера, даты и брони.</p>
-                                                    <Button type="button" variant="secondary" className="mt-5 w-full" onClick={closeBoardView}>Вернуться к карточкам</Button>
-                                                </div>
-                                            </div>
-                                        ) : null}
                                     </div>
                                 ) : (
                                     <div className="grid gap-1.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -6151,6 +6120,61 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     />
 
                     {/* Checkout confirmation modal */}
+                    {boardStayActions && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm" onMouseDown={() => setBoardStayActions(null)}>
+                            <Card className="w-full max-w-sm space-y-4 p-5 text-light-text dark:text-white" onMouseDown={(event) => event.stopPropagation()}>
+                                <div>
+                                    <p className="text-base font-semibold">Действия с проживанием</p>
+                                    <p className="mt-1 text-sm text-slate-500 dark:text-white/50">№ {boardStayActions.room.label} · {boardStayActions.guestName}</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        className="gap-2"
+                                        disabled={!hasOpenShift}
+                                        onClick={() => {
+                                            const room = boardStayActions.room;
+                                            setBoardStayActions(null);
+                                            showExtendModal(room);
+                                        }}
+                                    >
+                                        <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                                        Продлить
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="danger"
+                                        className="gap-2"
+                                        disabled={!hasOpenShift}
+                                        onClick={() => {
+                                            const { room, guestName } = boardStayActions;
+                                            setBoardStayActions(null);
+                                            showCheckoutConfirm(room, guestName);
+                                        }}
+                                    >
+                                        <LogOut className="h-4 w-4" aria-hidden="true" />
+                                        Выселить
+                                    </Button>
+                                </div>
+                                {canEditBookings ? (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="w-full"
+                                        onClick={() => {
+                                            const { room } = boardStayActions;
+                                            const stay = room.stay;
+                                            setBoardStayActions(null);
+                                            if (stay) showEditStayModal(room, stay);
+                                        }}
+                                    >
+                                        Редактировать проживание
+                                    </Button>
+                                ) : null}
+                            </Card>
+                        </div>
+                    )}
                     {checkoutConfirm && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
                             <Card className="w-full max-w-sm space-y-4 p-5 text-light-text dark:text-white">

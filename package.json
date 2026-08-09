@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "next dev",
+        "dev": "node scripts/run_next_local.mjs dev",
         "build": "prisma generate && next build",
         "postbuild": "node scripts/render_migrate_if_needed.mjs",
         "render:build": "npm run build",

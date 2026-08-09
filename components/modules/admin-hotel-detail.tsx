@@ -436,7 +436,6 @@ const stayHistoryStatusOptions: Array<{ value: StayHistoryStatusFilter; label: s
 ];
 
 const compactStayHistoryLimit = 3;
-const bookingBoardDayCount = 14;
 
 const stayStatusLabels: Record<StayStatusValue, string> = {
     SCHEDULED: 'Запланирован',
@@ -617,16 +616,24 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const { toast } = useToast();
     const { confirm: requestConfirmation, confirmationDialog } = useConfirmDialog();
     const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
+    const [bookingBoardScale, setBookingBoardScale] = useState<'fit' | 'compact' | 'medium' | 'wide'>('fit');
+    const bookingBoardDayCount = bookingBoardScale === 'compact' ? 28 : bookingBoardScale === 'medium' ? 18 : bookingBoardScale === 'wide' ? 14 : 21;
+    const bookingBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
     const [draggedBoardStay, setDraggedBoardStay] = useState<{ roomId: string; stay: RoomStayDetail } | null>(null);
     const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
     const [isMovingBoardStay, setIsMovingBoardStay] = useState(false);
+
+    useEffect(() => {
+        const saved = window.localStorage.getItem('ops-board-scale');
+        if (saved === 'fit' || saved === 'compact' || saved === 'medium' || saved === 'wide') setBookingBoardScale(saved);
+    }, []);
     const boardRequestRange = useMemo(() => {
         const visibleStart = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
         return {
             startAt: addDays(visibleStart, -2).toISOString(),
             endAt: addDays(visibleStart, bookingBoardDayCount + 2).toISOString(),
         };
-    }, [bookingBoardStartOffset]);
+    }, [bookingBoardDayCount, bookingBoardStartOffset]);
 
     const hotelKey = hotelId
         ? `/api/hotels/${hotelId}?view=core&boardStartAt=${encodeURIComponent(boardRequestRange.startAt)}&boardEndAt=${encodeURIComponent(boardRequestRange.endAt)}`
@@ -1220,13 +1227,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
         const firstDay = addDays(hotelToday, bookingBoardStartOffset);
         return Array.from({ length: bookingBoardDayCount }, (_, index) => addDays(firstDay, index));
-    }, [bookingBoardStartOffset, hotelTodayKey, hotelTz]);
+    }, [bookingBoardDayCount, bookingBoardStartOffset, hotelTodayKey, hotelTz]);
 
     const bookingBoardRange = useMemo(() => {
         const start = bookingBoardDays[0] ?? startOfLocalDay(new Date());
         const end = addDays(start, bookingBoardDayCount);
         return { start, end };
-    }, [bookingBoardDays]);
+    }, [bookingBoardDayCount, bookingBoardDays]);
+    const bookingBoardDayWidth = bookingBoardScale === 'compact' ? 52 : bookingBoardScale === 'medium' ? 84 : 118;
+    const bookingBoardGridTemplate = bookingBoardScale === 'fit'
+        ? `160px repeat(${bookingBoardDayCount}, minmax(60px, 1fr))`
+        : `160px repeat(${bookingBoardDayCount}, minmax(${bookingBoardDayWidth}px, 1fr))`;
+    const bookingBoardContentWidth = bookingBoardScale === 'fit'
+        ? '100%'
+        : `${160 + bookingBoardDayCount * bookingBoardDayWidth}px`;
 
     const bookingBoardRows = useMemo(() => {
         const rangeStart = bookingBoardRange.start.getTime();
@@ -1302,7 +1316,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [bookingBoardRange, hotelCur, hotelTz, sortedRooms]);
+    }, [bookingBoardDayCount, bookingBoardRange, hotelCur, hotelTz, sortedRooms]);
 
     const boardStayListItems = useMemo(() => {
         return bookingBoardRows.flatMap((row) =>
@@ -1368,7 +1382,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
             return gaps;
         });
-    }, [bookingBoardRange.start, bookingBoardRows]);
+    }, [bookingBoardDayCount, bookingBoardRange.start, bookingBoardRows]);
 
     const filteredRoomStayHistory = useMemo(() => {
         const query = stayHistoryQuery.trim().toLocaleLowerCase('ru-RU');
@@ -2903,7 +2917,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     onChanged={() => { void mutateHotel(); }}
                 />
 
-                <Card className="space-y-4 p-4 sm:p-5">
+                <Card className="space-y-4 overflow-visible p-4 sm:p-5">
                     <div className="w-full">
                         <CardHeader
                             title="Смены"
@@ -3317,8 +3331,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </div>
                                                 </div>
                                                 {roomOverviewMode === 'board' ? (
-                                                    <div className="mt-3 space-y-3">
-                                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                                                    <div className="mt-3">
+                                                        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md dark:bg-[#10141d]/95">
+                                                        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-slate-200/80 py-2 dark:border-white/[0.07]">
                                                             <div className="flex flex-wrap gap-1.5">
                                                                 <button
                                                                     type="button"
@@ -3349,7 +3364,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
                                                                 </button>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
+                                                             <div className="flex items-center gap-2">
+                                                                <select
+                                                                    value={bookingBoardScale}
+                                                                    onChange={(event) => {
+                                                                        const value = event.target.value as 'fit' | 'compact' | 'medium' | 'wide';
+                                                                        setBookingBoardScale(value);
+                                                                        window.localStorage.setItem('ops-board-scale', value);
+                                                                    }}
+                                                                    className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none dark:border-white/15 dark:bg-white/[0.04] dark:text-white/75"
+                                                                    title="Масштаб шахматки"
+                                                                    aria-label="Масштаб шахматки"
+                                                                >
+                                                                    <option value="fit">По ширине</option>
+                                                                    <option value="compact">Компактно</option>
+                                                                    <option value="medium">Средне</option>
+                                                                    <option value="wide">Широко</option>
+                                                                </select>
                                                                 <Button
                                                                     type="button"
                                                                     size="sm"
@@ -3379,11 +3410,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 </Button>
                                                             </div>
                                                         </div>
-                                                        <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]">
-                                                            <div className="min-w-[1120px]">
+                                                        <div ref={bookingBoardHeaderScrollRef} className="overflow-x-hidden rounded-t-xl border-x border-t border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]">
+                                                            <div className="min-w-full" style={{ width: bookingBoardContentWidth }}>
                                                                 <div
                                                                     className="grid border-b border-slate-200/80 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-white/[0.06] dark:bg-[#151923] dark:text-white/45"
-                                                                    style={{ gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))` }}
+                                                                    style={{ gridTemplateColumns: bookingBoardGridTemplate }}
                                                                 >
                                                                     <div className="sticky left-0 z-20 bg-slate-50 px-3 py-2 dark:bg-[#151923]">Номер</div>
                                                                     {bookingBoardDays.map((day) => (
@@ -3393,17 +3424,29 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         </div>
                                                                     ))}
                                                                 </div>
+                                                            </div>
+                                                        </div>
+                                                        </div>
+                                                        <div
+                                                            className="overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]"
+                                                            onScroll={(event) => {
+                                                                if (bookingBoardHeaderScrollRef.current) {
+                                                                    bookingBoardHeaderScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+                                                                }
+                                                            }}
+                                                        >
+                                                            <div className="min-w-full" style={{ width: bookingBoardContentWidth }}>
                                                                 {bookingBoardRows.map(({ room, items, laneCount }) => (
                                                                     <div
                                                                         key={`booking-board-row-${room.id}`}
-                                                                        className={`grid min-h-[58px] border-b border-slate-200/70 transition last:border-b-0 dark:border-white/[0.05] ${
+                                                                        className={`grid min-h-[36px] border-b border-slate-200/70 transition last:border-b-0 dark:border-white/[0.05] ${
                                                                             dragTargetRoomId === room.id && draggedBoardStay?.roomId !== room.id
                                                                                 ? 'bg-cyan-100/70 ring-2 ring-inset ring-cyan-400/35 dark:bg-cyan-400/10'
                                                                                 : ''
                                                                         }`}
                                                                         style={{
-                                                                            gridTemplateColumns: `104px repeat(${bookingBoardDayCount}, minmax(72px, 1fr))`,
-                                                                            gridTemplateRows: `repeat(${laneCount}, minmax(54px, auto))`
+                                                                            gridTemplateColumns: bookingBoardGridTemplate,
+                                                                            gridTemplateRows: `repeat(${laneCount}, minmax(34px, auto))`
                                                                         }}
                                                                         onDragOver={(event) => {
                                                                             if (!draggedBoardStay || draggedBoardStay.roomId === room.id) return;
@@ -3421,12 +3464,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             void handleAdminStayDrop(room.id);
                                                                         }}
                                                                     >
-                                                                        <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-200/80 bg-white px-3 py-2 dark:border-white/[0.06] dark:bg-[#10141d]" style={{ gridRow: `1 / span ${laneCount}` }}>
-                                                                            <div className="min-w-0">
-                                                                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</p>
-                                                                                {room.floor ? <p className="truncate text-[11px] text-slate-400 dark:text-white/35">{room.floor}</p> : null}
-                                                                                {room.status === 'DIRTY' ? <p className="text-[10px] font-medium text-rose-500 dark:text-rose-300/70">Ожидает уборки</p> : null}
-                                                                                {room.status === 'OCCUPIED' ? <p className="text-[10px] font-medium text-amber-600 dark:text-amber-300/70">Сейчас занят</p> : null}
+                                                                        <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-200/80 bg-white px-3 py-1 dark:border-white/[0.06] dark:bg-[#10141d]" style={{ gridRow: `1 / span ${laneCount}` }}>
+                                                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-white" title={`№ ${room.label}`}>№ {room.label}</p>
+                                                                                {room.floor ? <span className="shrink-0 text-[10px] text-slate-400 dark:text-white/30">{room.floor}</span> : null}
+                                                                                {room.status === 'DIRTY' ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Ожидает уборки"><span className="sr-only">Ожидает уборки</span></span> : null}
+                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
                                                                             </div>
                                                                         </div>
                                                                         {bookingBoardDays.map((day, dayIndex) => {
@@ -3457,7 +3500,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 key={`booking-board-stay-${item.stay.id}`}
                                                                                 type="button"
                                                                                 draggable={(item.stay.status === 'SCHEDULED' || item.stay.status === 'CHECKED_IN') && !isMovingBoardStay}
-                                                                                className={`relative z-10 m-1 min-w-0 cursor-grab overflow-hidden rounded-xl border px-2 py-1.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
+                                                                                className={`relative z-10 m-0.5 min-w-0 cursor-grab overflow-hidden rounded-md border px-2 py-0.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
                                                                                     draggedBoardStay?.stay.id === item.stay.id ? 'opacity-45' : ''
                                                                                 } ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
                                                                                 style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
@@ -3482,15 +3525,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                     <span className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/20 transition-[width]" style={{ width: `${item.progressPct}%` }} />
                                                                                 ) : null}
                                                                                 <span className="relative block truncate font-semibold">{item.guestLabel}</span>
-                                                                                <span className="relative mt-1 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
+                                                                                <span className="relative mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
                                                                                     <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
                                                                                     <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
                                                                                 </span>
-                                                                                {item.stay.status === 'CHECKED_IN' ? (
-                                                                                    <span className="relative mt-1 block truncate text-[10px] opacity-75">Прожито {item.elapsedDays} дн. · осталось {item.remainingDays} дн.</span>
-                                                                                ) : (
-                                                                                    <span className={`relative mt-0.5 block truncate ${item.stay.tariffPending ? 'font-semibold opacity-95' : 'opacity-80'}`}>{item.detailLabel || stayStatusLabels[item.stay.status]}</span>
-                                                                                )}
                                                                             </button>
                                                                         ))}
                                                                         {!items.length ? (

@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
         const boardOffsetDays = Number.isSafeInteger(requestedBoardOffset)
             ? Math.min(Math.max(requestedBoardOffset, -366), 366)
             : 0;
-        // The client board displays 14 hotel days. One guard day on each side
-        // keeps timezone/DST boundaries safe without loading every future stay.
+        // Compact mode can display up to 28 hotel days. Guard days keep
+        // timezone/DST boundaries safe without loading every future stay.
         const boardRangeStart = new Date(activeBookingCutoff.getTime() + (boardOffsetDays - 1) * 86_400_000);
-        const boardRangeEnd = new Date(activeBookingCutoff.getTime() + (boardOffsetDays + 15) * 86_400_000);
+        const boardRangeEnd = new Date(activeBookingCutoff.getTime() + (boardOffsetDays + 30) * 86_400_000);
 
         const [nearestScheduledRows, hotel, assignment, bonusTiers, shift] = await Promise.all([
             prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`

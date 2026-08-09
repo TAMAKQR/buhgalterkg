@@ -1,6 +1,12 @@
 import { PaymentMethod } from '@prisma/client';
 
-const normalizeComparable = (value: string) => value.trim().toLocaleLowerCase('ru-RU');
+const normalizeComparable = (value: string) => {
+    const normalized = value.trim().toLocaleLowerCase('ru-RU');
+    if (['booking', 'booking.com', 'bgc'].includes(normalized)) return 'booking';
+    if (['ostrovok', 'островок', 'otk'].includes(normalized)) return 'ostrovok';
+    if (['trip.com', 'trip', 'ctp'].includes(normalized)) return 'trip.com';
+    return normalized;
+};
 
 export const sanitizeExtranetNames = (values: Array<string | null | undefined>) => {
     const unique = new Set<string>();
@@ -26,6 +32,9 @@ export const sanitizeExtranetNames = (values: Array<string | null | undefined>) 
 
 export const normalizeBookingSource = (value?: string | null) => {
     const trimmed = value?.trim();
+    if (trimmed?.toLocaleLowerCase('ru-RU') === 'exely pms') {
+        return null;
+    }
     return trimmed ? trimmed.slice(0, 80) : null;
 };
 
