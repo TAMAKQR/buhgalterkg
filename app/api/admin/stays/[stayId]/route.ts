@@ -27,7 +27,7 @@ const updateStaySchema = z
         status: z.nativeEnum(StayStatus).optional(),
         bookingSource: z.string().max(80).optional().nullable(),
         bookingNumber: z.string().max(80).optional().nullable(),
-        totalAmount: z.number().int().positive().optional(),
+        totalAmount: z.number().int().min(0).optional(),
         tariffPending: z.boolean().optional(),
         amountPaid: z.number().int().min(0).optional(),
         cashPaid: z.number().int().min(0).optional(),
@@ -39,6 +39,18 @@ const updateStaySchema = z
         cancellationShiftId: z.string().cuid().optional(),
         mealPlan: z.array(z.enum(['BREAKFAST', 'LUNCH', 'DINNER'])).max(3).optional(),
         notes: z.string().max(500).optional().nullable()
+    })
+    .superRefine((values, context) => {
+        if (values.totalAmount !== undefined && values.totalAmount <= 0 && values.status !== StayStatus.CANCELLED) {
+            context.addIssue({
+                code: z.ZodIssueCode.too_small,
+                minimum: 0,
+                type: 'number',
+                inclusive: false,
+                path: ['totalAmount'],
+                message: 'Общая сумма тарифа должна быть больше 0',
+            });
+        }
     })
     .refine((values) => Object.values(values).some((value) => value !== undefined), {
         message: 'Не переданы поля для обновления'
@@ -196,7 +208,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             updateData.bookingNumber = normalizeOptionalText(payload.bookingNumber);
         }
 
-        if (payload.totalAmount !== undefined) {
+        if (payload.totalAmount !== undefined && payload.totalAmount > 0) {
             updateData.totalAmount = payload.totalAmount;
             updateData.tariffPending = false;
         }

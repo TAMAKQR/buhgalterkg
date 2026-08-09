@@ -2229,7 +2229,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     cardPaid: cardMinor,
                     onlinePaid: onlineMinor,
                     amountPaid: totalMinor,
-                    totalAmount: totalAmountMinor ?? undefined,
+                    totalAmount: totalAmountMinor && totalAmountMinor > 0 ? totalAmountMinor : undefined,
                     paymentMethod: values.paymentMethod === 'AUTO' || values.paymentMethod === 'ONLINE' ? null : values.paymentMethod,
                     shiftId: values.shiftId || null,
                     bookingSource: data?.usesExtranets ? normalizeOptionalText(values.bookingSource) : undefined,
