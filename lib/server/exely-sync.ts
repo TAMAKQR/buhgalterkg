@@ -2,6 +2,7 @@ import { Prisma, StayStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { parseInputValue } from '@/lib/timezone';
 import { decryptIntegrationCredential } from '@/lib/server/integration-credentials';
+import { exelyWebhookPath } from '@/lib/server/exely-webhook-auth';
 
 type ExelySummary = { number: string; status: string };
 type ExelyRoomStay = {
@@ -104,7 +105,7 @@ export async function getExelySyncStatus(hotelId: string) {
     const [connection, total, assigned, unassigned, activeUnassigned, last] = await Promise.all([
         prisma.exelyConnection.findUnique({
             where: { hotelId },
-            select: { isEnabled: true, propertyId: true, clientId: true, updatedAt: true },
+            select: { id: true, isEnabled: true, propertyId: true, clientId: true, updatedAt: true, lastWebhookAt: true, lastWebhookError: true },
         }),
         prisma.exelyReservationRoom.count({ where: { hotelId } }),
         prisma.exelyReservationRoom.count({ where: { hotelId, assignedStayId: { not: null } } }),
@@ -118,6 +119,9 @@ export async function getExelySyncStatus(hotelId: string) {
         propertyId: connection?.propertyId ?? '',
         clientId: connection?.clientId ?? '',
         hasClientSecret: Boolean(connection),
+        webhookPath: connection ? exelyWebhookPath(connection.id) : null,
+        lastWebhookAt: connection?.lastWebhookAt ?? null,
+        lastWebhookError: connection?.lastWebhookError ?? null,
         configuredAt: connection?.updatedAt ?? null,
         total,
         assigned,
@@ -127,7 +131,11 @@ export async function getExelySyncStatus(hotelId: string) {
     };
 }
 
-export async function syncExelyReservations(hotelId: string, since: Date): Promise<ExelySyncResult> {
+export async function syncExelyReservations(
+    hotelId: string,
+    since: Date,
+    options: { useContinueToken?: boolean } = {},
+): Promise<ExelySyncResult> {
     const hotel = await prisma.hotel.findUnique({
         where: { id: hotelId },
         select: {
@@ -137,7 +145,7 @@ export async function syncExelyReservations(hotelId: string, since: Date): Promi
             timezone: true,
             rooms: { where: { isActive: true }, select: { id: true, label: true } },
             exelyConnection: {
-                select: { isEnabled: true, propertyId: true, clientId: true, clientSecretEncrypted: true },
+                select: { id: true, isEnabled: true, propertyId: true, clientId: true, clientSecretEncrypted: true, reservationContinueToken: true },
             },
         },
     });
@@ -155,18 +163,28 @@ export async function syncExelyReservations(hotelId: string, since: Date): Promi
     const token = await getToken(credentials);
     const headers = { authorization: `Bearer ${token}` };
     const summaries: ExelySummary[] = [];
-    let continueToken: string | undefined;
-    do {
+    let continueToken = options.useContinueToken
+        ? hotel.exelyConnection.reservationContinueToken ?? undefined
+        : undefined;
+    let latestContinueToken = continueToken;
+    while (true) {
         const url = new URL(`/api/read-reservation/v1/properties/${propertyId}/bookings`, apiUrl);
-        url.searchParams.set('lastModification', since.toISOString());
         url.searchParams.set('count', '1000');
-        if (continueToken) url.searchParams.set('continueToken', continueToken);
+        if (continueToken) {
+            url.searchParams.set('continueToken', continueToken);
+        } else {
+            url.searchParams.set('lastModification', since.toISOString());
+        }
         const response = await fetchWithTimeout(url, { headers });
         if (!response.ok) throw new Error(`Exely Read Reservation: HTTP ${response.status}`);
         const page = await response.json() as { bookingSummaries?: ExelySummary[]; hasMoreData?: boolean; continueToken?: string };
         summaries.push(...(page.bookingSummaries ?? []));
-        continueToken = page.hasMoreData ? page.continueToken : undefined;
-    } while (continueToken);
+        const responseContinueToken = page.continueToken?.trim() || undefined;
+        if (responseContinueToken) latestContinueToken = responseContinueToken;
+        if (!page.hasMoreData) break;
+        if (!responseContinueToken) throw new Error('Exely не вернул continueToken для следующей страницы');
+        continueToken = responseContinueToken;
+    }
 
     const result: ExelySyncResult = { propertyId, summaries: summaries.length, detailsLoaded: 0, created: 0, updated: 0, cancelled: 0, unassigned: 0, skippedPast: 0, failed: [] };
     const bookings: ExelyBooking[] = [];
@@ -266,5 +284,30 @@ export async function syncExelyReservations(hotelId: string, since: Date): Promi
             result.created += 1;
         }
     }
+
+    // Advance the incremental cursor only after every fetched booking has been
+    // processed. If a detail request failed, the next run must be able to retry it.
+    if (!result.failed.length && latestContinueToken && latestContinueToken !== hotel.exelyConnection.reservationContinueToken) {
+        await prisma.exelyConnection.update({
+            where: { id: hotel.exelyConnection.id },
+            data: { reservationContinueToken: latestContinueToken },
+        });
+    }
     return result;
+}
+
+const activeSyncs = new Map<string, Promise<ExelySyncResult>>();
+
+export function syncExelyReservationsCoalesced(
+    hotelId: string,
+    since: Date,
+    options: { useContinueToken?: boolean } = {},
+) {
+    const active = activeSyncs.get(hotelId);
+    if (active) return active;
+
+    const task = syncExelyReservations(hotelId, since, options)
+        .finally(() => activeSyncs.delete(hotelId));
+    activeSyncs.set(hotelId, task);
+    return task;
 }

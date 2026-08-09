@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Save, Trash2 } from 'lucide-react';
+import { Copy, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -11,6 +11,9 @@ type SyncStatus = {
     propertyId: string;
     clientId: string;
     hasClientSecret: boolean;
+    webhookPath: string | null;
+    lastWebhookAt: string | null;
+    lastWebhookError: string | null;
     configuredAt: string | null;
     total: number;
     assigned: number;
@@ -53,7 +56,9 @@ export function ExelySyncPanel({ hotelId, country }: { hotelId: string; country:
     const [removing, setRemoving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [origin, setOrigin] = useState('');
     const endpoint = `/api/admin/hotels/${hotelId}/exely-sync?country=${encodeURIComponent(country)}`;
+    const webhookUrl = status?.webhookPath && origin ? `${origin}${status.webhookPath}` : '';
 
     const applyStatus = useCallback((payload: SyncStatus) => {
         setStatus(payload);
@@ -67,6 +72,7 @@ export function ExelySyncPanel({ hotelId, country }: { hotelId: string; country:
 
     useEffect(() => {
         let active = true;
+        setOrigin(window.location.origin);
         setStatus(null);
         setForm(emptyForm);
         setResult(null);
@@ -81,6 +87,17 @@ export function ExelySyncPanel({ hotelId, country }: { hotelId: string; country:
             .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Ошибка Exely'); });
         return () => { active = false; };
     }, [applyStatus, endpoint]);
+
+    const copyWebhookUrl = async () => {
+        if (!webhookUrl) return;
+        try {
+            await navigator.clipboard.writeText(webhookUrl);
+            setError(null);
+            setMessage('URL вебхука скопирован. В Exely выберите «Без аутентификации».');
+        } catch {
+            setError('Не удалось скопировать URL. Выделите его вручную.');
+        }
+    };
 
     const saveConnection = async () => {
         setSaving(true);
@@ -229,6 +246,29 @@ export function ExelySyncPanel({ hotelId, country }: { hotelId: string; country:
                     </Button>
                 ) : null}
             </div>
+
+            {status?.configured && status.webhookPath ? (
+                <div className="mt-4 rounded-lg border border-violet-200 bg-white/70 p-3 dark:border-violet-300/10 dark:bg-black/10">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white">Вебхук Exely</p>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-white/55">
+                        В Exely откройте «Вебхуки», вставьте этот URL и выберите «Без аутентификации». Секретный ключ уже находится в адресе.
+                    </p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                        <Input value={webhookUrl || 'Формируем адрес…'} readOnly className="min-w-0 flex-1 font-mono text-[11px]" />
+                        <Button type="button" size="sm" variant="secondary" onClick={copyWebhookUrl} disabled={!webhookUrl} className="gap-2">
+                            <Copy className="h-4 w-4" aria-hidden="true" />
+                            Копировать URL
+                        </Button>
+                    </div>
+                    <p className={`mt-2 text-xs ${status.lastWebhookError ? 'text-rose-700 dark:text-rose-300' : 'text-slate-500 dark:text-white/45'}`}>
+                        {status.lastWebhookError
+                            ? `Последний вебхук получен, но синхронизация завершилась ошибкой: ${status.lastWebhookError}`
+                            : status.lastWebhookAt
+                                ? `Последний вебхук получен: ${new Date(status.lastWebhookAt).toLocaleString('ru-RU')}`
+                                : 'Вебхуки ещё не поступали.'}
+                    </p>
+                </div>
+            ) : null}
 
             {status?.configured ? (
                 <div className="mt-4 grid grid-cols-2 gap-2 border-t border-violet-200/70 pt-3 text-xs sm:grid-cols-4 dark:border-violet-300/10">

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
 import { getCountryFromRequest } from '@/lib/server/request-country';
-import { getExelySyncStatus, syncExelyReservations, verifyExelyCredentials } from '@/lib/server/exely-sync';
+import { getExelySyncStatus, syncExelyReservationsCoalesced, verifyExelyCredentials } from '@/lib/server/exely-sync';
 import { decryptIntegrationCredential, encryptIntegrationCredential } from '@/lib/server/integration-credentials';
 import { handleApiError } from '@/lib/server/errors';
 
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ho
         await assertHotelAccess(request, hotelId);
         const body = bodySchema.parse(await request.json().catch(() => ({})));
         const since = body.since ? new Date(body.since) : new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
-        const result = await syncExelyReservations(hotelId, since);
+        const result = await syncExelyReservationsCoalesced(hotelId, since);
         return NextResponse.json({ result, status: await getExelySyncStatus(hotelId) });
     } catch (error) {
         return handleApiError(error, 'Failed to sync Exely reservations');
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ hot
         const body = connectionSchema.parse(await request.json());
         const existing = await prisma.exelyConnection.findUnique({
             where: { hotelId },
-            select: { clientSecretEncrypted: true },
+            select: { clientSecretEncrypted: true, propertyId: true, clientId: true },
         });
 
         const clientSecret = body.clientSecret
@@ -97,6 +97,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ hot
                 propertyId: body.propertyId,
                 clientId: body.clientId,
                 clientSecretEncrypted,
+                ...((existing?.propertyId !== body.propertyId || existing?.clientId !== body.clientId)
+                    ? { reservationContinueToken: null }
+                    : {}),
             },
         });
 
