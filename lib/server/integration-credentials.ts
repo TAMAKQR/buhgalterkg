@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 
 const VERSION = 'v1';
 const ALGORITHM = 'aes-256-gcm';
@@ -49,14 +49,4 @@ export const decryptIntegrationCredential = (sealedValue: string) => {
     } catch {
         throw new Error('Не удалось расшифровать секрет интеграции');
     }
-};
-
-export const deriveIntegrationToken = (namespace: string, value: string) => createHmac('sha256', getEncryptionKey())
-    .update(`${namespace}:${value}`, 'utf8')
-    .digest('base64url');
-
-export const validateIntegrationToken = (namespace: string, value: string, providedToken: string) => {
-    const expected = Buffer.from(deriveIntegrationToken(namespace, value), 'utf8');
-    const provided = Buffer.from(providedToken, 'utf8');
-    return expected.length === provided.length && timingSafeEqual(expected, provided);
 };

@@ -11,11 +11,12 @@ type RouteContext = { params: Promise<{ connectionId: string; token: string }> }
 
 const findConnection = async (context: RouteContext) => {
     const { connectionId, token } = await context.params;
-    if (!validateExelyWebhookToken(connectionId, token)) return null;
-    return prisma.exelyConnection.findUnique({
+    const connection = await prisma.exelyConnection.findUnique({
         where: { id: connectionId },
-        select: { id: true, hotelId: true, isEnabled: true },
+        select: { id: true, hotelId: true, isEnabled: true, clientSecretEncrypted: true },
     });
+    if (!connection || !validateExelyWebhookToken(connectionId, connection.clientSecretEncrypted, token)) return null;
+    return connection;
 };
 
 const hiddenNotFound = () => new NextResponse('Not found', { status: 404 });

@@ -105,7 +105,7 @@ export async function getExelySyncStatus(hotelId: string) {
     const [connection, total, assigned, unassigned, activeUnassigned, last] = await Promise.all([
         prisma.exelyConnection.findUnique({
             where: { hotelId },
-            select: { id: true, isEnabled: true, propertyId: true, clientId: true, updatedAt: true, lastWebhookAt: true, lastWebhookError: true },
+            select: { id: true, isEnabled: true, propertyId: true, clientId: true, clientSecretEncrypted: true, updatedAt: true, lastWebhookAt: true, lastWebhookError: true },
         }),
         prisma.exelyReservationRoom.count({ where: { hotelId } }),
         prisma.exelyReservationRoom.count({ where: { hotelId, assignedStayId: { not: null } } }),
@@ -119,7 +119,7 @@ export async function getExelySyncStatus(hotelId: string) {
         propertyId: connection?.propertyId ?? '',
         clientId: connection?.clientId ?? '',
         hasClientSecret: Boolean(connection),
-        webhookPath: connection ? exelyWebhookPath(connection.id) : null,
+        webhookPath: connection ? exelyWebhookPath(connection.id, connection.clientSecretEncrypted) : null,
         lastWebhookAt: connection?.lastWebhookAt ?? null,
         lastWebhookError: connection?.lastWebhookError ?? null,
         configuredAt: connection?.updatedAt ?? null,
