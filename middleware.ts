@@ -7,6 +7,7 @@ export function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
     const isApiPath = pathname.startsWith('/api');
     const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method);
+    const isTokenAuthenticatedExelyWebhook = pathname.startsWith('/api/integrations/exely/webhook/');
 
     if (isApiPath && isMutation) {
         const contentLength = request.headers.get('content-length');
@@ -14,25 +15,27 @@ export function middleware(request: NextRequest) {
             return new NextResponse('Request body is too large', { status: 413 });
         }
 
-        const fetchSite = request.headers.get('sec-fetch-site');
-        if (fetchSite === 'cross-site') {
-            return new NextResponse('Cross-site request blocked', { status: 403 });
-        }
+        if (!isTokenAuthenticatedExelyWebhook) {
+            const fetchSite = request.headers.get('sec-fetch-site');
+            if (fetchSite === 'cross-site') {
+                return new NextResponse('Cross-site request blocked', { status: 403 });
+            }
 
-        const origin = request.headers.get('origin');
-        if (origin) {
-            try {
-                const originUrl = new URL(origin);
-                const requestHost = request.headers.get('x-forwarded-host')
-                    ?? request.headers.get('host')
-                    ?? request.nextUrl.host;
-                const requestProtocol = request.headers.get('x-forwarded-proto')
-                    ?? request.nextUrl.protocol.replace(':', '');
-                if (originUrl.host !== requestHost || originUrl.protocol !== `${requestProtocol}:`) {
-                    return new NextResponse('Request origin is not allowed', { status: 403 });
+            const origin = request.headers.get('origin');
+            if (origin) {
+                try {
+                    const originUrl = new URL(origin);
+                    const requestHost = request.headers.get('x-forwarded-host')
+                        ?? request.headers.get('host')
+                        ?? request.nextUrl.host;
+                    const requestProtocol = request.headers.get('x-forwarded-proto')
+                        ?? request.nextUrl.protocol.replace(':', '');
+                    if (originUrl.host !== requestHost || originUrl.protocol !== `${requestProtocol}:`) {
+                        return new NextResponse('Request origin is not allowed', { status: 403 });
+                    }
+                } catch {
+                    return new NextResponse('Invalid request origin', { status: 403 });
                 }
-            } catch {
-                return new NextResponse('Invalid request origin', { status: 403 });
             }
         }
     }
