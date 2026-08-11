@@ -4727,8 +4727,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             >
                                                 <option value="CASH">Наличными</option>
                                                 <option value="CARD">Картой / терминал</option>
-                                                {canUseOnlinePayments && <option value="SITE">Оплачено на сайте</option>}
-                                                {canUseOnlinePayments && <option value="PENDING_TRANSFER">Банковский перевод</option>}
+                                                {canUseOnlinePayments && <option value="SITE">Оплачено на сайте · ожидаем выплату</option>}
+                                                {canUseOnlinePayments && <option value="PENDING_TRANSFER">Банковский перевод · ожидается</option>}
                                                 {canUsePostpaidStays && groupCheckIn.mode === 'checkin' ? (
                                                     <>
                                                         <option value="POSTPAY">Оплата после проживания</option>
@@ -4812,9 +4812,11 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </p>
                                     ) : null}
 
-                                    {groupCheckIn.paymentMode === 'PENDING_TRANSFER' && groupCheckIn.mode === 'checkin' ? (
+                                    {(groupCheckIn.paymentMode === 'SITE' || groupCheckIn.paymentMode === 'PENDING_TRANSFER') && groupCheckIn.mode === 'checkin' ? (
                                         <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-                                            Сумма будет распределена по выбранным номерам как ожидаемая оплата. Когда деньги поступят, внесите оплату в карточке нужного номера.
+                                            {groupCheckIn.paymentMode === 'SITE'
+                                                ? 'Гость оплатил на сайте экстранета, но деньги ещё не поступили от площадки. Сумма не войдёт в кассу и безнал смены до подтверждения выплаты.'
+                                                : 'Сумма будет распределена по выбранным номерам как ожидаемая оплата и не войдёт в кассу смены до подтверждения поступления.'}
                                         </p>
                                     ) : null}
 
@@ -4892,14 +4894,17 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 {isGroupTariffPendingMode ? 'Тариф уточняется' : formatKgs(groupDisplayTotalMinor)}
                                             </p>
                                             <p className="mt-0.5 text-[10px] text-slate-500 dark:text-white/35">
-                                                {{ CASH: 'Наличные', CARD: 'Безналичные', SITE: 'На сайте', PENDING_TRANSFER: 'Перевод ожидается', POSTPAY: 'Постоплата · сейчас без оплаты', POSTPAY_UNKNOWN: 'Постоплата · сейчас без оплаты' }[groupCheckIn.paymentMode]}
+                                                {{ CASH: 'Наличные', CARD: 'Безналичные', SITE: 'Сайт · ожидаем выплату экстранета', PENDING_TRANSFER: 'Перевод ожидается', POSTPAY: 'Постоплата · сейчас без оплаты', POSTPAY_UNKNOWN: 'Постоплата · сейчас без оплаты' }[groupCheckIn.paymentMode]}
                                             </p>
                                         </div>
                                     </div>
                                 </div>
 
                                 <p className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
-                                    После подтверждения {selectedGroupRooms.length} {selectedGroupRooms.length === 1 ? 'номер станет занятым' : 'номера станут занятыми'} и операция попадёт в текущую смену.
+                                    После подтверждения {selectedGroupRooms.length} {selectedGroupRooms.length === 1 ? 'номер станет занятым' : 'номера станут занятыми'}.
+                                    {groupCheckIn.paymentMode === 'SITE' || groupCheckIn.paymentMode === 'PENDING_TRANSFER'
+                                        ? ' Ожидаемая сумма не войдёт в кассу смены до подтверждения поступления.'
+                                        : ' Операция попадёт в текущую смену.'}
                                 </p>
 
                                 <div className="grid grid-cols-2 gap-2">
@@ -5478,7 +5483,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         />
                                                     </div>
                                                     {(canUseOnlinePayments || Number(checkInModal.onlineAmount || 0) > 0) && <div>
-                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'book' ? 'Предоплата сайт' : checkInModal.mode === 'extend' ? 'Доплата сайт' : 'На сайте'}</label>
+                                                        <label className="text-[11px] text-white/40 mb-1 block" htmlFor="modal-online">{checkInModal.mode === 'book' ? 'Оплачено на сайте · ожидаем выплату' : checkInModal.mode === 'extend' ? 'Доплата на сайте · ожидаем выплату' : 'На сайте · ожидаем выплату'}</label>
                                                         <Input
                                                             id="modal-online"
                                                             type="number"
@@ -5583,7 +5588,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </p>
                                             ) : null}
                                             {Number(checkInModal.cardAmount || 0) > 0 ? <p className="text-slate-600 dark:text-white/60">Безнал: {formatKgs(toMinor(Number(checkInModal.cardAmount)))}</p> : null}
-                                            {Number(checkInModal.onlineAmount || 0) > 0 ? <p className="text-slate-600 dark:text-white/60">На сайте: {formatKgs(toMinor(Number(checkInModal.onlineAmount)))}</p> : null}
+                                            {Number(checkInModal.onlineAmount || 0) > 0 ? <p className="text-slate-600 dark:text-white/60">Ожидаем от сайта: {formatKgs(toMinor(Number(checkInModal.onlineAmount)))}</p> : null}
                                             <p className="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-300">
                                                 Итого: {formatKgs(
                                                     checkInModal.existingPaid
@@ -6088,7 +6093,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         />
                                     </div>
                                     {(canUseOnlinePayments || Number(paymentAdjust.onlineAmount || 0) > 0) && <div>
-                                        <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-online">На сайте</label>
+                                        <label className="mb-1 block text-[11px] text-white/40" htmlFor="payment-adjust-online">На сайте · ожидаем выплату</label>
                                         <Input
                                             id="payment-adjust-online"
                                             type="number"

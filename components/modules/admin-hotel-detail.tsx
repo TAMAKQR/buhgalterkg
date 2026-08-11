@@ -89,6 +89,7 @@ interface RoomStayDetail {
     shiftOpenedAt?: string | null;
     shiftClosedAt?: string | null;
     shiftManagerName?: string | null;
+    groupRef?: string | null;
     transfers?: Array<{
         id: string;
         createdAt: string;
@@ -781,6 +782,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isBookingFormOpen, setIsBookingFormOpen] = useState(false);
     const [isCreatingBooking, setIsCreatingBooking] = useState(false);
     const [confirmingOnlineStayId, setConfirmingOnlineStayId] = useState<string | null>(null);
+    const [confirmingBankTransferKey, setConfirmingBankTransferKey] = useState<string | null>(null);
     const [isPendingOnlineHistoryOpen, setIsPendingOnlineHistoryOpen] = useState(false);
     const [isPendingPostpaidHistoryOpen, setIsPendingPostpaidHistoryOpen] = useState(false);
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
@@ -2295,6 +2297,46 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         }
     };
 
+    const handleConfirmBankTransfer = async (stay: PendingPostpaidStayDetail) => {
+        const related = stay.groupRef
+            ? pendingPostpaidHistory.filter((candidate) => candidate.groupRef === stay.groupRef)
+            : [stay];
+        const visibleOutstanding = related.reduce((sum, candidate) => sum + (candidate.pendingPostpaidAmount ?? 0), 0);
+        if (visibleOutstanding <= 0) return;
+        const rawAmount = window.prompt(
+            stay.groupRef ? 'Сумма банковского перевода по всей группе' : 'Сумма банковского перевода',
+            String(visibleOutstanding / 100)
+        );
+        if (rawAmount == null) return;
+        const amount = toMinor(Number(rawAmount.replace(',', '.')));
+        if (!Number.isFinite(amount) || amount <= 0) {
+            toast('Укажите корректную сумму перевода', 'error');
+            return;
+        }
+        const reference = window.prompt('Номер платежа или комментарий банка (необязательно)', '') ?? '';
+        const key = stay.groupRef ?? stay.id;
+        try {
+            setConfirmingBankTransferKey(key);
+            const result = await request<{ outstandingAfter: number }>(`/api/admin/hotels/${hotelId}/bank-transfer`, {
+                method: 'POST',
+                body: {
+                    groupRef: stay.groupRef ?? undefined,
+                    stayId: stay.groupRef ? undefined : stay.id,
+                    amount,
+                    receivedAt: new Date().toISOString(),
+                    reference: reference.trim() || undefined,
+                },
+            });
+            await Promise.all([mutate(), mutatePendingPostpaid()]);
+            toast(result.outstandingAfter > 0 ? `Перевод подтверждён · остаток ${formatCurrency(result.outstandingAfter)}` : 'Банковский перевод подтверждён, постоплата закрыта', 'success');
+        } catch (error) {
+            console.error(error);
+            toast(error instanceof Error ? error.message : 'Не удалось подтвердить банковский перевод', 'error');
+        } finally {
+            setConfirmingBankTransferKey(null);
+        }
+    };
+
     const handleAddManager = managerForm.handleSubmit(async (values) => {
         const shiftPayAmount = toOptionalMinorValue(values.shiftPayAmount);
         const revenueSharePct = normalizePercentage(values.revenueSharePct);
@@ -2787,6 +2829,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         {pendingPostpaidHistory.map((stay) => {
                                             const guestLabel = stay.guestName?.trim() || 'Гость';
                                             const roomForEdit = data.rooms.find((room) => room.id === stay.roomId);
+                                            const confirmationKey = stay.groupRef ?? stay.id;
+                                            const showBankTransferAction = !stay.tariffPending && (
+                                                !stay.groupRef || pendingPostpaidHistory.findIndex((candidate) => candidate.groupRef === stay.groupRef) === pendingPostpaidHistory.indexOf(stay)
+                                            );
                                             const detailLine = [
                                                 stay.companyName?.trim() ? `компания ${stay.companyName.trim()}` : null,
                                                 stay.totalAmount != null ? `тариф ${formatCurrency(stay.totalAmount)}` : 'тариф уточняется',
@@ -2813,6 +2859,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                                                             <span className="text-sm font-semibold text-cyan-800 dark:text-cyan-100">{stay.tariffPending ? 'Сумма неизвестна' : formatCurrency(stay.pendingPostpaidAmount ?? 0)}</span>
+                                                            {showBankTransferAction ? (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    disabled={confirmingBankTransferKey === confirmationKey}
+                                                                    onClick={() => void handleConfirmBankTransfer(stay)}
+                                                                >
+                                                                    {confirmingBankTransferKey === confirmationKey
+                                                                        ? 'Подтверждаем…'
+                                                                        : stay.groupRef ? 'Подтвердить перевод группы' : 'Подтвердить банковский перевод'}
+                                                                </Button>
+                                                            ) : null}
                                                             {roomForEdit ? (
                                                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleSelectStayForEdit(roomForEdit, stay)}>
                                                                     Открыть

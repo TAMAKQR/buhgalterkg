@@ -61,6 +61,7 @@ const roomStayScalarSelect = {
     amountPaid: true,
     totalAmount: true,
     paymentMethod: true,
+    groupRef: true,
     cashPaid: true,
     cardPaid: true,
     onlinePaid: true,

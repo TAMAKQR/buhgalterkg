@@ -22,12 +22,12 @@ const moneyAmountSchema = z.number().int().min(0).max(maxMoneyAmount);
 
 const groupPaymentModeSchema = z.enum(['CASH', 'CARD', 'SITE', 'PENDING_TRANSFER', 'POSTPAY', 'POSTPAY_UNKNOWN']);
 
-const isCardLikePayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
-    paymentMode === 'CARD' || paymentMode === 'SITE'
+const isCardPayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
+    paymentMode === 'CARD'
 );
 
-const groupPaymentNote = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
-    paymentMode === 'SITE' ? ' · сайт' : ''
+const isPendingOnlinePayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
+    paymentMode === 'SITE' || paymentMode === 'PENDING_TRANSFER'
 );
 
 const isPostpaidPayment = (paymentMode: z.infer<typeof groupPaymentModeSchema>) => (
@@ -153,8 +153,8 @@ export async function POST(request: NextRequest) {
         const canEditStayPayments = session.role === UserRole.ADMIN || Boolean(assignmentPermissions?.canEditStayPayments);
 
         if (payload.action === 'confirm-transfer') {
-            if (!canEditStayPayments) {
-                return new NextResponse('Нет права редактировать суммы', { status: 403 });
+            if (session.role !== UserRole.ADMIN) {
+                return new NextResponse('Банковский перевод может подтвердить только администратор', { status: 403 });
             }
 
             const candidateStays = await prisma.roomStay.findMany({
@@ -448,8 +448,8 @@ export async function POST(request: NextRequest) {
                     const portion = isPostpaidPayment(payload.paymentMode) ? 0 : portions[index] ?? 0;
                     const tariffPortion = tariffPortions[index] ?? 0;
                     const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
-                    const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
-                    const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
+                    const cardPaid = isCardPayment(payload.paymentMode) ? portion : 0;
+                    const onlinePaid = isPendingOnlinePayment(payload.paymentMode) ? portion : 0;
                     const tariffPending = payload.paymentMode === 'POSTPAY_UNKNOWN';
                     const paymentMethod = detectStayPaymentMethod({ cashPaid, cardPaid, onlinePaid });
                     const totalAmount = tariffPending ? null : tariffPortion;
@@ -493,7 +493,7 @@ export async function POST(request: NextRequest) {
                 const postsLedger =
                     hasPaymentLedgerDiff &&
                     payload.totalAmount > 0 &&
-                    (payload.paymentMode === 'CASH' || isCardLikePayment(payload.paymentMode));
+                    (payload.paymentMode === 'CASH' || isCardPayment(payload.paymentMode));
                 const lockedLedgerShifts = await lockShiftsForLedgerMutation(
                     tx,
                     [
@@ -586,7 +586,7 @@ export async function POST(request: NextRequest) {
                 const ledgerMethod =
                     payload.paymentMode === 'CASH'
                         ? PaymentMethod.CASH
-                        : isCardLikePayment(payload.paymentMode)
+                        : isCardPayment(payload.paymentMode)
                             ? PaymentMethod.CARD
                             : null;
                 const ledgerEntries: Prisma.CashEntryCreateManyInput[] = [];
@@ -601,7 +601,7 @@ export async function POST(request: NextRequest) {
                             entryType: LedgerEntryType.CASH_IN,
                             method: ledgerMethod,
                             amount: state.portion,
-                            note: `Предоплата группы №${state.stay.room.label}${groupPaymentNote(payload.paymentMode)}`,
+                            note: `Предоплата группы №${state.stay.room.label}`,
                             meta: {
                                 source: 'room_stay',
                                 kind: 'group_booking_prepayment',
@@ -677,7 +677,7 @@ export async function POST(request: NextRequest) {
         const ledgerMethod =
             payload.paymentMode === 'CASH'
                 ? PaymentMethod.CASH
-                : isCardLikePayment(payload.paymentMode)
+                : isCardPayment(payload.paymentMode)
                     ? PaymentMethod.CARD
                     : null;
 
@@ -739,8 +739,8 @@ export async function POST(request: NextRequest) {
                 const portion = isPostpaidPayment(payload.paymentMode) ? 0 : portions[index] ?? 0;
                 const tariffPortion = tariffPortions[index] ?? 0;
                 const cashPaid = payload.paymentMode === 'CASH' ? portion : 0;
-                const cardPaid = isCardLikePayment(payload.paymentMode) ? portion : 0;
-                const onlinePaid = payload.paymentMode === 'PENDING_TRANSFER' ? portion : 0;
+                const cardPaid = isCardPayment(payload.paymentMode) ? portion : 0;
+                const onlinePaid = isPendingOnlinePayment(payload.paymentMode) ? portion : 0;
                 const tariffPending = payload.paymentMode === 'POSTPAY_UNKNOWN';
 
                 const stay = await tx.roomStay.create({
@@ -787,7 +787,7 @@ export async function POST(request: NextRequest) {
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerMethod,
                         amount: portion,
-                        note: `${isGroupBooking ? `Предоплата группы №${room.label}` : `Групповой заезд №${room.label}`}${groupPaymentNote(payload.paymentMode)}`,
+                        note: isGroupBooking ? `Предоплата группы №${room.label}` : `Групповой заезд №${room.label}`,
                         meta: {
                             source: 'room_stay',
                             kind: isGroupBooking ? 'group_booking_prepayment' : 'group_checkin',
