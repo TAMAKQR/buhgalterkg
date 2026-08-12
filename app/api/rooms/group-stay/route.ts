@@ -328,6 +328,7 @@ export async function POST(request: NextRequest) {
                     allowGroupStays: true,
                     allowPostpaidStays: true,
                     allowOnlinePayments: true,
+                    currency: true,
                 },
             }),
         ]);
@@ -787,6 +788,8 @@ export async function POST(request: NextRequest) {
                         entryType: LedgerEntryType.CASH_IN,
                         method: ledgerMethod,
                         amount: portion,
+                        originalAmount: portion,
+                        originalCurrency: hotel.currency,
                         note: isGroupBooking ? `Предоплата группы №${room.label}` : `Групповой заезд №${room.label}`,
                         meta: {
                             source: 'room_stay',
