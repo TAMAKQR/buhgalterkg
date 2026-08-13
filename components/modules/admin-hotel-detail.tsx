@@ -2288,7 +2288,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     hydrateStayEditor(updatedRoom, detail.stay);
                 }
             }
-            toast('Поступление с сайта подтверждено', 'success');
+            toast('Оплата из экстранета подтверждена', 'success');
         } catch (confirmError) {
             console.error(confirmError);
             toast('Не удалось подтвердить поступление', 'error');
@@ -2304,7 +2304,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const visibleOutstanding = related.reduce((sum, candidate) => sum + (candidate.pendingPostpaidAmount ?? 0), 0);
         if (visibleOutstanding <= 0) return;
         const rawAmount = window.prompt(
-            stay.groupRef ? 'Сумма банковского перевода по всей группе' : 'Сумма банковского перевода',
+            stay.groupRef ? 'Сумма перевода от компании по всей группе' : 'Сумма перевода от компании',
             String(visibleOutstanding / 100)
         );
         if (rawAmount == null) return;
@@ -2533,12 +2533,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 valueClass: 'text-slate-900 dark:text-white'
             },
             {
-                label: 'Ожидает сайт',
+                label: 'Экстранеты',
                 value: formatCurrency(selectedShift.pendingOnline ?? 0),
                 valueClass: (selectedShift.pendingOnline ?? 0) > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-900 dark:text-white'
             },
             {
-                label: 'Постоплата',
+                label: 'Компании',
                 value: `${formatCurrency(selectedShift.pendingPostpaid ?? 0)}${selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}`,
                 valueClass: (selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-900 dark:text-white'
             }
@@ -2650,7 +2650,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     disabled={pendingOnlineValue <= 0}
                                                     aria-expanded={isPendingOnlineHistoryOpen}
                                                 >
-                                                    {formatCurrency(pendingOnlineValue)} сайт
+                                                    {formatCurrency(pendingOnlineValue)} экстранеты
                                                 </button>
                                                 {' · '}
                                                 <button
@@ -2660,7 +2660,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     disabled={pendingPostpaidValue <= 0 && tariffPendingCount <= 0}
                                                     aria-expanded={isPendingPostpaidHistoryOpen}
                                                 >
-                                                    {formatCurrency(pendingPostpaidValue)} постоплата{tariffPendingCount > 0 ? ` · ${tariffPendingCount} без тарифа` : ''}
+                                                    {formatCurrency(pendingPostpaidValue)} компании{tariffPendingCount > 0 ? ` · ${tariffPendingCount} без тарифа` : ''}
                                                 </button>
                                             </>
                                         ) : null}
@@ -2730,7 +2730,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Ожидающие поступления</p>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Оплаты из экстранетов</p>
                                         <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineValue)}</p>
                                     </div>
                                     <Button type="button" variant="ghost" size="sm" className="text-amber-700 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-50 dark:hover:bg-amber-300/10 dark:hover:text-white" onClick={() => setIsPendingOnlineHistoryOpen(false)}>
@@ -2762,6 +2762,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <div className="flex flex-wrap items-center gap-2">
                                                                 <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-white/10 dark:text-amber-50">№ {stay.roomLabel}</span>
                                                                 <span className="text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
+                                                                <Badge label="Экстранет" tone="warning" />
                                                                 <Badge label={stayStatusLabels[stay.status]} tone={stayStatusTone[stay.status]} />
                                                             </div>
                                                             <p className="mt-2 text-xs text-amber-700 dark:text-amber-50/70">
@@ -2780,7 +2781,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 disabled={confirmingOnlineStayId === stay.id}
                                                                 onClick={() => handleConfirmOnlinePayment({ id: stay.roomId }, stay)}
                                                             >
-                                                                {confirmingOnlineStayId === stay.id ? 'Подтверждаем...' : 'Подтвердить'}
+                                                                {confirmingOnlineStayId === stay.id ? 'Подтверждаем...' : 'Подтвердить оплату экстранета'}
                                                             </Button>
                                                         </div>
                                                     </div>
@@ -2812,7 +2813,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                             <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-300/20 dark:bg-cyan-400/10 dark:text-cyan-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-900/55 dark:text-cyan-100/60">Постоплата и тарифы на уточнении</p>
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-900/55 dark:text-cyan-100/60">Оплаты от компаний</p>
                                         <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingPostpaidValue)}</p>
                                         {tariffPendingCount > 0 ? <p className="mt-1 text-xs text-cyan-800/70 dark:text-cyan-100/70">{tariffPendingCount} заселений без тарифа</p> : null}
                                     </div>
@@ -2848,7 +2849,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             <div className="flex flex-wrap items-center gap-2">
                                                                 <span className="rounded-lg bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800 dark:bg-white/10 dark:text-cyan-50">№ {stay.roomLabel}</span>
                                                                 <span className="text-sm font-semibold text-slate-950 dark:text-white">{guestLabel}</span>
-                                                                <Badge label={stay.tariffPending ? 'Тариф уточняется' : 'Постоплата'} tone={stay.tariffPending ? 'warning' : 'default'} />
+                                                                <Badge label={stay.tariffPending ? 'Тариф компании уточняется' : 'Компания · постоплата'} tone={stay.tariffPending ? 'warning' : 'default'} />
                                                                 {stay.status === 'CHECKED_OUT' ? <Badge label="Выселен" tone="danger" /> : null}
                                                             </div>
                                                             <p className="mt-2 text-xs text-cyan-700 dark:text-cyan-50/70">
@@ -2868,7 +2869,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 >
                                                                     {confirmingBankTransferKey === confirmationKey
                                                                         ? 'Подтверждаем…'
-                                                                        : stay.groupRef ? 'Подтвердить перевод группы' : 'Подтвердить банковский перевод'}
+                                                                        : stay.groupRef ? 'Подтвердить перевод компании за группу' : 'Подтвердить перевод от компании'}
                                                                 </Button>
                                                             ) : null}
                                                             {roomForEdit ? (
@@ -3142,13 +3143,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
                                                             {(selectedShift.pendingOnline ?? 0) > 0 ? (
                                                                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/15 dark:bg-amber-400/[0.07] dark:text-amber-200">
-                                                                    <span><span className="font-medium">Ожидает сайт</span> · не входит в кассу до подтверждения</span>
+                                                                    <span><span className="font-medium">Оплата из экстранета</span> · не входит в кассу до подтверждения</span>
                                                                     <span className="font-semibold">{formatCurrency(selectedShift.pendingOnline)}</span>
                                                                 </div>
                                                             ) : null}
                                                             {((selectedShift.pendingPostpaid ?? 0) > 0 || (selectedShift.tariffPendingCount ?? 0) > 0) ? (
                                                                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-cyan-200/80 bg-cyan-50/70 px-3 py-2 text-xs text-cyan-800 dark:border-cyan-400/15 dark:bg-cyan-400/[0.07] dark:text-cyan-200">
-                                                                    <span><span className="font-medium">Постоплата</span>{selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}</span>
+                                                                    <span><span className="font-medium">Оплата от компании</span>{selectedShift.tariffPendingCount ? ` · ${selectedShift.tariffPendingCount} без тарифа` : ''}</span>
                                                                     <span className="font-semibold">{formatCurrency(selectedShift.pendingPostpaid ?? 0)}</span>
                                                                 </div>
                                                             ) : null}
@@ -3758,7 +3759,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                             ) : null}
                                                                                             {onlinePortion > 0 && stayEntry.status !== 'CANCELLED' ? (
                                                                                                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-                                                                                                    <span className="font-medium">Ожидает сайт: {formatCurrency(onlinePortion)}</span>
+                                                                                                    <span className="font-medium">Ожидает подтверждения из экстранета: {formatCurrency(onlinePortion)}</span>
                                                                                                     <button
                                                                                                         type="button"
                                                                                                         className="rounded-lg border border-amber-300/80 px-2 py-1 font-semibold transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-300/30 dark:hover:bg-amber-400/10"
@@ -4406,7 +4407,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                             <span className="font-medium">
-                                                Ожидает поступления с сайта: {formatCurrency(selectedStayForEditor?.onlinePaid ?? 0)}
+                                                Ожидает подтверждения оплаты из экстранета: {formatCurrency(selectedStayForEditor?.onlinePaid ?? 0)}
                                             </span>
                                             <Button
                                                 type="button"
