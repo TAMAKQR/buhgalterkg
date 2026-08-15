@@ -302,6 +302,9 @@ const detailQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(MAX_DETAIL_PAGE_SIZE).default(DEFAULT_DETAIL_PAGE_SIZE),
     search: z.string().trim().max(100).optional(),
     status: z.nativeEnum(StayStatus).optional(),
+    source: z.string().trim().max(80).optional(),
+    dateFrom: z.string().datetime().optional(),
+    dateTo: z.string().datetime().optional(),
     boardStartAt: z.string().datetime().optional(),
     boardEndAt: z.string().datetime().optional(),
 }).superRefine((value, context) => {
@@ -313,6 +316,9 @@ const detailQuerySchema = z.object({
     }
     if (Boolean(value.boardStartAt) !== Boolean(value.boardEndAt)) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['boardStartAt'], message: 'Both board dates are required' });
+    }
+    if (value.dateFrom && value.dateTo && new Date(value.dateFrom) > new Date(value.dateTo)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['dateTo'], message: 'dateTo must be after dateFrom' });
     }
 });
 
@@ -465,7 +471,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         }
 
         if (query.view === 'pending') {
-            const pendingWhere: Prisma.RoomStayWhereInput = query.kind === 'online'
+            const basePendingWhere: Prisma.RoomStayWhereInput = query.kind === 'online'
                 ? {
                     hotelId,
                     hotel: { country },
@@ -490,7 +496,35 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                         },
                     ],
                 };
-            const [pendingRows, total] = await prisma.$transaction([
+            const bookingNumberSearch = query.search
+                ?.replace(/^(?:бронь|бронирование|booking)\s*/i, '')
+                .replace(/^[№#]\s*/, '')
+                .trim();
+            const pendingWhere: Prisma.RoomStayWhereInput = {
+                AND: [
+                    basePendingWhere,
+                    ...(query.status ? [{ status: query.status }] : []),
+                    ...(query.source ? [{ bookingSource: { equals: query.source, mode: 'insensitive' as const } }] : []),
+                    ...(query.search
+                        ? [{
+                            OR: [
+                                { guestName: { contains: query.search, mode: 'insensitive' as const } },
+                                { guestPhone: { contains: query.search, mode: 'insensitive' as const } },
+                                { companyName: { contains: query.search, mode: 'insensitive' as const } },
+                                { bookingSource: { contains: query.search, mode: 'insensitive' as const } },
+                                ...(bookingNumberSearch
+                                    ? [{ bookingNumber: { contains: bookingNumberSearch, mode: 'insensitive' as const } }]
+                                    : []),
+                                { notes: { contains: query.search, mode: 'insensitive' as const } },
+                                { room: { label: { contains: query.search, mode: 'insensitive' as const } } },
+                            ],
+                        }]
+                        : []),
+                    ...(query.dateFrom ? [{ scheduledCheckOut: { gte: new Date(query.dateFrom) } }] : []),
+                    ...(query.dateTo ? [{ scheduledCheckIn: { lte: new Date(query.dateTo) } }] : []),
+                ],
+            };
+            const [pendingRows, total, onlineSummary] = await prisma.$transaction([
                 prisma.roomStay.findMany({
                     where: pendingWhere,
                     orderBy: [{ scheduledCheckIn: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
@@ -499,6 +533,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                     select: pendingStaySelect,
                 }),
                 prisma.roomStay.count({ where: pendingWhere }),
+                prisma.roomStay.aggregate({ where: pendingWhere, _sum: { onlinePaid: true } }),
             ]);
             const hasMore = pendingRows.length > query.limit;
             const pageRows = pendingRows.slice(0, query.limit);
@@ -516,6 +551,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                     hasMore,
                     nextCursor: hasMore ? pageRows[pageRows.length - 1]?.id ?? null : null,
                 },
+                summary: query.kind === 'online'
+                    ? { amount: onlineSummary._sum.onlinePaid ?? 0 }
+                    : undefined,
             });
         }
 

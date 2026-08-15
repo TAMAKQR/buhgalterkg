@@ -59,6 +59,9 @@ interface StayHistoryPayload {
 interface PendingStayPayload<TStay extends PendingOnlineStayDetail> {
     stays: TStay[];
     pagination: CursorPagination;
+    summary?: {
+        amount: number;
+    };
 }
 
 interface RoomStayDetail {
@@ -785,6 +788,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [confirmingBankTransferKey, setConfirmingBankTransferKey] = useState<string | null>(null);
     const [isPendingOnlineHistoryOpen, setIsPendingOnlineHistoryOpen] = useState(false);
     const [isPendingPostpaidHistoryOpen, setIsPendingPostpaidHistoryOpen] = useState(false);
+    const [pendingOnlineQuery, setPendingOnlineQuery] = useState('');
+    const [debouncedPendingOnlineQuery, setDebouncedPendingOnlineQuery] = useState('');
+    const [pendingOnlineSource, setPendingOnlineSource] = useState('ALL');
+    const [pendingOnlineStatus, setPendingOnlineStatus] = useState<StayHistoryStatusFilter>('ALL');
+    const [pendingOnlineDateFrom, setPendingOnlineDateFrom] = useState('');
+    const [pendingOnlineDateTo, setPendingOnlineDateTo] = useState('');
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
@@ -1039,6 +1048,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         return () => window.clearTimeout(timer);
     }, [stayHistoryQuery]);
 
+    useEffect(() => {
+        const timer = window.setTimeout(() => setDebouncedPendingOnlineQuery(pendingOnlineQuery.trim()), 300);
+        return () => window.clearTimeout(timer);
+    }, [pendingOnlineQuery]);
+
     const {
         data: stayHistoryPages,
         isLoading: isStayHistoryLoading,
@@ -1075,7 +1089,16 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 return null;
             }
             const cursor = previousPage?.pagination.nextCursor;
-            return `/api/hotels/${hotelId}?view=pending&kind=online&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+            const params = new URLSearchParams({ view: 'pending', kind: 'online', limit: '50' });
+            if (cursor) params.set('cursor', cursor);
+            if (debouncedPendingOnlineQuery) params.set('search', debouncedPendingOnlineQuery);
+            if (pendingOnlineSource !== 'ALL') params.set('source', pendingOnlineSource);
+            if (pendingOnlineStatus !== 'ALL') params.set('status', pendingOnlineStatus);
+            const dateFrom = parseDateOnly(pendingOnlineDateFrom, false, hotelTz);
+            const dateTo = parseDateOnly(pendingOnlineDateTo, true, hotelTz);
+            if (dateFrom) params.set('dateFrom', dateFrom.toISOString());
+            if (dateTo) params.set('dateTo', dateTo.toISOString());
+            return `/api/hotels/${hotelId}?${params.toString()}`;
         },
         (url: string) => get<PendingStayPayload<PendingOnlineStayDetail>>(url),
         { revalidateFirstPage: true }
@@ -1136,6 +1159,23 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const isLoadingMoreStayHistory = isStayHistoryLoading || (stayHistoryPageCount > 0 && Boolean(stayHistoryPages) && typeof stayHistoryPages?.[stayHistoryPageCount - 1] === 'undefined');
     const isLoadingMorePendingOnline = isPendingOnlineLoading || (pendingOnlinePageCount > 0 && Boolean(pendingOnlinePages) && typeof pendingOnlinePages?.[pendingOnlinePageCount - 1] === 'undefined');
     const isLoadingMorePendingPostpaid = isPendingPostpaidLoading || (pendingPostpaidPageCount > 0 && Boolean(pendingPostpaidPages) && typeof pendingPostpaidPages?.[pendingPostpaidPageCount - 1] === 'undefined');
+    const pendingOnlineFilteredTotal = pendingOnlinePages?.[0]?.summary?.amount ?? 0;
+    const pendingOnlineFilteredCount = pendingOnlinePages?.[0]?.pagination.total ?? 0;
+    const pendingOnlineFiltersActive = Boolean(
+        debouncedPendingOnlineQuery
+        || pendingOnlineSource !== 'ALL'
+        || pendingOnlineStatus !== 'ALL'
+        || pendingOnlineDateFrom
+        || pendingOnlineDateTo
+    );
+    const pendingOnlineSources = useMemo(() => Array.from(new Set([
+        ...(data?.extranetNames ?? []),
+        ...pendingOnlineHistory.map((stay) => stay.bookingSource?.trim()).filter((source): source is string => Boolean(source)),
+    ])).sort((left, right) => left.localeCompare(right, 'ru')), [data?.extranetNames, pendingOnlineHistory]);
+
+    useEffect(() => {
+        void setPendingOnlinePageCount(1);
+    }, [debouncedPendingOnlineQuery, pendingOnlineDateFrom, pendingOnlineDateTo, pendingOnlineSource, pendingOnlineStatus, setPendingOnlinePageCount]);
 
     const mutate = useCallback(async () => {
         const [refreshedHotel] = await Promise.all([
@@ -2731,11 +2771,51 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Оплаты из экстранетов</p>
-                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineValue)}</p>
+                                        <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineFiltersActive ? pendingOnlineFilteredTotal : pendingOnlineValue)}</p>
+                                        <p className="mt-1 text-xs text-amber-700/70 dark:text-amber-50/60">
+                                            {pendingOnlineFiltersActive ? `Найдено: ${pendingOnlineFilteredCount}` : `Всего ожидается: ${pendingOnlineFilteredCount}`}
+                                        </p>
                                     </div>
                                     <Button type="button" variant="ghost" size="sm" className="text-amber-700 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-50 dark:hover:bg-amber-300/10 dark:hover:text-white" onClick={() => setIsPendingOnlineHistoryOpen(false)}>
                                         Скрыть
                                     </Button>
+                                </div>
+                                <div className="mt-4 rounded-2xl border border-amber-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-black/15">
+                                    <div className="grid gap-2 lg:grid-cols-2">
+                                        <Input
+                                            value={pendingOnlineQuery}
+                                            onChange={(event) => setPendingOnlineQuery(event.target.value)}
+                                            placeholder="Гость, телефон, компания, № брони или номер комнаты"
+                                            aria-label="Поиск ожидаемых переводов"
+                                        />
+                                        <Select value={pendingOnlineSource} onChange={(event) => setPendingOnlineSource(event.target.value)} aria-label="Источник бронирования">
+                                            <option value="ALL">Все источники бронирования</option>
+                                            {pendingOnlineSources.map((source) => <option key={`pending-source-${source}`} value={source}>{source}</option>)}
+                                        </Select>
+                                    </div>
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-[180px_1fr_1fr_auto]">
+                                        <Select value={pendingOnlineStatus} onChange={(event) => setPendingOnlineStatus(event.target.value as StayHistoryStatusFilter)} aria-label="Статус проживания">
+                                            {stayHistoryStatusOptions.map((option) => <option key={`pending-status-${option.value}`} value={option.value}>{option.label}</option>)}
+                                        </Select>
+                                        <Input type="date" value={pendingOnlineDateFrom} onChange={(event) => setPendingOnlineDateFrom(event.target.value)} aria-label="Заезд с" title="Заезд с" />
+                                        <Input type="date" value={pendingOnlineDateTo} onChange={(event) => setPendingOnlineDateTo(event.target.value)} aria-label="Заезд по" title="Заезд по" />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={!pendingOnlineFiltersActive && !pendingOnlineQuery}
+                                            onClick={() => {
+                                                setPendingOnlineQuery('');
+                                                setPendingOnlineSource('ALL');
+                                                setPendingOnlineStatus('ALL');
+                                                setPendingOnlineDateFrom('');
+                                                setPendingOnlineDateTo('');
+                                            }}
+                                        >
+                                            Сбросить
+                                        </Button>
+                                    </div>
+                                    <p className="mt-2 text-[11px] text-amber-700/65 dark:text-amber-50/50">Период ищет бронирования, которые пересекаются с выбранными датами.</p>
                                 </div>
                                 {isPendingOnlineLoading && !pendingOnlinePages ? (
                                     <p className="mt-4 rounded-2xl border border-amber-200/80 bg-white px-3 py-3 text-sm text-amber-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-amber-50/70">
