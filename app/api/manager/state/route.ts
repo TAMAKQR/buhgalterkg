@@ -180,6 +180,7 @@ export async function GET(request: NextRequest) {
             originalAmount: number | null;
             originalCurrency: string;
             exchangeRate: number | null;
+            meta: Prisma.JsonValue;
             note: string | null;
             category: {
                 id: string;
@@ -211,6 +212,7 @@ export async function GET(request: NextRequest) {
                     originalAmount: true,
                     originalCurrency: true,
                     exchangeRate: true,
+                    meta: true,
                     note: true,
                     expenseCategory: {
                         select: {
@@ -325,6 +327,7 @@ export async function GET(request: NextRequest) {
                 originalAmount: entry.originalAmount,
                 originalCurrency: entry.originalCurrency,
                 exchangeRate: entry.exchangeRate,
+                meta: entry.meta,
                 note: entry.note,
                 category: entry.expenseCategory
                     ? {

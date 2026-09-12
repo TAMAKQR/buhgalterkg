@@ -124,6 +124,7 @@ interface LedgerEntryDetail {
     originalAmount?: number | null;
     originalCurrency?: string | null;
     exchangeRate?: number | null;
+    meta?: Record<string, unknown> | null;
     note?: string | null;
     category?: {
         id: string;
@@ -173,6 +174,26 @@ interface ShiftLedgerPayload {
         nextCursor?: string | null;
     };
 }
+
+type LedgerMethodFilter = 'ALL' | 'CASH' | 'CARD' | 'ONLINE';
+type LedgerKindFilter = 'ALL' | 'PREPAYMENT' | 'POSTPAYMENT' | 'STAY_PAYMENT' | 'EXPENSE' | 'COLLECTION' | 'PAYOUT' | 'ADJUSTMENT';
+
+const ledgerKind = (entry: LedgerEntryDetail): Exclude<LedgerKindFilter, 'ALL'> => {
+    const kind = typeof entry.meta?.kind === 'string' ? entry.meta.kind.toLowerCase() : '';
+    const note = entry.note?.toLowerCase() ?? '';
+    if (kind.includes('postpaid')) return 'POSTPAYMENT';
+    if (kind.includes('prepayment') || note.includes('предоплат')) return 'PREPAYMENT';
+    if (entry.entryType === 'CASH_OUT' && isCollectionLedgerEntry(entry)) return 'COLLECTION';
+    if (entry.entryType === 'CASH_OUT') return 'EXPENSE';
+    if (entry.entryType === 'MANAGER_PAYOUT') return 'PAYOUT';
+    if (entry.entryType === 'ADJUSTMENT') return 'ADJUSTMENT';
+    return 'STAY_PAYMENT';
+};
+
+const ledgerPaymentChannel = (entry: LedgerEntryDetail): Exclude<LedgerMethodFilter, 'ALL'> => {
+    const kind = typeof entry.meta?.kind === 'string' ? entry.meta.kind.toLowerCase() : '';
+    return kind === 'confirm_pending_transfer' || kind.includes('online') ? 'ONLINE' : entry.method;
+};
 
 interface ShiftHistoryEntry {
     id: string;
@@ -1041,6 +1062,20 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const prepaidBookingsCount = data?.prepaidBookings?.count ?? prepaidBookings.length;
 
     const [isTransactionsExpanded, setIsTransactionsExpanded] = useState(false);
+    const [ledgerQuery, setLedgerQuery] = useState('');
+    const [ledgerMethodFilter, setLedgerMethodFilter] = useState<LedgerMethodFilter>('ALL');
+    const [ledgerKindFilter, setLedgerKindFilter] = useState<LedgerKindFilter>('ALL');
+    const filteredShiftTransactions = useMemo(() => {
+        const query = ledgerQuery.trim().toLocaleLowerCase('ru');
+        return selectedShiftTransactions.filter((entry) => {
+            if (ledgerMethodFilter !== 'ALL' && ledgerPaymentChannel(entry) !== ledgerMethodFilter) return false;
+            if (ledgerKindFilter !== 'ALL' && ledgerKind(entry) !== ledgerKindFilter) return false;
+            if (!query) return true;
+            return [entry.note, entry.category?.name, entry.managerName, entry.stay?.guestName,
+                entry.stay?.bookingNumber, entry.stay?.bookingSource, entry.stay?.roomLabel]
+                .filter(Boolean).join(' ').toLocaleLowerCase('ru').includes(query);
+        });
+    }, [ledgerKindFilter, ledgerMethodFilter, ledgerQuery, selectedShiftTransactions]);
     const [isRoomHistoryExpanded, setIsRoomHistoryExpanded] = useState(false);
     const [isDirtyRoomsOpen, setIsDirtyRoomsOpen] = useState(false);
     const [roomOverviewMode, setRoomOverviewMode] = useState<RoomOverviewMode>('board');
@@ -3383,8 +3418,19 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     </Button>
                                                 </div>
                                                 {isTransactionsExpanded ? (
-                                                    <div className="max-h-[420px] divide-y divide-slate-200/70 overflow-y-auto border-t border-slate-200/80 dark:divide-white/[0.06] dark:border-white/[0.07]">
-                                                        {selectedShiftTransactions.map((entry) => {
+                                                    <div className="border-t border-slate-200/80 dark:border-white/[0.07]">
+                                                        <div className="grid gap-2 border-b border-slate-200/70 p-3 sm:grid-cols-[minmax(180px,1fr)_150px_190px] dark:border-white/[0.06]">
+                                                            <Input value={ledgerQuery} onChange={(event) => setLedgerQuery(event.target.value)} placeholder="Гость, бронь, номер..." />
+                                                            <Select value={ledgerMethodFilter} onChange={(event) => setLedgerMethodFilter(event.target.value as LedgerMethodFilter)}>
+                                                                <option value="ALL">Все оплаты</option><option value="CASH">Наличные</option><option value="CARD">Безнал</option><option value="ONLINE">Оплата на сайте / онлайн</option>
+                                                            </Select>
+                                                            <Select value={ledgerKindFilter} onChange={(event) => setLedgerKindFilter(event.target.value as LedgerKindFilter)}>
+                                                                <option value="ALL">Все операции</option><option value="PREPAYMENT">Предоплата</option><option value="POSTPAYMENT">Постоплата</option><option value="STAY_PAYMENT">Оплата проживания</option><option value="EXPENSE">Расход</option><option value="COLLECTION">Инкассация</option><option value="PAYOUT">Выплата</option><option value="ADJUSTMENT">Корректировка</option>
+                                                            </Select>
+                                                        </div>
+                                                        <p className="px-3 py-1.5 text-[11px] text-slate-400">Найдено: {filteredShiftTransactions.length}</p>
+                                                        <div className="max-h-[420px] divide-y divide-slate-200/70 overflow-y-auto dark:divide-white/[0.06]">
+                                                        {filteredShiftTransactions.map((entry) => {
                                                             const note = entry.note?.trim() || null;
                                                             const categoryName = entry.category?.name?.trim() || null;
                                                             const stayDetails = entry.stay ? [
@@ -3400,7 +3446,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         <div className="min-w-0">
                                                                             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                                                                                 <p className="text-xs font-medium text-slate-900 dark:text-white">{ledgerDisplayLabel(entry)}</p>
-                                                                                <span className="text-[11px] text-slate-400 dark:text-white/35">{ledgerMethodLabels[entry.method]}</span>
+                                                                                <span className="text-[11px] text-slate-400 dark:text-white/35">{ledgerPaymentChannel(entry) === 'ONLINE' ? 'онлайн' : ledgerMethodLabels[entry.method]}</span>
                                                                                 {categoryName ? <span className="text-[11px] text-slate-400 dark:text-white/35">· {categoryName}</span> : null}
                                                                             </div>
                                                                             <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/45">
@@ -3426,6 +3472,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 </div>
                                                             );
                                                         })}
+                                                        {!filteredShiftTransactions.length ? <p className="px-3 py-8 text-center text-sm text-slate-400">Операции не найдены</p> : null}
                                                         {hasMoreSelectedShiftTransactions ? (
                                                             <div className="flex justify-center px-3 py-3">
                                                                 <Button
@@ -3439,6 +3486,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 </Button>
                                                             </div>
                                                         ) : null}
+                                                        </div>
                                                     </div>
                                                 ) : null}
                                             </div>

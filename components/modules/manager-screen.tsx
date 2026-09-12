@@ -117,6 +117,7 @@ interface ManagerStateResponse {
         originalAmount?: number | null;
         originalCurrency?: string | null;
         exchangeRate?: number | null;
+        meta?: Record<string, unknown> | null;
         note?: string | null;
         category?: {
             id: string;
@@ -218,6 +219,25 @@ interface ManagerProfileResponse {
 }
 
 type CashCurrencyCode = 'KGS' | 'KZT' | 'USD';
+type LedgerMethodFilter = 'ALL' | 'CASH' | 'CARD' | 'ONLINE';
+type LedgerKindFilter = 'ALL' | 'PREPAYMENT' | 'POSTPAYMENT' | 'STAY_PAYMENT' | 'EXPENSE' | 'COLLECTION' | 'PAYOUT' | 'ADJUSTMENT';
+
+const ledgerKind = (entry: NonNullable<ManagerStateResponse['shiftLedger']>[number]): Exclude<LedgerKindFilter, 'ALL'> => {
+    const kind = typeof entry.meta?.kind === 'string' ? entry.meta.kind.toLowerCase() : '';
+    const note = entry.note?.toLowerCase() ?? '';
+    if (kind.includes('postpaid')) return 'POSTPAYMENT';
+    if (kind.includes('prepayment') || note.includes('предоплат')) return 'PREPAYMENT';
+    if (entry.entryType === 'CASH_OUT' && isCollectionLedgerEntry(entry)) return 'COLLECTION';
+    if (entry.entryType === 'CASH_OUT') return 'EXPENSE';
+    if (entry.entryType === 'MANAGER_PAYOUT') return 'PAYOUT';
+    if (entry.entryType === 'ADJUSTMENT') return 'ADJUSTMENT';
+    return 'STAY_PAYMENT';
+};
+
+const ledgerPaymentChannel = (entry: NonNullable<ManagerStateResponse['shiftLedger']>[number]): Exclude<LedgerMethodFilter, 'ALL'> => {
+    const kind = typeof entry.meta?.kind === 'string' ? entry.meta.kind.toLowerCase() : '';
+    return kind === 'confirm_pending_transfer' || kind.includes('online') ? 'ONLINE' : entry.method;
+};
 
 interface ExpenseForm {
     amount: number;
@@ -602,6 +622,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [historyFromDate, setHistoryFromDate] = useState('');
     const [historyToDate, setHistoryToDate] = useState('');
     const [isCashLedgerOpen, setIsCashLedgerOpen] = useState(false);
+    const [ledgerQuery, setLedgerQuery] = useState('');
+    const [ledgerMethodFilter, setLedgerMethodFilter] = useState<LedgerMethodFilter>('ALL');
+    const [ledgerKindFilter, setLedgerKindFilter] = useState<LedgerKindFilter>('ALL');
     const [boardDayAction, setBoardDayAction] = useState<{
         room: ManagerStateResponse['rooms'][number];
         selectedDay: Date;
@@ -872,7 +895,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const shiftCardValue = shiftBalances?.card ?? computedCardFallback;
     const shiftTotalBalance = shiftBalances?.total ?? shiftCashValue + shiftCardValue;
     const shiftNetIncome = shiftRevenueTotal - shiftExpensesTotal;
-    const shiftLedger = data?.shiftLedger ?? [];
+    const shiftLedger = useMemo(() => data?.shiftLedger ?? [], [data?.shiftLedger]);
+    const filteredShiftLedger = useMemo(() => {
+        const query = ledgerQuery.trim().toLocaleLowerCase('ru');
+        return shiftLedger.filter((entry) => {
+            if (ledgerMethodFilter !== 'ALL' && ledgerPaymentChannel(entry) !== ledgerMethodFilter) return false;
+            if (ledgerKindFilter !== 'ALL' && ledgerKind(entry) !== ledgerKindFilter) return false;
+            if (!query) return true;
+            return [entry.note, entry.category?.name, entry.stay?.guestName, entry.stay?.bookingNumber,
+                entry.stay?.bookingSource, entry.stay?.roomLabel]
+                .filter(Boolean).join(' ').toLocaleLowerCase('ru').includes(query);
+        });
+    }, [ledgerKindFilter, ledgerMethodFilter, ledgerQuery, shiftLedger]);
     const shiftLedgerTruncated = Boolean(data?.shiftLedgerTruncated);
     const shiftCashByCurrency = useMemo(() => data?.shiftCashByCurrency ?? [], [data?.shiftCashByCurrency]);
     const expenseCategories = data?.expenseCategories ?? [];
@@ -4175,16 +4209,27 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </span>
                                         </button>
                                         {isCashLedgerOpen && (
-                                            <div id="cash-ledger-panel" className="divide-y divide-slate-200 dark:divide-white/[0.06]">
-                                                {shiftLedger.length ? (
-                                                    shiftLedger.map((entry) => {
+                                            <div id="cash-ledger-panel">
+                                                <div className="grid gap-2 border-b border-slate-200 py-3 sm:grid-cols-[minmax(160px,1fr)_130px_170px] dark:border-white/[0.06]">
+                                                    <input value={ledgerQuery} onChange={(event) => setLedgerQuery(event.target.value)} placeholder="Гость, бронь, номер..." className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-cyan-400 dark:border-white/10 dark:bg-white/[0.04]" />
+                                                    <select value={ledgerMethodFilter} onChange={(event) => setLedgerMethodFilter(event.target.value as LedgerMethodFilter)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-white/10 dark:bg-[#171b22]">
+                                                        <option value="ALL">Все оплаты</option><option value="CASH">Наличные</option><option value="CARD">Безнал</option><option value="ONLINE">Оплата на сайте / онлайн</option>
+                                                    </select>
+                                                    <select value={ledgerKindFilter} onChange={(event) => setLedgerKindFilter(event.target.value as LedgerKindFilter)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-white/10 dark:bg-[#171b22]">
+                                                        <option value="ALL">Все операции</option><option value="PREPAYMENT">Предоплата</option><option value="POSTPAYMENT">Постоплата</option><option value="STAY_PAYMENT">Оплата проживания</option><option value="EXPENSE">Расход</option><option value="COLLECTION">Инкассация</option><option value="PAYOUT">Выплата</option><option value="ADJUSTMENT">Корректировка</option>
+                                                    </select>
+                                                </div>
+                                                <p className="py-1.5 text-[11px] text-slate-500 dark:text-white/40">Найдено: {filteredShiftLedger.length}</p>
+                                                <div className="divide-y divide-slate-200 dark:divide-white/[0.06]">
+                                                {filteredShiftLedger.length ? (
+                                                    filteredShiftLedger.map((entry) => {
                                                         const timestamp = formatDateTime(entry.recordedAt, hotelTz);
                                                         const isIncomingEntry = ['CASH_IN', 'ADJUSTMENT'].includes(entry.entryType);
                                                         const entrySign = isIncomingEntry ? 1 : -1;
                                                         const signedAmount = isIncomingEntry
                                                             ? entry.amount
                                                             : -entry.amount;
-                                                        const methodLabel = entry.method === 'CARD' ? 'б/н' : 'нал';
+                                                        const methodLabel = ledgerPaymentChannel(entry) === 'ONLINE' ? 'онлайн' : entry.method === 'CARD' ? 'б/н' : 'нал';
                                                         const entryLabel =
                                                             entry.entryType === 'CASH_IN'
                                                                 ? 'Приход'
@@ -4225,8 +4270,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         );
                                                     })
                                                 ) : (
-                                                    <p className="py-2 text-xs text-slate-500 dark:text-white/40">Нет операций.</p>
+                                                    <p className="py-8 text-center text-xs text-slate-500 dark:text-white/40">Операции не найдены.</p>
                                                 )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
