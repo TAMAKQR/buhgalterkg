@@ -2,7 +2,7 @@ export type BookingBoardScale = 'hours' | 'days' | 'weeks' | 'month';
 
 export const BOOKING_BOARD_SCALES: Record<BookingBoardScale, { dayCount: number; dayWidth: number; hourStep: number | null }> = {
     hours: { dayCount: 3, dayWidth: 480, hourStep: 4 },
-    days: { dayCount: 7, dayWidth: 144, hourStep: 6 },
+    days: { dayCount: 7, dayWidth: 180, hourStep: 4 },
     weeks: { dayCount: 14, dayWidth: 84, hourStep: null },
     month: { dayCount: 31, dayWidth: 52, hourStep: null },
 };
@@ -16,19 +16,19 @@ export const normalizeBookingBoardScale = (value: string | null): BookingBoardSc
 
 export const BookingBoardTimeRuler = ({ hourStep }: { hourStep: number | null }) => {
     const hours = hourStep
-        ? Array.from({ length: 25 }, (_, hour) => hour).filter((hour) => hour % hourStep === 0)
-        : [0, 24];
+        ? Array.from({ length: 24 }, (_, hour) => hour).filter((hour) => hour % hourStep === 0)
+        : [0];
 
     return (
-        <div className="pointer-events-none relative mt-1 h-3 border-t border-slate-300/60 dark:border-white/10" aria-hidden="true">
+        <div className="pointer-events-none relative mt-1 h-4 border-t border-slate-300/80 dark:border-white/20" aria-hidden="true">
             {hours.map((hour) => (
                 <span
                     key={hour}
-                    className="absolute top-0 h-1.5 w-px bg-slate-400/60 dark:bg-white/20"
+                    className="absolute top-0 h-2 w-px bg-slate-500/70 dark:bg-white/30"
                     style={{ left: `${(hour / 24) * 100}%` }}
                 >
                     {hourStep ? (
-                        <span className={`${hour === 24 ? '-translate-x-full' : 'translate-x-0.5'} absolute top-0.5 whitespace-nowrap text-[8px] font-normal leading-none text-slate-400 dark:text-white/30`}>
+                        <span className="absolute left-1 top-1 whitespace-nowrap text-[10px] font-semibold leading-none text-slate-600 dark:text-slate-300">
                             {String(hour).padStart(2, '0')}:00
                         </span>
                     ) : null}
@@ -40,8 +40,8 @@ export const BookingBoardTimeRuler = ({ hourStep }: { hourStep: number | null })
 
 export const BookingBoardTimeGuides = () => (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        {[25, 50, 75].map((left) => (
-            <span key={left} className="absolute inset-y-0 w-px bg-slate-300/35 dark:bg-white/[0.035]" style={{ left: `${left}%` }} />
+        {[1, 2, 3, 4, 5].map((step) => (
+            <span key={step} className="absolute inset-y-0 w-px bg-slate-300/35 dark:bg-white/[0.035]" style={{ left: `${(step / 6) * 100}%` }} />
         ))}
     </div>
 );
