@@ -657,6 +657,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const bookingBoardScaleConfig = BOOKING_BOARD_SCALES[bookingBoardScale];
     const bookingBoardDayCount = bookingBoardScaleConfig.dayCount;
     const bookingBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
+    const bookingBoardScrollRef = useRef<HTMLDivElement>(null);
     const [draggedBoardStay, setDraggedBoardStay] = useState<{ roomId: string; stay: RoomStayDetail } | null>(null);
     const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
     const [isMovingBoardStay, setIsMovingBoardStay] = useState(false);
@@ -3606,7 +3607,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     size="sm"
                                                                     variant="ghost"
                                                                     className="border border-slate-200/80 text-slate-600 dark:border-white/15 dark:text-white/80"
-                                                                    onClick={() => setBookingBoardStartOffset(0)}
+                                                                    onClick={() => {
+                                                                        setBookingBoardStartOffset(1);
+                                                                        requestAnimationFrame(() => {
+                                                                            if (bookingBoardScrollRef.current) bookingBoardScrollRef.current.scrollLeft = 0;
+                                                                            if (bookingBoardHeaderScrollRef.current) bookingBoardHeaderScrollRef.current.scrollLeft = 0;
+                                                                        });
+                                                                    }}
                                                                 >
                                                                     Сегодня
                                                                 </Button>
@@ -3640,6 +3647,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         </div>
                                                         <div
+                                                            ref={bookingBoardScrollRef}
                                                             className="relative isolate z-0 overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]"
                                                             onScroll={(event) => {
                                                                 if (bookingBoardHeaderScrollRef.current) {

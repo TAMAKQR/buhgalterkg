@@ -5,7 +5,7 @@ import { getSessionUser } from '@/lib/server/session';
 import { assertHotelOperatorAccess } from '@/lib/permissions';
 import { notifyAdminAboutCheckIn, notifyAdminAboutStayExtension, notifyAdminAboutStayTransfer, notifyCleaningCrew, notifyCleaningCrewAboutCheckIn, notifyCleaningCrewAboutCheckOut } from '@/lib/server/telegram-notify';
 import { buildCleaningRoomSnapshotLines } from '@/lib/server/cleaning-rooms';
-import { CancellationPaymentAction, LedgerEntryType, PaymentMethod, RoomStatus, ShiftStatus, StayStatus, UserRole } from '@prisma/client';
+import { CancellationPaymentAction, LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus, UserRole } from '@prisma/client';
 import { handleApiError, SessionError } from '@/lib/server/errors';
 import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, sumStayPayments } from '@/lib/stays';
 import { formatDateKey } from '@/lib/timezone';
@@ -16,6 +16,12 @@ import { lockShiftsForLedgerMutation } from '@/lib/server/shift-lock';
 
 export const dynamic = 'force-dynamic';
 const BOOKING_TURNOVER_MS = 30 * 60 * 1000;
+const idempotencyKeySchema = z.string().min(16).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
+const ledgerOperationId = (baseKey: string | undefined, index: number) => {
+    if (!baseKey) return undefined;
+    return index === 0 ? baseKey : `${baseKey}:${index}`.slice(0, 128);
+};
 
 const staySchema = z.object({
     shiftId: z.string().cuid().optional(),
@@ -59,11 +65,16 @@ const normalizeOptionalText = (value?: string | null) => {
 };
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ roomId: string }> }) {
+    let idempotencyKey: string | undefined;
     try {
         const { roomId } = await params;
         const body = await request.json();
         const session = await getSessionUser(request);
         const payload = staySchema.parse(body);
+        const rawIdempotencyKey = request.headers.get('idempotency-key')?.trim();
+        idempotencyKey = rawIdempotencyKey
+            ? idempotencyKeySchema.parse(rawIdempotencyKey)
+            : undefined;
 
         const room = await prisma.room.findUnique({
             where: { id: roomId },
@@ -78,6 +89,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         if (session.role === UserRole.OBSERVER) {
             return new NextResponse('Доступ только для просмотра', { status: 403 });
+        }
+
+        if (idempotencyKey) {
+            const existingOperation = await prisma.cashEntry.findUnique({
+                where: { clientOperationId: idempotencyKey },
+                include: { stay: true },
+            });
+            if (existingOperation?.hotelId === room.hotelId && existingOperation.stay) {
+                return NextResponse.json(existingOperation.stay);
+            }
         }
 
         const assignmentPermissions = session.role === UserRole.MANAGER
@@ -294,7 +315,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     { amount: cardAmount, method: PaymentMethod.CARD }
                 ].filter((entry) => entry.amount > 0);
 
-                for (const ledgerEntry of ledgerPayloads) {
+                for (const [index, ledgerEntry] of ledgerPayloads.entries()) {
                     await tx.cashEntry.create({
                         data: {
                             hotelId: room.hotelId,
@@ -307,6 +328,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                             originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
                             originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
                             exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
+                            clientOperationId: ledgerOperationId(idempotencyKey, index),
                             note: `Предоплата №${room.label}`,
                             meta: {
                                 source: 'room_stay',
@@ -747,7 +769,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     { amount: cardAmount, method: PaymentMethod.CARD }
                 ].filter((entry) => entry.amount > 0);
 
-                for (const ledgerEntry of ledgerPayloads) {
+                for (const [index, ledgerEntry] of ledgerPayloads.entries()) {
                     await tx.cashEntry.create({
                         data: {
                             hotelId: room.hotelId,
@@ -760,6 +782,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                             originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
                             originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
                             exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
+                            clientOperationId: ledgerOperationId(idempotencyKey, index),
                             note: `Корректировка оплаты №${room.label}`,
                             recordedAt,
                             meta: {
@@ -1112,7 +1135,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     throw new SessionError('Номер уже занят другой операцией', 409);
                 }
 
-                for (const ledgerEntry of ledgerPayloads) {
+                for (const [index, ledgerEntry] of ledgerPayloads.entries()) {
                     await tx.cashEntry.create({
                         data: {
                             hotelId: room.hotelId,
@@ -1125,6 +1148,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                             originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
                             originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
                             exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
+                            clientOperationId: ledgerOperationId(idempotencyKey, index),
                             note: `Заселение №${room.label}`,
                             meta: {
                                 source: 'room_stay',
@@ -1305,7 +1329,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                     }
                 });
 
-                for (const ledgerEntry of ledgerPayloads) {
+                for (const [index, ledgerEntry] of ledgerPayloads.entries()) {
                     await tx.cashEntry.create({
                         data: {
                             hotelId: room.hotelId,
@@ -1318,6 +1342,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                             originalAmount: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalAmount : ledgerEntry.amount,
                             originalCurrency: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.originalCurrency : room.hotel.currency,
                             exchangeRate: ledgerEntry.method === PaymentMethod.CASH ? cashMoney.exchangeRate : null,
+                            clientOperationId: ledgerOperationId(idempotencyKey, index),
                             note: `Продление №${room.label}`,
                             meta: {
                                 source: 'room_stay',
@@ -1609,6 +1634,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         return NextResponse.json(updatedStay);
     } catch (error) {
+        if (idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            const existingOperation = await prisma.cashEntry.findUnique({
+                where: { clientOperationId: idempotencyKey },
+                include: { stay: true },
+            });
+            if (existingOperation?.stay) {
+                return NextResponse.json(existingOperation.stay);
+            }
+        }
         if (error instanceof z.ZodError) {
             return new NextResponse(error.message, { status: 400 });
         }

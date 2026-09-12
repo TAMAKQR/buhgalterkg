@@ -666,6 +666,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const boardScaleConfig = BOOKING_BOARD_SCALES[boardScale];
     const managerBoardDayCount = boardScaleConfig.dayCount;
     const roomBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
+    const roomBoardScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setBoardScale(normalizeBookingBoardScale(window.localStorage.getItem('ops-board-scale')));
@@ -3595,7 +3596,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     size="sm"
                                                     variant="ghost"
                                                     className="border border-slate-200/80 dark:border-white/15"
-                                                    onClick={() => setRoomBoardStartOffset(0)}
+                                                    onClick={() => {
+                                                        setRoomBoardStartOffset(1);
+                                                        requestAnimationFrame(() => {
+                                                            if (roomBoardScrollRef.current) roomBoardScrollRef.current.scrollLeft = 0;
+                                                            if (roomBoardHeaderScrollRef.current) roomBoardHeaderScrollRef.current.scrollLeft = 0;
+                                                        });
+                                                    }}
                                                 >
                                                     Сегодня
                                                 </Button>
@@ -3630,6 +3637,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                         </div>
                                         <div
+                                            ref={roomBoardScrollRef}
                                             className="relative isolate z-0 overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]"
                                             onScroll={(event) => {
                                                 if (roomBoardHeaderScrollRef.current) {

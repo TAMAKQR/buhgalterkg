@@ -2,7 +2,7 @@ export type BookingBoardScale = 'hours' | 'days' | 'weeks' | 'month';
 
 export const BOOKING_BOARD_SCALES: Record<BookingBoardScale, { dayCount: number; dayWidth: number; hourStep: number | null }> = {
     hours: { dayCount: 3, dayWidth: 480, hourStep: 4 },
-    days: { dayCount: 7, dayWidth: 180, hourStep: 4 },
+    days: { dayCount: 7, dayWidth: 240, hourStep: 4 },
     weeks: { dayCount: 14, dayWidth: 84, hourStep: null },
     month: { dayCount: 31, dayWidth: 52, hourStep: null },
 };
