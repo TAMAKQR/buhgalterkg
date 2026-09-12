@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input, TextArea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { BOOKING_BOARD_SCALES, BookingBoardTimeGuides, BookingBoardTimeRuler, normalizeBookingBoardScale, type BookingBoardScale } from '@/components/ui/booking-board-time-grid';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { SessionUser } from '@/lib/types';
 import { useApi } from '@/hooks/useApi';
@@ -486,6 +487,9 @@ const formatBoardDay = (value: Date, timezone?: string) =>
 const formatBoardWeekday = (value: Date, timezone?: string) =>
     new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: timezone }).format(value).replace('.', '');
 
+const formatBoardTime = (value: Date | string, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone }).format(new Date(value));
+
 const tariffPendingBoardClass = 'border-violet-300/70 bg-violet-500/24 text-violet-50 ring-1 ring-violet-200/25 shadow-violet-950/20';
 
 const boardStatusClass = (status: string, isOverdue = false, tariffPending = false) => {
@@ -658,13 +662,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const [updatingCleaningRoomId, setUpdatingCleaningRoomId] = useState<string | null>(null);
     const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomLabel: string; guestName: string } | null>(null);
     const [boardStayActions, setBoardStayActions] = useState<{ room: ManagerStateResponse['rooms'][number]; guestName: string } | null>(null);
-    const [boardScale, setBoardScale] = useState<'fit' | 'compact' | 'medium' | 'wide'>('fit');
-    const managerBoardDayCount = boardScale === 'compact' ? 28 : boardScale === 'medium' ? 18 : boardScale === 'wide' ? 14 : 21;
+    const [boardScale, setBoardScale] = useState<BookingBoardScale>('weeks');
+    const boardScaleConfig = BOOKING_BOARD_SCALES[boardScale];
+    const managerBoardDayCount = boardScaleConfig.dayCount;
     const roomBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const saved = window.localStorage.getItem('ops-board-scale');
-        if (saved === 'fit' || saved === 'compact' || saved === 'medium' || saved === 'wide') setBoardScale(saved);
+        setBoardScale(normalizeBookingBoardScale(window.localStorage.getItem('ops-board-scale')));
     }, []);
     const [draggedStay, setDraggedStay] = useState<{ roomId: string; stay: ManagerRoomStay } | null>(null);
     const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
@@ -1333,13 +1337,9 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         return Array.from(sections.values());
     }, [roomBoardRows]);
 
-    const boardDayWidth = boardScale === 'compact' ? 52 : boardScale === 'medium' ? 84 : 118;
-    const boardGridTemplate = boardScale === 'fit'
-        ? `160px repeat(${managerBoardDayCount}, minmax(60px, 1fr))`
-        : `160px repeat(${managerBoardDayCount}, minmax(${boardDayWidth}px, 1fr))`;
-    const boardContentWidth = boardScale === 'fit'
-        ? '100%'
-        : `${160 + managerBoardDayCount * boardDayWidth}px`;
+    const boardDayWidth = boardScaleConfig.dayWidth;
+    const boardGridTemplate = `160px repeat(${managerBoardDayCount}, minmax(${boardDayWidth}px, 1fr))`;
+    const boardContentWidth = `${160 + managerBoardDayCount * boardDayWidth}px`;
     const boardNowPct = getTimeOfDayFraction(hotelNow, hotelTz) * 100;
 
     const boardStayListItems = useMemo(() => {
@@ -3567,7 +3567,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <select
                                                     value={boardScale}
                                                     onChange={(event) => {
-                                                        const value = event.target.value as 'fit' | 'compact' | 'medium' | 'wide';
+                                                        const value = event.target.value as BookingBoardScale;
                                                         setBoardScale(value);
                                                         window.localStorage.setItem('ops-board-scale', value);
                                                     }}
@@ -3575,10 +3575,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     title="Масштаб шахматки"
                                                     aria-label="Масштаб шахматки"
                                                 >
-                                                    <option value="fit">По ширине</option>
-                                                    <option value="compact">Компактно</option>
-                                                    <option value="medium">Средне</option>
-                                                    <option value="wide">Широко</option>
+                                                    <option value="hours">Часы · 3 дня</option>
+                                                    <option value="days">Дни · 7 дней</option>
+                                                    <option value="weeks">Недели · 14 дней</option>
+                                                    <option value="month">Месяц · 31 день</option>
                                                 </select>
                                                 <Button
                                                     type="button"
@@ -3622,6 +3622,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         <div key={`manager-board-day-${day.toISOString()}`} className="relative border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
                                                             <p>{formatBoardDay(day, hotelTz)}</p>
                                                             <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
+                                                            <BookingBoardTimeRuler hourStep={boardScaleConfig.hourStep} />
                                                         </div>
                                                     ))}
                                                 </div>
@@ -3724,6 +3725,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                     title={isToday ? `Выбрать действие для № ${room.label}` : `Поставить бронь на № ${room.label}`}
                                                                                     aria-label={isToday ? `Выбрать действие для номера ${room.label}` : `Поставить бронь на номер ${room.label}`}
                                                                                 >
+                                                                                    <BookingBoardTimeGuides />
                                                                                     {isToday ? <span className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-slate-500/45 dark:bg-white/25" style={{ left: `${boardNowPct}%` }} /> : null}
                                                                                     <span className="pointer-events-none absolute left-1/2 top-1/2 hidden h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-cyan-200 bg-white/95 text-sm font-semibold leading-none text-cyan-700 shadow-sm group-hover:flex group-focus-visible:flex dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-100">
                                                                                         +
@@ -3745,7 +3747,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                     marginLeft: `calc(${(item.startPosition / managerBoardDayCount) * 100}% + 2px)`,
                                                                                     width: `max(4px, calc(${((item.endPosition - item.startPosition) / managerBoardDayCount) * 100}% - 4px))`,
                                                                                 }}
-                                                                                title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
+                                                                                title={[item.guestLabel, stayStatusLabel(item.stay.status), `Заезд ${formatDateTime(item.stay.scheduledCheckIn, hotelTz)}`, `Выезд ${formatDateTime(item.stay.scheduledCheckOut, hotelTz)}`, item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
                                                                                 onDragStart={(event) => {
                                                                                     if (!canDragStay(item.stay)) {
                                                                                         event.preventDefault();
@@ -3772,8 +3774,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 ) : null}
                                                                                 <span className="relative block truncate font-semibold">{item.guestLabel}</span>
                                                                                 <span className="relative mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
-                                                                                    <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
-                                                                                    <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
+                                                                                    <span className="truncate">Заезд {formatBoardTime(item.stay.scheduledCheckIn, hotelTz)}</span>
+                                                                                    <span className="shrink-0">Выезд {formatBoardTime(item.stay.scheduledCheckOut, hotelTz)}</span>
                                                                                 </span>
                                                                             </button>
                                                                         ))}

@@ -12,6 +12,7 @@ import { Input, TextArea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
+import { BOOKING_BOARD_SCALES, BookingBoardTimeGuides, BookingBoardTimeRuler, normalizeBookingBoardScale, type BookingBoardScale } from '@/components/ui/booking-board-time-grid';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useApi } from '@/hooks/useApi';
 import { formatDateKey, formatDateTime, formatMoney, getTimeOfDayFraction, parseDateOnly } from '@/lib/timezone';
@@ -631,6 +632,9 @@ const formatBoardDay = (value: Date, timezone?: string) =>
 const formatBoardWeekday = (value: Date, timezone?: string) =>
     new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: timezone }).format(value).replace('.', '');
 
+const formatBoardTime = (value: Date | string, timezone?: string) =>
+    new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone }).format(new Date(value));
+
 const bookingBoardStatusClass: Record<StayStatusValue, string> = {
     SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/12 dark:text-cyan-100',
     CHECKED_IN: 'border-amber-300/70 bg-amber-400/20 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/14 dark:text-amber-100',
@@ -649,16 +653,16 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const { toast } = useToast();
     const { confirm: requestConfirmation, confirmationDialog } = useConfirmDialog();
     const [bookingBoardStartOffset, setBookingBoardStartOffset] = useState(0);
-    const [bookingBoardScale, setBookingBoardScale] = useState<'fit' | 'compact' | 'medium' | 'wide'>('fit');
-    const bookingBoardDayCount = bookingBoardScale === 'compact' ? 28 : bookingBoardScale === 'medium' ? 18 : bookingBoardScale === 'wide' ? 14 : 21;
+    const [bookingBoardScale, setBookingBoardScale] = useState<BookingBoardScale>('weeks');
+    const bookingBoardScaleConfig = BOOKING_BOARD_SCALES[bookingBoardScale];
+    const bookingBoardDayCount = bookingBoardScaleConfig.dayCount;
     const bookingBoardHeaderScrollRef = useRef<HTMLDivElement>(null);
     const [draggedBoardStay, setDraggedBoardStay] = useState<{ roomId: string; stay: RoomStayDetail } | null>(null);
     const [dragTargetRoomId, setDragTargetRoomId] = useState<string | null>(null);
     const [isMovingBoardStay, setIsMovingBoardStay] = useState(false);
 
     useEffect(() => {
-        const saved = window.localStorage.getItem('ops-board-scale');
-        if (saved === 'fit' || saved === 'compact' || saved === 'medium' || saved === 'wide') setBookingBoardScale(saved);
+        setBookingBoardScale(normalizeBookingBoardScale(window.localStorage.getItem('ops-board-scale')));
     }, []);
     const boardRequestRange = useMemo(() => {
         const visibleStart = addDays(startOfLocalDay(new Date()), bookingBoardStartOffset);
@@ -1320,13 +1324,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const end = addDays(start, bookingBoardDayCount);
         return { start, end };
     }, [bookingBoardDayCount, bookingBoardDays]);
-    const bookingBoardDayWidth = bookingBoardScale === 'compact' ? 52 : bookingBoardScale === 'medium' ? 84 : 118;
-    const bookingBoardGridTemplate = bookingBoardScale === 'fit'
-        ? `160px repeat(${bookingBoardDayCount}, minmax(60px, 1fr))`
-        : `160px repeat(${bookingBoardDayCount}, minmax(${bookingBoardDayWidth}px, 1fr))`;
-    const bookingBoardContentWidth = bookingBoardScale === 'fit'
-        ? '100%'
-        : `${160 + bookingBoardDayCount * bookingBoardDayWidth}px`;
+    const bookingBoardDayWidth = bookingBoardScaleConfig.dayWidth;
+    const bookingBoardGridTemplate = `160px repeat(${bookingBoardDayCount}, minmax(${bookingBoardDayWidth}px, 1fr))`;
+    const bookingBoardContentWidth = `${160 + bookingBoardDayCount * bookingBoardDayWidth}px`;
     const bookingBoardNowPct = getTimeOfDayFraction(hotelNow, hotelTz) * 100;
 
     const bookingBoardRows = useMemo(() => {
@@ -3579,7 +3579,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 <select
                                                                     value={bookingBoardScale}
                                                                     onChange={(event) => {
-                                                                        const value = event.target.value as 'fit' | 'compact' | 'medium' | 'wide';
+                                                                        const value = event.target.value as BookingBoardScale;
                                                                         setBookingBoardScale(value);
                                                                         window.localStorage.setItem('ops-board-scale', value);
                                                                     }}
@@ -3587,10 +3587,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                     title="Масштаб шахматки"
                                                                     aria-label="Масштаб шахматки"
                                                                 >
-                                                                    <option value="fit">По ширине</option>
-                                                                    <option value="compact">Компактно</option>
-                                                                    <option value="medium">Средне</option>
-                                                                    <option value="wide">Широко</option>
+                                                                    <option value="hours">Часы · 3 дня</option>
+                                                                    <option value="days">Дни · 7 дней</option>
+                                                                    <option value="weeks">Недели · 14 дней</option>
+                                                                    <option value="month">Месяц · 31 день</option>
                                                                 </select>
                                                                 <Button
                                                                     type="button"
@@ -3632,6 +3632,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         <div key={`board-day-${day.toISOString()}`} className="relative border-l border-slate-200/80 px-2 py-2 text-center dark:border-white/[0.06]">
                                                                             <p>{formatBoardDay(day, hotelTz)}</p>
                                                                             <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
+                                                                            <BookingBoardTimeRuler hourStep={bookingBoardScaleConfig.hourStep} />
                                                                         </div>
                                                                     ))}
                                                                 </div>
@@ -3704,6 +3705,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         void handleAdminStayDrop(room.id, day);
                                                                                     }}
                                                                                 >
+                                                                                    <BookingBoardTimeGuides />
                                                                                     {isToday ? <span className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-slate-500/45 dark:bg-white/25" style={{ left: `${bookingBoardNowPct}%` }} /> : null}
                                                                                 </div>
                                                                             );
@@ -3735,6 +3737,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 title={[
                                                                                     item.guestLabel,
                                                                                     stayStatusLabels[item.stay.status],
+                                                                                    `Заезд ${formatDateTime(item.stay.scheduledCheckIn, hotelTz)}`,
+                                                                                    `Выезд ${formatDateTime(item.stay.scheduledCheckOut, hotelTz)}`,
                                                                                     item.detailLabel,
                                                                                     item.stay.notes?.trim()
                                                                                 ].filter(Boolean).join(' · ')}
@@ -3744,8 +3748,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 ) : null}
                                                                                 <span className="relative block truncate font-semibold">{item.guestLabel}</span>
                                                                                 <span className="relative mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
-                                                                                    <span className="truncate">Заезд {formatBoardDay(new Date(item.stay.scheduledCheckIn), hotelTz)}</span>
-                                                                                    <span className="shrink-0">Выезд {formatBoardDay(new Date(item.stay.scheduledCheckOut), hotelTz)}</span>
+                                                                                    <span className="truncate">Заезд {formatBoardTime(item.stay.scheduledCheckIn, hotelTz)}</span>
+                                                                                    <span className="shrink-0">Выезд {formatBoardTime(item.stay.scheduledCheckOut, hotelTz)}</span>
                                                                                 </span>
                                                                             </button>
                                                                         ))}
