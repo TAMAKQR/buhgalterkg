@@ -12,6 +12,7 @@ import { detectStayPaymentMethod, normalizeBookingSource, resolveBookingSource, 
 import { normalizeMealPlan } from '@/lib/meal-plan';
 
 export const dynamic = 'force-dynamic';
+const BOOKING_TURNOVER_MS = 30 * 60 * 1000;
 
 const createStaySchema = z.object({
     roomId: z.string().cuid(),
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest) {
 
         if (scheduledCheckOut <= scheduledCheckIn) {
             return new NextResponse('Дата выезда должна быть позже даты заезда', { status: 400 });
+        }
+
+        if (scheduledCheckIn.getTime() < Date.now()) {
+            return new NextResponse('Нельзя создать бронь задним числом', { status: 400 });
         }
 
         const room = await prisma.room.findFirst({
@@ -153,14 +158,14 @@ export async function POST(request: NextRequest) {
                 where: {
                     roomId: room.id,
                     status: { in: [StayStatus.SCHEDULED, StayStatus.CHECKED_IN] },
-                    scheduledCheckIn: { lt: scheduledCheckOut },
-                    scheduledCheckOut: { gt: scheduledCheckIn }
+                    scheduledCheckIn: { lt: new Date(scheduledCheckOut.getTime() + BOOKING_TURNOVER_MS) },
+                    scheduledCheckOut: { gt: new Date(scheduledCheckIn.getTime() - BOOKING_TURNOVER_MS) }
                 },
                 select: { id: true }
             });
 
             if (conflictingStay) {
-                throw new SessionError('На эти даты у номера уже есть бронь или проживание', 409);
+                throw new SessionError('Между выездом и следующим заездом должно быть не менее 30 минут', 409);
             }
 
             const createdStay = await tx.roomStay.create({

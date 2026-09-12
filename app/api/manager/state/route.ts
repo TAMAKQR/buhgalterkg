@@ -185,6 +185,14 @@ export async function GET(request: NextRequest) {
                 id: string;
                 name: string;
             } | null;
+            stay: {
+                guestName: string | null;
+                bookingNumber: string | null;
+                bookingSource: string | null;
+                scheduledCheckIn: Date;
+                scheduledCheckOut: Date;
+                roomLabel: string;
+            } | null;
             recordedAt: Date;
         }> = [];
         if (shift) {
@@ -208,6 +216,16 @@ export async function GET(request: NextRequest) {
                         select: {
                             id: true,
                             name: true
+                        }
+                    },
+                    stay: {
+                        select: {
+                            guestName: true,
+                            bookingNumber: true,
+                            bookingSource: true,
+                            scheduledCheckIn: true,
+                            scheduledCheckOut: true,
+                            room: { select: { label: true } }
                         }
                     },
                     recordedAt: true
@@ -314,6 +332,14 @@ export async function GET(request: NextRequest) {
                         name: entry.expenseCategory.name
                     }
                     : null,
+                stay: entry.stay ? {
+                    guestName: entry.stay.guestName,
+                    bookingNumber: entry.stay.bookingNumber,
+                    bookingSource: entry.stay.bookingSource,
+                    scheduledCheckIn: entry.stay.scheduledCheckIn,
+                    scheduledCheckOut: entry.stay.scheduledCheckOut,
+                    roomLabel: entry.stay.room.label
+                } : null,
                 recordedAt: entry.recordedAt
             }));
 

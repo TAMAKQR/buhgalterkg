@@ -133,6 +133,14 @@ interface LedgerEntryDetail {
     managerName?: string | null;
     shiftId?: string | null;
     shiftNumber?: number | null;
+    stay?: {
+        guestName?: string | null;
+        bookingNumber?: string | null;
+        bookingSource?: string | null;
+        scheduledCheckIn: string;
+        scheduledCheckOut: string;
+        roomLabel: string;
+    } | null;
 }
 
 interface ShiftLedgerPayload {
@@ -2066,6 +2074,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     };
 
     const handleOpenBookingForm = (room?: HotelDetailPayload['rooms'][number], startDate?: Date) => {
+        if (startDate && formatDateKey(startDate, hotelTz) < hotelTodayKey) {
+            toast('Нельзя создать бронь задним числом', 'error');
+            return;
+        }
         const checkIn = startDate ? new Date(startDate) : new Date();
         checkIn.setHours(14, 0, 0, 0);
         if (!startDate && checkIn.getTime() <= Date.now()) {
@@ -2099,6 +2111,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
         if (!values.roomId || !scheduledCheckIn || !scheduledCheckOut) {
             toast('Выберите номер и даты брони', 'error');
+            return;
+        }
+
+        if (Date.parse(scheduledCheckIn) < Date.now()) {
+            toast('Нельзя создать бронь задним числом', 'error');
             return;
         }
 
@@ -3370,6 +3387,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {selectedShiftTransactions.map((entry) => {
                                                             const note = entry.note?.trim() || null;
                                                             const categoryName = entry.category?.name?.trim() || null;
+                                                            const stayDetails = entry.stay ? [
+                                                                `№ ${entry.stay.roomLabel}`,
+                                                                entry.stay.guestName?.trim(),
+                                                                entry.stay.bookingNumber?.trim() ? `бронь № ${entry.stay.bookingNumber.trim()}` : null,
+                                                                entry.stay.bookingSource?.trim(),
+                                                                `${formatDateTime(entry.stay.scheduledCheckIn, hotelTz)} — ${formatDateTime(entry.stay.scheduledCheckOut, hotelTz)}`
+                                                            ].filter(Boolean).join(' · ') : null;
                                                             return (
                                                                 <div key={entry.id} className="px-3 py-2.5">
                                                                     <div className="flex items-center justify-between gap-3">
@@ -3382,6 +3406,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/45">
                                                                                 {formatDateTime(entry.recordedAt, hotelTz)} · {entry.managerName ?? 'Система'}{note ? ` · ${note}` : ''}
                                                                             </p>
+                                                                            {stayDetails ? <p className="mt-1 break-words text-[11px] text-slate-600 dark:text-white/60">{stayDetails}</p> : null}
                                                                         </div>
                                                                         <div className="flex shrink-0 items-center gap-2">
                                                                             <p className={`text-sm font-semibold ${ledgerDisplayAmountClass(entry)}`}>{formatLedgerAmount(entry)}</p>

@@ -83,7 +83,17 @@ const ledgerEntrySelect = {
     recordedAt: true,
     expenseCategory: { select: { id: true, name: true } },
     manager: { select: { displayName: true } },
-    shift: { select: { id: true, number: true } }
+    shift: { select: { id: true, number: true } },
+    stay: {
+        select: {
+            guestName: true,
+            bookingNumber: true,
+            bookingSource: true,
+            scheduledCheckIn: true,
+            scheduledCheckOut: true,
+            room: { select: { label: true } }
+        }
+    }
 } satisfies Prisma.CashEntrySelect;
 
 type LedgerEntryRow = Prisma.CashEntryGetPayload<{ select: typeof ledgerEntrySelect }>;
@@ -101,7 +111,15 @@ const serializeLedgerEntry = (entry: LedgerEntryRow) => ({
     recordedAt: entry.recordedAt,
     managerName: entry.manager?.displayName ?? null,
     shiftId: entry.shift?.id ?? null,
-    shiftNumber: entry.shift?.number ?? null
+    shiftNumber: entry.shift?.number ?? null,
+    stay: entry.stay ? {
+        guestName: entry.stay.guestName,
+        bookingNumber: entry.stay.bookingNumber,
+        bookingSource: entry.stay.bookingSource,
+        scheduledCheckIn: entry.stay.scheduledCheckIn,
+        scheduledCheckOut: entry.stay.scheduledCheckOut,
+        roomLabel: entry.stay.room.label
+    } : null
 });
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ hotelId: string }> }) {

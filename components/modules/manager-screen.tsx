@@ -122,6 +122,14 @@ interface ManagerStateResponse {
             id: string;
             name: string;
         } | null;
+        stay?: {
+            guestName?: string | null;
+            bookingNumber?: string | null;
+            bookingSource?: string | null;
+            scheduledCheckIn: string;
+            scheduledCheckOut: string;
+            roomLabel: string;
+        } | null;
         recordedAt: string;
     }> | null;
     shiftLedgerTruncated?: boolean;
@@ -2334,6 +2342,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     };
 
     const handleBoardCellClick = (room: ManagerStateResponse['rooms'][number], selectedDay: Date) => {
+        if (formatDateKey(selectedDay, hotelTz) < hotelTodayKey) {
+            toast('Нельзя создать бронь задним числом', 'error');
+            return;
+        }
         const isToday = formatDateKey(selectedDay, hotelTz) === hotelTodayKey;
         if (isToday) {
             setBoardDayAction({ room, selectedDay });
@@ -4189,6 +4201,13 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 ? 'text-cyan-300'
                                                                 : 'text-rose-300';
                                                         const detailLabel = [entry.category?.name?.trim(), entry.note?.trim()].filter(Boolean).join(' · ');
+                                                        const stayDetails = entry.stay ? [
+                                                            `№ ${entry.stay.roomLabel}`,
+                                                            entry.stay.guestName?.trim(),
+                                                            entry.stay.bookingNumber?.trim() ? `бронь № ${entry.stay.bookingNumber.trim()}` : null,
+                                                            entry.stay.bookingSource?.trim(),
+                                                            `${formatDateTime(entry.stay.scheduledCheckIn, hotelTz)} — ${formatDateTime(entry.stay.scheduledCheckOut, hotelTz)}`
+                                                        ].filter(Boolean).join(' · ') : null;
                                                         const originalLabel = entry.method === 'CASH' && entry.originalCurrency === 'USD' && entry.originalAmount
                                                             ? `${formatCurrencyAmount(entrySign * entry.originalAmount, entry.originalCurrency)} → `
                                                             : '';
@@ -4199,6 +4218,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                     <span className="text-slate-500 dark:text-white/50">{timestamp}</span>
                                                                     <span className="ml-2 text-slate-500 dark:text-white/40">{entryLabel} · {methodLabel}</span>
                                                                     {detailLabel && <span className="ml-2 text-slate-600 dark:text-white/60">{detailLabel}</span>}
+                                                                    {stayDetails ? <p className="mt-1 break-words text-[11px] text-slate-600 dark:text-white/60">{stayDetails}</p> : null}
                                                                 </div>
                                                                 <span className={`font-semibold shrink-0 ml-3 ${amountClass}`}>{originalLabel}{formatKgs(signedAmount)}</span>
                                                             </div>
