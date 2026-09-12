@@ -1218,15 +1218,18 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         return null;
                     }
 
-                    const stayStartKey = formatDateKey(stay.scheduledCheckIn, hotelTz);
-                    const naturalEndKey = formatDateKey(stay.scheduledCheckOut, hotelTz);
-                    const effectiveEndKey = stay.status === 'CHECKED_IN' && stayEnd <= now.getTime()
-                        ? formatDateKey(addDays(now, 1), hotelTz)
-                        : naturalEndKey;
+                    const stayStartDate = new Date(stayStart);
+                    const effectiveStayEndDate = new Date(effectiveStayEnd);
+                    const stayStartKey = formatDateKey(stayStartDate, hotelTz);
+                    const effectiveEndKey = formatDateKey(effectiveStayEndDate, hotelTz);
                     const stayStartDay = Date.parse(`${stayStartKey}T00:00:00Z`);
                     const stayEndDay = Date.parse(`${effectiveEndKey}T00:00:00Z`);
-                    const startIndex = Math.max(0, Math.floor((stayStartDay - rangeStartDay) / 86400000));
-                    const endIndex = Math.min(managerBoardDayCount, Math.max(startIndex + 1, Math.round((stayEndDay - rangeStartDay) / 86400000)));
+                    const rawStartPosition = (stayStartDay - rangeStartDay) / 86400000 + getTimeOfDayFraction(stayStartDate, hotelTz);
+                    const rawEndPosition = (stayEndDay - rangeStartDay) / 86400000 + getTimeOfDayFraction(effectiveStayEndDate, hotelTz);
+                    const startPosition = Math.max(0, rawStartPosition);
+                    const endPosition = Math.min(managerBoardDayCount, Math.max(startPosition + 0.01, rawEndPosition));
+                    const startIndex = Math.floor(startPosition);
+                    const endIndex = Math.min(managerBoardDayCount, Math.max(startIndex + 1, Math.ceil(endPosition)));
                     const span = Math.max(1, endIndex - startIndex);
                     const isOverdue = stay.status === 'CHECKED_IN' && isPastDate(stay.scheduledCheckOut, now);
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
@@ -1246,16 +1249,15 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     const elapsedDays = Math.max(0, Math.floor((Math.min(now.getTime(), stayEnd) - stayStart) / 86400000));
                     const remainingDays = Math.max(0, Math.ceil((stayEnd - Math.max(now.getTime(), stayStart)) / 86400000));
 
-                    return { stay, startIndex, span, isOverdue, guestLabel, detailLabel, progressPct, elapsedDays, remainingDays };
+                    return { stay, startIndex, span, startPosition, endPosition, isOverdue, guestLabel, detailLabel, progressPct, elapsedDays, remainingDays };
                 })
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
-                .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
+                .sort((first, second) => first.startPosition - second.startPosition || second.endPosition - first.endPosition);
             const laneEnds: number[] = [];
             const itemsWithLanes = items.map((item) => {
-                const endIndex = item.startIndex + item.span;
-                const lane = laneEnds.findIndex((currentEnd) => currentEnd <= item.startIndex);
+                const lane = laneEnds.findIndex((currentEnd) => currentEnd <= item.startPosition);
                 const nextLane = lane >= 0 ? lane : laneEnds.length;
-                laneEnds[nextLane] = endIndex;
+                laneEnds[nextLane] = item.endPosition;
                 return { ...item, lane: nextLane };
             });
             const laneCount = Math.max(1, laneEnds.length);
@@ -3691,7 +3693,12 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 className={`relative z-10 m-0.5 min-w-0 overflow-hidden rounded-md border px-2 py-0.5 text-left text-[11px] leading-tight shadow-sm ${
                                                                                     canDragStay(item.stay) ? 'cursor-grab active:cursor-grabbing' : ''
                                                                                 } ${draggedStay?.stay.id === item.stay.id ? 'opacity-45' : ''} ${boardStatusClass(item.stay.status, item.isOverdue, Boolean(item.stay.tariffPending))}`}
-                                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
+                                                                                style={{
+                                                                                    gridColumn: `2 / span ${managerBoardDayCount}`,
+                                                                                    gridRow: item.lane + 1,
+                                                                                    marginLeft: `calc(${(item.startPosition / managerBoardDayCount) * 100}% + 2px)`,
+                                                                                    width: `max(4px, calc(${((item.endPosition - item.startPosition) / managerBoardDayCount) * 100}% - 4px))`,
+                                                                                }}
                                                                                 title={[item.guestLabel, stayStatusLabel(item.stay.status), item.detailLabel, item.stay.notes?.trim()].filter(Boolean).join(' · ')}
                                                                                 onDragStart={(event) => {
                                                                                     if (!canDragStay(item.stay)) {

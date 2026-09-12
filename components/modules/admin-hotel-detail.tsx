@@ -1307,15 +1307,18 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         return null;
                     }
 
-                    const stayStartKey = formatDateKey(stay.scheduledCheckIn, hotelTz);
-                    const naturalEndKey = formatDateKey(stay.scheduledCheckOut, hotelTz);
-                    const effectiveEndKey = stay.status === 'CHECKED_IN' && stayEnd <= now.getTime()
-                        ? formatDateKey(addDays(now, 1), hotelTz)
-                        : naturalEndKey;
+                    const stayStartDate = new Date(stayStart);
+                    const effectiveStayEndDate = new Date(effectiveStayEnd);
+                    const stayStartKey = formatDateKey(stayStartDate, hotelTz);
+                    const effectiveEndKey = formatDateKey(effectiveStayEndDate, hotelTz);
                     const stayStartDay = Date.parse(`${stayStartKey}T00:00:00Z`);
                     const stayEndDay = Date.parse(`${effectiveEndKey}T00:00:00Z`);
-                    const startIndex = Math.max(0, Math.floor((stayStartDay - rangeStartDay) / 86400000));
-                    const endIndex = Math.min(bookingBoardDayCount, Math.max(startIndex + 1, Math.round((stayEndDay - rangeStartDay) / 86400000)));
+                    const rawStartPosition = (stayStartDay - rangeStartDay) / 86400000 + getTimeOfDayFraction(stayStartDate, hotelTz);
+                    const rawEndPosition = (stayEndDay - rangeStartDay) / 86400000 + getTimeOfDayFraction(effectiveStayEndDate, hotelTz);
+                    const startPosition = Math.max(0, rawStartPosition);
+                    const endPosition = Math.min(bookingBoardDayCount, Math.max(startPosition + 0.01, rawEndPosition));
+                    const startIndex = Math.floor(startPosition);
+                    const endIndex = Math.min(bookingBoardDayCount, Math.max(startIndex + 1, Math.ceil(endPosition)));
                     const span = Math.max(1, endIndex - startIndex);
                     const guestLabel = stay.guestName?.trim() || (stay.status === 'CHECKED_IN' ? 'Гость' : 'Бронь');
                     const checkoutTime = Date.parse(stay.scheduledCheckOut);
@@ -1332,6 +1335,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         stay,
                         startIndex,
                         span,
+                        startPosition,
+                        endPosition,
                         isOverdue,
                         guestLabel,
                         detailLabel: [
@@ -1347,13 +1352,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     };
                 })
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
-                .sort((first, second) => first.startIndex - second.startIndex || second.span - first.span);
+                .sort((first, second) => first.startPosition - second.startPosition || second.endPosition - first.endPosition);
             const laneEnds: number[] = [];
             const itemsWithLanes = items.map((item) => {
-                const endIndex = item.startIndex + item.span;
-                const lane = laneEnds.findIndex((currentEnd) => currentEnd <= item.startIndex);
+                const lane = laneEnds.findIndex((currentEnd) => currentEnd <= item.startPosition);
                 const nextLane = lane >= 0 ? lane : laneEnds.length;
-                laneEnds[nextLane] = endIndex;
+                laneEnds[nextLane] = item.endPosition;
                 return { ...item, lane: nextLane };
             });
             const laneCount = Math.max(1, laneEnds.length);
@@ -3639,7 +3643,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 className={`relative z-10 m-0.5 min-w-0 cursor-grab overflow-hidden rounded-md border px-2 py-0.5 text-left text-[11px] leading-tight shadow-sm transition hover:scale-[1.01] active:cursor-grabbing ${
                                                                                     draggedBoardStay?.stay.id === item.stay.id ? 'opacity-45' : ''
                                                                                 } ${item.stay.tariffPending ? tariffPendingBookingBoardClass : bookingBoardStatusClass[item.stay.status]}`}
-                                                                                style={{ gridColumn: `${item.startIndex + 2} / span ${item.span}`, gridRow: item.lane + 1 }}
+                                                                                style={{
+                                                                                    gridColumn: `2 / span ${bookingBoardDayCount}`,
+                                                                                    gridRow: item.lane + 1,
+                                                                                    marginLeft: `calc(${(item.startPosition / bookingBoardDayCount) * 100}% + 2px)`,
+                                                                                    width: `max(4px, calc(${((item.endPosition - item.startPosition) / bookingBoardDayCount) * 100}% - 4px))`,
+                                                                                }}
                                                                                 onDragStart={(event) => {
                                                                                     event.dataTransfer.effectAllowed = 'move';
                                                                                     event.dataTransfer.setData('text/plain', item.stay.id);
