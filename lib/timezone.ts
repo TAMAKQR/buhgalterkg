@@ -93,6 +93,16 @@ export const formatDateKey = (value?: Date | string | number | null, tz?: string
     }).format(date);
 };
 
+export const getTimeOfDayFraction = (value: Date, tz?: string) => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hourCycle: "h23", timeZone: tz || BISHKEK_TIMEZONE,
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+        Number(parts.find((item) => item.type === type)?.value ?? 0);
+    return (part("hour") * 3600 + part("minute") * 60 + part("second")) / 86400;
+};
+
 export const formatInputValue = (value?: Date | string | number | null, tz?: string) => {
     if (value == null) return "";
     const date = ensureDate(value);

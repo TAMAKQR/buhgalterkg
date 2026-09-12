@@ -13,8 +13,8 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { SessionUser } from '@/lib/types';
 import { useApi } from '@/hooks/useApi';
-import { formatDateKey, formatDateTime, formatInputValue, parseDateOnly, parseInputValue, formatMoney } from '@/lib/timezone';
-import { useHotelToday } from '@/hooks/useHotelToday';
+import { formatDateKey, formatDateTime, formatInputValue, parseDateOnly, parseInputValue, formatMoney, getTimeOfDayFraction } from '@/lib/timezone';
+import { useHotelNow, useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { MEAL_PLAN_OPTIONS, mealPlanLabels } from '@/lib/meal-plan';
 import {
@@ -562,6 +562,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const hotelTz = data?.hotel?.timezone;
     const hotelTodayKey = useHotelToday(hotelTz);
+    const hotelNow = useHotelNow();
     const hotelCur = data?.hotel?.currency ?? 'KGS';
     const canUseMealPlan = Boolean(data?.hotel?.hasMealPlan);
     const canUseGroupStays = data?.hotel?.allowGroupStays !== false;
@@ -1188,7 +1189,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const roomBoardDays = useMemo(() => {
         const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
-        const firstDay = addDays(hotelToday, roomBoardStartOffset);
+        const firstDay = addDays(hotelToday, roomBoardStartOffset - 1);
         return Array.from({ length: managerBoardDayCount }, (_, index) => addDays(firstDay, index));
     }, [hotelTodayKey, hotelTz, managerBoardDayCount, roomBoardStartOffset]);
 
@@ -1295,6 +1296,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const boardContentWidth = boardScale === 'fit'
         ? '100%'
         : `${160 + managerBoardDayCount * boardDayWidth}px`;
+    const boardNowPct = getTimeOfDayFraction(hotelNow, hotelTz) * 100;
 
     const boardStayListItems = useMemo(() => {
         return roomBoardRows.flatMap((row) =>
@@ -3512,13 +3514,6 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 >
                                                     Не выселены <span className="font-semibold">{boardOverdueItems.length}</span>
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-slate-600 transition break-words [overflow-wrap:anywhere] hover:bg-slate-100 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/55 dark:hover:bg-white/[0.08]"
-                                                    onClick={() => setBoardListPopup('freeDates')}
-                                                >
-                                                    Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
-                                                </button>
                                             </div>
                                              <div className="flex items-center gap-2">
                                                 <select
@@ -3576,7 +3571,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 >
                                                     <div className="sticky left-0 z-40 border-r border-slate-200 bg-light-bg px-3 py-2 dark:border-white/[0.06] dark:bg-night">Номер</div>
                                                     {roomBoardDays.map((day) => (
-                                                        <div key={`manager-board-day-${day.toISOString()}`} className="border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
+                                                        <div key={`manager-board-day-${day.toISOString()}`} className="relative border-l border-slate-200 bg-light-bg px-2 py-2 text-center dark:border-white/[0.06] dark:bg-night">
                                                             <p>{formatBoardDay(day, hotelTz)}</p>
                                                             <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
                                                         </div>
@@ -3586,7 +3581,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         </div>
                                         </div>
                                         <div
-                                            className="relative overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]"
+                                            className="relative isolate z-0 overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.07] dark:bg-[#111418]"
                                             onScroll={(event) => {
                                                 if (roomBoardHeaderScrollRef.current) {
                                                     roomBoardHeaderScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
@@ -3657,7 +3652,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                             </div>
                                                                         </div>
                                                                         {roomBoardDays.map((day, dayIndex) => {
-                                                                            const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(day).getTime();
+                                                                            const isToday = formatDateKey(day, hotelTz) === hotelTodayKey;
                                                                             return (
                                                                                 <button
                                                                                     type="button"
@@ -3681,6 +3676,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                     title={isToday ? `Выбрать действие для № ${room.label}` : `Поставить бронь на № ${room.label}`}
                                                                                     aria-label={isToday ? `Выбрать действие для номера ${room.label}` : `Поставить бронь на номер ${room.label}`}
                                                                                 >
+                                                                                    {isToday ? <span className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-slate-500/45 dark:bg-white/25" style={{ left: `${boardNowPct}%` }} /> : null}
                                                                                     <span className="pointer-events-none absolute left-1/2 top-1/2 hidden h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-cyan-200 bg-white/95 text-sm font-semibold leading-none text-cyan-700 shadow-sm group-hover:flex group-focus-visible:flex dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-100">
                                                                                         +
                                                                                     </span>

@@ -14,8 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useApi } from '@/hooks/useApi';
-import { formatDateKey, formatDateTime, formatMoney, parseDateOnly } from '@/lib/timezone';
-import { useHotelToday } from '@/hooks/useHotelToday';
+import { formatDateKey, formatDateTime, formatMoney, getTimeOfDayFraction, parseDateOnly } from '@/lib/timezone';
+import { useHotelNow, useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 import { RoomEconomicsPanel } from '@/components/modules/room-economics-panel';
@@ -650,6 +650,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const hotelTz = data?.timezone ?? undefined;
     const hotelTodayKey = useHotelToday(hotelTz);
+    const hotelNow = useHotelNow();
     const hotelCur = data?.currency ?? undefined;
     const formatCurrency = useCallback((value?: number | null) => {
         if (typeof value !== 'number' || Number.isNaN(value)) return '—';
@@ -1267,7 +1268,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     const bookingBoardDays = useMemo(() => {
         const hotelToday = parseDateOnly(hotelTodayKey, false, hotelTz) ?? startOfLocalDay(new Date());
-        const firstDay = addDays(hotelToday, bookingBoardStartOffset);
+        const firstDay = addDays(hotelToday, bookingBoardStartOffset - 1);
         return Array.from({ length: bookingBoardDayCount }, (_, index) => addDays(firstDay, index));
     }, [bookingBoardDayCount, bookingBoardStartOffset, hotelTodayKey, hotelTz]);
 
@@ -1283,6 +1284,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const bookingBoardContentWidth = bookingBoardScale === 'fit'
         ? '100%'
         : `${160 + bookingBoardDayCount * bookingBoardDayWidth}px`;
+    const bookingBoardNowPct = getTimeOfDayFraction(hotelNow, hotelTz) * 100;
 
     const bookingBoardRows = useMemo(() => {
         const rangeStart = bookingBoardRange.start.getTime();
@@ -3495,13 +3497,6 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 >
                                                                     Не выселены <span className="font-semibold">{boardOverdueItems.length}</span>
                                                                 </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-slate-600 transition break-words [overflow-wrap:anywhere] hover:bg-slate-100 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/55 dark:hover:bg-white/[0.08]"
-                                                                    onClick={() => setBoardListPopup('freeDates')}
-                                                                >
-                                                                    Свободные даты <span className="font-semibold">{boardFreeDateItems.length}</span>
-                                                                </button>
                                                             </div>
                                                              <div className="flex items-center gap-2">
                                                                 <select
@@ -3557,7 +3552,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 >
                                                                     <div className="sticky left-0 z-20 bg-slate-50 px-3 py-2 dark:bg-[#151923]">Номер</div>
                                                                     {bookingBoardDays.map((day) => (
-                                                                        <div key={`board-day-${day.toISOString()}`} className="border-l border-slate-200/80 px-2 py-2 text-center dark:border-white/[0.06]">
+                                                                        <div key={`board-day-${day.toISOString()}`} className="relative border-l border-slate-200/80 px-2 py-2 text-center dark:border-white/[0.06]">
                                                                             <p>{formatBoardDay(day, hotelTz)}</p>
                                                                             <p className="mt-0.5 font-normal normal-case tracking-normal">{formatBoardWeekday(day, hotelTz)}</p>
                                                                         </div>
@@ -3567,7 +3562,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         </div>
                                                         <div
-                                                            className="overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]"
+                                                            className="relative isolate z-0 overflow-x-auto rounded-b-xl border-x border-b border-slate-200/80 bg-white dark:border-white/[0.06] dark:bg-white/[0.02]"
                                                             onScroll={(event) => {
                                                                 if (bookingBoardHeaderScrollRef.current) {
                                                                     bookingBoardHeaderScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
@@ -3612,11 +3607,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             </div>
                                                                         </div>
                                                                         {bookingBoardDays.map((day, dayIndex) => {
-                                                                            const isToday = startOfLocalDay(new Date()).getTime() === startOfLocalDay(day).getTime();
+                                                                            const isToday = formatDateKey(day, hotelTz) === hotelTodayKey;
                                                                             return (
                                                                                 <div
                                                                                     key={`booking-board-cell-${room.id}-${dayIndex}`}
-                                                                                    className={`border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/70 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                                    className={`relative border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/70 dark:bg-amber-400/[0.05]' : ''}`}
                                                                                     style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
                                                                                     onDragOver={(event) => {
                                                                                         if (!draggedBoardStay) return;
@@ -3631,7 +3626,9 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                         event.stopPropagation();
                                                                                         void handleAdminStayDrop(room.id, day);
                                                                                     }}
-                                                                                />
+                                                                                >
+                                                                                    {isToday ? <span className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-slate-500/45 dark:bg-white/25" style={{ left: `${bookingBoardNowPct}%` }} /> : null}
+                                                                                </div>
                                                                             );
                                                                         })}
                                                                         {items.map((item) => (
@@ -3673,14 +3670,11 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                         {!items.length ? (
                                                                             <button
                                                                                 type="button"
-                                                                                className="z-10 col-start-2 col-end-[-1] m-1 rounded-xl border border-dashed border-slate-200/90 px-2 py-1 text-left text-[11px] text-slate-300 transition hover:border-slate-300 hover:text-slate-500 dark:border-white/[0.06] dark:text-white/20 dark:hover:text-white/45"
+                                                                                className="z-10 col-start-2 col-end-[-1] cursor-pointer"
                                                                                 onClick={() => handleOpenBookingForm(room)}
+                                                                                aria-label={`Создать бронь для номера ${room.label}`}
+                                                                                title={`Создать бронь для номера ${room.label}`}
                                                                             >
-                                                                                {room.status === 'OCCUPIED'
-                                                                                    ? 'Активное проживание — данные обновляются'
-                                                                                    : room.status === 'DIRTY'
-                                                                                        ? 'Свободно, ожидает уборки'
-                                                                                        : 'Свободно в выбранном периоде'}
                                                                             </button>
                                                                         ) : null}
                                                                     </div>
