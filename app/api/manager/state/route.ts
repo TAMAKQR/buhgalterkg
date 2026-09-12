@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         }
 
         const nearestScheduledIds = nearestScheduledRows.map((row) => row.id);
-        const activeStays = await prisma.roomStay.findMany({
+        const queriedStays = await prisma.roomStay.findMany({
             where: {
                 hotelId,
                 OR: [
@@ -157,6 +157,10 @@ export async function GET(request: NextRequest) {
                 notes: true
             }
         });
+        const linkedCurrentStayIds = new Set(hotel.rooms.map((room) => room.currentStayId).filter(Boolean));
+        const activeStays = queriedStays.filter((stay) => (
+            stay.status !== StayStatus.CHECKED_IN || linkedCurrentStayIds.has(stay.id)
+        ));
         const staysByRoom = new Map<string, typeof activeStays>();
         for (const stay of activeStays) {
             const roomStays = staysByRoom.get(stay.roomId) ?? [];

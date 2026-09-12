@@ -697,8 +697,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
             }),
         ]);
 
+        const linkedCurrentStayIds = new Set(
+            hotel.rooms.map((room) => room.currentStay?.id).filter(Boolean),
+        );
         const roomStays = new Map<string, StaySummaryRecord[]>();
         for (const stay of operationalRoomStays) {
+            if (stay.status === StayStatus.CHECKED_IN && !linkedCurrentStayIds.has(stay.id)) {
+                continue;
+            }
             const stays = roomStays.get(stay.roomId) ?? [];
             stays.push(stay);
             roomStays.set(stay.roomId, stays);
