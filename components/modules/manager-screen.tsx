@@ -1250,7 +1250,10 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
         const rangeEnd = roomBoardRange.end.getTime();
         const rangeStartKey = formatDateKey(roomBoardRange.start, hotelTz);
         const rangeStartDay = Date.parse(`${rangeStartKey}T00:00:00Z`);
-        const now = new Date();
+        const now = hotelNow;
+        const nowKey = formatDateKey(now, hotelTz);
+        const nowDay = Date.parse(`${nowKey}T00:00:00Z`);
+        const nowPosition = (nowDay - rangeStartDay) / 86400000 + getTimeOfDayFraction(now, hotelTz);
 
         return sortedRooms.map((room) => {
             const items = getRoomStays(room)
@@ -1289,9 +1292,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         stay.guestPhone?.trim()
                     ].filter(Boolean).join(' · ');
 
-                    const durationMs = Math.max(stayEnd - stayStart, 1);
                     const progressPct = stay.status === 'CHECKED_IN'
-                        ? Math.min(100, Math.max(0, ((now.getTime() - stayStart) / durationMs) * 100))
+                        ? Math.min(100, Math.max(0, ((nowPosition - startPosition) / Math.max(endPosition - startPosition, 0.01)) * 100))
                         : 0;
                     const elapsedDays = Math.max(0, Math.floor((Math.min(now.getTime(), stayEnd) - stayStart) / 86400000));
                     const remainingDays = Math.max(0, Math.ceil((stayEnd - Math.max(now.getTime(), stayStart)) / 86400000));
@@ -1311,7 +1313,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
             return { room, items: itemsWithLanes, laneCount };
         });
-    }, [canUseMealPlan, formatKgs, hotelTz, managerBoardDayCount, roomBoardRange, sortedRooms]);
+    }, [canUseMealPlan, formatKgs, hotelNow, hotelTz, managerBoardDayCount, roomBoardRange, sortedRooms]);
 
     const roomBoardSections = useMemo(() => {
         const sections = new Map<string, {
