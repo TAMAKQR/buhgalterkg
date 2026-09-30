@@ -480,8 +480,8 @@ const stayStatusLabels: Record<StayStatusValue, string> = {
 
 const stayStatusTone: Record<StayStatusValue, 'default' | 'success' | 'warning' | 'danger'> = {
     SCHEDULED: 'default',
-    CHECKED_IN: 'warning',
-    CHECKED_OUT: 'success',
+    CHECKED_IN: 'success',
+    CHECKED_OUT: 'default',
     CANCELLED: 'danger'
 };
 
@@ -637,7 +637,7 @@ const formatBoardTime = (value: Date | string, timezone?: string) =>
 
 const bookingBoardStatusClass: Record<StayStatusValue, string> = {
     SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/[0.12] dark:text-cyan-100',
-    CHECKED_IN: 'border-amber-300/70 bg-amber-400/20 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/[0.14] dark:text-amber-100',
+    CHECKED_IN: 'border-emerald-300/70 bg-emerald-100 text-emerald-900 dark:border-emerald-300/30 dark:bg-emerald-400/[0.10] dark:text-emerald-100',
     CHECKED_OUT: 'border-slate-300/80 bg-slate-100 text-slate-600 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-white/55',
     CANCELLED: 'border-rose-300/70 bg-rose-50 text-rose-600 dark:border-rose-300/20 dark:bg-rose-500/10 dark:text-rose-200'
 };
@@ -3565,7 +3565,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-amber-300/35 dark:bg-amber-400/15 dark:text-amber-100 dark:hover:bg-amber-400/20"
+                                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-emerald-800 transition break-words [overflow-wrap:anywhere] hover:bg-emerald-100 dark:border-emerald-300/25 dark:bg-emerald-400/[0.10] dark:text-emerald-200 dark:hover:bg-emerald-400/15"
                                                                     onClick={() => setBoardListPopup('checkedIn')}
                                                                 >
                                                                     Заселён <span className="font-semibold">{boardCheckedInItems.length}</span>
@@ -3691,7 +3691,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white" title={`№ ${room.label}`}>№ {room.label}</p>
                                                                                 {room.floor ? <span className="shrink-0 text-[10px] text-slate-400 dark:text-white/30">{room.floor}</span> : null}
                                                                                 {room.status === 'DIRTY' ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Ожидает уборки"><span className="sr-only">Ожидает уборки</span></span> : null}
-                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
+                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
                                                                             </div>
                                                                         </div>
                                                                         {bookingBoardDays.map((day, dayIndex) => {
@@ -3699,7 +3699,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                             return (
                                                                                 <div
                                                                                     key={`booking-board-cell-${room.id}-${dayIndex}`}
-                                                                                    className={`relative border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-amber-50/70 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                                    className={`relative border-l border-slate-200/60 dark:border-white/[0.04] ${isToday ? 'bg-blue-50/70 dark:bg-blue-400/[0.04]' : ''}`}
                                                                                     style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
                                                                                     onDragOver={(event) => {
                                                                                         if (!draggedBoardStay) return;
@@ -3814,7 +3814,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 }
                                                                                 tone={
                                                                                     room.status === 'OCCUPIED'
-                                                                                        ? 'warning'
+                                                                                        ? 'success'
                                                                                         : room.status === 'DIRTY'
                                                                                             ? 'danger'
                                                                                             : room.status === 'HOLD'
@@ -5448,7 +5448,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 : 'Свободен'
                                                                 }
                                                                 tone={
-                                                                    room.status === 'OCCUPIED' ? 'warning'
+                                                                    room.status === 'OCCUPIED' ? 'success'
                                                                         : room.status === 'DIRTY' ? 'danger'
                                                                             : room.status === 'HOLD' ? 'default'
                                                                                 : 'success'
@@ -5649,7 +5649,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         </div>
                                                         <Badge
                                                             label={item.isOverdue ? 'Не выселен' : item.stay.status === 'SCHEDULED' ? 'Бронь' : stayStatusLabels[item.stay.status]}
-                                                            tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'}
+                                                            tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'success' : 'default'}
                                                         />
                                                     </div>
                                                     <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400">

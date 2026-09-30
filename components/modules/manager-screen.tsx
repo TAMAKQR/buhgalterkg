@@ -500,7 +500,7 @@ const boardStatusClass = (status: string, isOverdue = false, tariffPending = fal
         return 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-300/50 dark:bg-rose-500/20 dark:text-rose-100';
     }
     if (status === 'CHECKED_IN') {
-        return 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-300/35 dark:bg-amber-400/15 dark:text-amber-100';
+        return 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-300/30 dark:bg-emerald-400/[0.10] dark:text-emerald-100';
     }
     if (status === 'SCHEDULED') {
         return 'border-cyan-300 bg-cyan-50 text-cyan-900 dark:border-cyan-300/35 dark:bg-cyan-400/15 dark:text-cyan-100';
@@ -3553,7 +3553,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-brand-amber/15 dark:bg-brand-amber/15 dark:text-brand-amber dark:hover:bg-brand-amber/20"
+                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-emerald-800 transition break-words [overflow-wrap:anywhere] hover:bg-emerald-100 dark:border-emerald-300/25 dark:bg-emerald-400/[0.10] dark:text-emerald-200 dark:hover:bg-emerald-400/15"
                                                     onClick={() => setBoardListPopup('checkedIn')}
                                                 >
                                                     Заселён <span className="font-semibold">{boardCheckedInItems.length}</span>
@@ -3707,7 +3707,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 <p className="truncate text-sm font-semibold text-light-text dark:text-white" title={`№ ${room.label}`}>№ {room.label}</p>
                                                                                 {room.floor ? <span className="shrink-0 text-[10px] text-slate-400 dark:text-white/30">{room.floor}</span> : null}
                                                                                 {room.status === 'DIRTY' ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Ожидает уборки"><span className="sr-only">Ожидает уборки</span></span> : null}
-                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
+                                                                                {room.status === 'OCCUPIED' ? <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Сейчас занят"><span className="sr-only">Сейчас занят</span></span> : null}
                                                                             </div>
                                                                         </div>
                                                                         {roomBoardDays.map((day, dayIndex) => {
@@ -3716,7 +3716,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                                 <button
                                                                                     type="button"
                                                                                     key={`manager-board-cell-${room.id}-${dayIndex}`}
-                                                                                    className={`group relative border-l border-slate-200/70 text-left transition hover:bg-cyan-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/25 dark:border-white/[0.04] dark:hover:bg-cyan-400/[0.05] dark:focus:ring-white/15 ${isToday ? 'bg-amber-50/80 dark:bg-amber-400/[0.05]' : ''}`}
+                                                                                    className={`group relative border-l border-slate-200/70 text-left transition hover:bg-cyan-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/25 dark:border-white/[0.04] dark:hover:bg-cyan-400/[0.05] dark:focus:ring-white/15 ${isToday ? 'bg-blue-50/70 dark:bg-blue-400/[0.04]' : ''}`}
                                                                                     style={{ gridColumn: dayIndex + 2, gridRow: `1 / span ${laneCount}` }}
                                                                                     onClick={() => handleBoardCellClick(room, day)}
                                                                                     onDragOver={(event) => {
@@ -3897,7 +3897,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                         ) : (
                                                              <Badge
                                                                  label={isOverdue ? 'Не выселен' : isOccupied ? 'Занят' : hasFutureBooking ? 'Свободен сейчас' : hasScheduledBooking ? 'Бронь сегодня' : 'Свободен'}
-                                                                 tone={isOverdue ? 'danger' : isOccupied || (hasScheduledBooking && !hasFutureBooking) ? 'warning' : 'success'}
+                                                                 tone={isOverdue ? 'danger' : isOccupied ? 'success' : hasScheduledBooking && !hasFutureBooking ? 'warning' : 'success'}
                                                              />
                                                         )}
                                                         </div>
@@ -4364,7 +4364,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                          <p className="font-semibold text-slate-900 dark:text-white">№{stay.room.label} · {stay.guestName?.trim() || 'Гость не указан'}</p>
                                                                          <p className="text-[11px] text-slate-500 dark:text-white/45">{stay.room.floor || 'Раздел не указан'}</p>
                                                                      </div>
-                                                                     <Badge label={stayStatusLabel(stay.status)} tone={stay.status === 'CHECKED_IN' ? 'warning' : stay.status === 'CHECKED_OUT' ? 'success' : 'default'} />
+                                                                     <Badge label={stayStatusLabel(stay.status)} tone={stay.status === 'CHECKED_IN' ? 'success' : 'default'} />
                                                                  </div>
                                                                  <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                                                                      <div className="rounded-lg bg-slate-50 p-2 dark:bg-white/[0.04]">
@@ -5805,7 +5805,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                                 <p className="truncate text-sm font-semibold">№ {item.room.label} · {item.guestLabel}</p>
                                                                 <p className="mt-1 truncate text-xs text-white/55">{item.detailLabel || stayStatusLabel(item.stay.status)}</p>
                                                             </div>
-                                                            <Badge label={item.isOverdue ? 'Не выселен' : stayStatusLabel(item.stay.status)} tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'warning' : 'default'} />
+                                                            <Badge label={item.isOverdue ? 'Не выселен' : stayStatusLabel(item.stay.status)} tone={item.isOverdue ? 'danger' : item.stay.status === 'CHECKED_IN' ? 'success' : 'default'} />
                                                         </div>
                                                         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-white/45">
                                                             <span>Заезд: <span className="text-white/75">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>
