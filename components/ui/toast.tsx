@@ -43,10 +43,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     {toasts.map((t) => {
                         const bg =
                             t.type === 'success'
-                                ? 'bg-emerald-500/90 text-white'
+                                ? 'bg-emerald-700 text-white ring-1 ring-emerald-800/20 dark:bg-emerald-700'
                                 : t.type === 'error'
-                                    ? 'bg-rose-500/90 text-white'
-                                    : 'bg-white text-slate-900 ring-1 ring-slate-200 dark:bg-white/[0.12] dark:text-white dark:backdrop-blur-md';
+                                    ? 'bg-rose-700 text-white ring-1 ring-rose-800/20 dark:bg-rose-700'
+                                    : 'bg-white text-slate-950 ring-1 ring-slate-300 dark:bg-white/[0.12] dark:text-white dark:ring-white/10 dark:backdrop-blur-md';
                         return (
                             <button
                                 key={t.id}

@@ -9,10 +9,10 @@ const buttonStyles = cva(
     {
         variants: {
             variant: {
-                primary: 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-400',
-                secondary: 'border border-slate-200/90 bg-[#f9fafb] text-slate-700 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.32)] hover:border-slate-300 hover:bg-white hover:text-slate-900 dark:border-slate-700/65 dark:bg-slate-800/45 dark:text-slate-200 dark:hover:bg-slate-700/50',
-                ghost: 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/55 dark:hover:text-slate-200',
-                danger: 'border border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/12 dark:text-rose-300 dark:hover:bg-rose-500/18'
+                primary: 'bg-blue-700 text-white shadow-[0_6px_14px_-8px_rgba(29,78,216,0.85)] hover:bg-blue-800 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-400',
+                secondary: 'border border-[var(--border-strong)] bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-500 hover:bg-slate-50 hover:text-slate-950 dark:border-slate-700/65 dark:bg-slate-800/45 dark:text-slate-200 dark:hover:bg-slate-700/50',
+                ghost: 'text-slate-700 hover:bg-slate-200/75 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/55 dark:hover:text-slate-200',
+                danger: 'border border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/[0.12] dark:text-rose-300 dark:hover:bg-rose-500/[0.18]'
             },
             size: {
                 md: 'min-h-10 px-4 py-2 text-sm break-words [overflow-wrap:anywhere]',

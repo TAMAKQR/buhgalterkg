@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
 
@@ -10,6 +10,12 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+const applyTheme = (theme: Theme) => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.style.colorScheme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0f172a' : '#e9eff6');
+};
 
 export const useTheme = () => {
     const context = useContext(ThemeContext);
@@ -21,28 +27,31 @@ export const useTheme = () => {
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [theme, setTheme] = useState<Theme>('dark');
-    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        setMounted(true);
-        const stored = localStorage.getItem('theme') as Theme | null;
-        if (stored) {
-            setTheme(stored);
-            document.documentElement.classList.toggle('dark', stored === 'dark');
+        let initialTheme: Theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+        try {
+            const stored = localStorage.getItem('theme');
+            if (stored === 'light' || stored === 'dark') initialTheme = stored;
+        } catch {
+            // Keep the theme already applied by the pre-hydration initializer.
         }
+        setTheme(initialTheme);
+        applyTheme(initialTheme);
     }, []);
 
-    const toggleTheme = () => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.classList.toggle('dark', newTheme === 'dark');
-    };
-
-    // Prevent flash of wrong theme
-    if (!mounted) {
-        return <>{children}</>;
-    }
+    const toggleTheme = useCallback(() => {
+        setTheme((currentTheme) => {
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            try {
+                localStorage.setItem('theme', newTheme);
+            } catch {
+                // The visual theme can still change when storage is unavailable.
+            }
+            applyTheme(newTheme);
+            return newTheme;
+        });
+    }, []);
 
     return (
         <ThemeContext.Provider value={{ theme, toggleTheme }}>

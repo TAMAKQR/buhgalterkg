@@ -664,22 +664,22 @@ export const RoomEconomicsPanel = ({
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Начислено</p>
                                         <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{formatMoney(selectedTotals.revenue, currency)}</p>
-                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42" title="Фактически проведённые оплаты за выбранный период">Получено {formatMoney(displayedReport.totals.cashReceived, currency)}</p>
+                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/[0.42]" title="Фактически проведённые оплаты за выбранный период">Получено {formatMoney(displayedReport.totals.cashReceived, currency)}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">{mode === 'actual' ? 'Факт. расходы' : mode === 'forecast' ? 'Прогноз расходов' : 'Калькуляция'}</p>
                                         <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{formatMoney(selectedTotals.cost, currency)}</p>
-                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">{formatPerNight(selectedTotals.cost, displayedReport.totals.occupiedNights, currency).replace(' / ночь', ' / занятую ночь')}</p>
+                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/[0.42]">{formatPerNight(selectedTotals.cost, displayedReport.totals.occupiedNights, currency).replace(' / ночь', ' / занятую ночь')}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">{mode === 'forecast' ? 'Прогноз чистыми' : mode === 'planned' ? 'Маржинальная прибыль' : 'Чистыми'}</p>
                                         <p className={`mt-1 text-base font-semibold ${profitTone(selectedTotals.profit)}`}>{formatMoney(selectedTotals.profit, currency)}</p>
-                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">Доход минус {mode === 'actual' ? 'факт' : mode === 'forecast' ? 'калькуляция, план и оклады' : 'калькуляция ночей'}</p>
+                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/[0.42]">Доход минус {mode === 'actual' ? 'факт' : mode === 'forecast' ? 'калькуляция, план и оклады' : 'калькуляция ночей'}</p>
                                     </div>
                                     <div className="min-w-0 bg-white px-3 py-3 dark:bg-[#171b21]">
                                         <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/35">Маржа</p>
                                         <p className={`mt-1 text-base font-semibold ${selectedTotals.revenue > 0 ? profitTone(selectedTotals.margin) : 'text-slate-500 dark:text-white/45'}`}>{selectedTotals.revenue > 0 ? formatPercent(selectedTotals.margin) : '—'}</p>
-                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/42">{displayedReport.totals.occupiedNights} занятых ночей</p>
+                                        <p className="mt-1 text-[11px] text-slate-500 dark:text-white/[0.42]">{displayedReport.totals.occupiedNights} занятых ночей</p>
                                     </div>
                                 </div>
                             </div>

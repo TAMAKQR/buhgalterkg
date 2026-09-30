@@ -500,10 +500,10 @@ const ledgerEntryTypeLabels: Record<LedgerEntryTypeValue, string> = {
 };
 
 const ledgerAmountClass: Record<LedgerEntryTypeValue, string> = {
-    CASH_IN: 'text-emerald-300',
-    CASH_OUT: 'text-rose-300',
-    MANAGER_PAYOUT: 'text-amber-200',
-    ADJUSTMENT: 'text-white'
+    CASH_IN: 'text-emerald-700 dark:text-emerald-300',
+    CASH_OUT: 'text-rose-700 dark:text-rose-300',
+    MANAGER_PAYOUT: 'text-amber-700 dark:text-amber-200',
+    ADJUSTMENT: 'text-slate-900 dark:text-white'
 };
 
 const ledgerSignSymbol: Record<LedgerEntryTypeValue, string> = {
@@ -517,7 +517,7 @@ const ledgerDisplayLabel = (entry: LedgerEntryDetail) =>
     isCollectionLedgerEntry(entry) ? 'Инкассация' : ledgerEntryTypeLabels[entry.entryType];
 
 const ledgerDisplayAmountClass = (entry: LedgerEntryDetail) =>
-    isCollectionLedgerEntry(entry) ? 'text-cyan-300' : ledgerAmountClass[entry.entryType];
+    isCollectionLedgerEntry(entry) ? 'text-cyan-700 dark:text-cyan-300' : ledgerAmountClass[entry.entryType];
 
 const ledgerMethodLabels: Record<LedgerPaymentMethodValue, string> = {
     CASH: 'Наличные',
@@ -636,13 +636,13 @@ const formatBoardTime = (value: Date | string, timezone?: string) =>
     new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone }).format(new Date(value));
 
 const bookingBoardStatusClass: Record<StayStatusValue, string> = {
-    SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/12 dark:text-cyan-100',
-    CHECKED_IN: 'border-amber-300/70 bg-amber-400/20 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/14 dark:text-amber-100',
+    SCHEDULED: 'border-cyan-300/60 bg-cyan-500/15 text-cyan-800 dark:border-cyan-300/30 dark:bg-cyan-400/[0.12] dark:text-cyan-100',
+    CHECKED_IN: 'border-amber-300/70 bg-amber-400/20 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/[0.14] dark:text-amber-100',
     CHECKED_OUT: 'border-slate-300/80 bg-slate-100 text-slate-600 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-white/55',
     CANCELLED: 'border-rose-300/70 bg-rose-50 text-rose-600 dark:border-rose-300/20 dark:bg-rose-500/10 dark:text-rose-200'
 };
 
-const tariffPendingBookingBoardClass = 'border-fuchsia-300/70 bg-fuchsia-500/15 text-fuchsia-900 ring-1 ring-fuchsia-200/80 dark:border-fuchsia-300/35 dark:bg-fuchsia-400/14 dark:text-fuchsia-100 dark:ring-fuchsia-300/20';
+const tariffPendingBookingBoardClass = 'border-fuchsia-300/70 bg-fuchsia-500/15 text-fuchsia-900 ring-1 ring-fuchsia-200/80 dark:border-fuchsia-300/35 dark:bg-fuchsia-400/[0.14] dark:text-fuchsia-100 dark:ring-fuchsia-300/20';
 
 interface AdminHotelDetailProps {
     hotelId: string;
@@ -2563,7 +2563,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (error) {
         return (
-            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-3 bg-[#f6f7f9] py-4 text-center text-rose-700 dark:bg-[#0c0f13] dark:text-rose-200">
+            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-3 bg-light-bg py-4 text-center text-rose-700 dark:bg-[#0c0f13] dark:text-rose-200">
                 <p className="text-lg font-semibold">Не удалось загрузить данные объекта</p>
                 <p className="text-sm text-rose-600/80 dark:text-rose-100/70">{String(error)}</p>
                 <Button type="button" variant="secondary" onClick={() => mutate()}>
@@ -2575,7 +2575,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     if (!data || isLoading) {
         return (
-            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f6f7f9] py-4 text-center text-slate-500 dark:bg-[#0c0f13] dark:text-white/70">
+            <div className="workspace-page flex min-h-screen flex-col items-center justify-center gap-4 bg-light-bg py-4 text-center text-slate-600 dark:bg-[#0c0f13] dark:text-white/70">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="h-4 w-64" />
                 <p className="text-sm">Загружаем актуальные данные отеля…</p>
@@ -2695,7 +2695,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
     return (
         <>
-            <div className="workspace-page flex min-h-screen w-full flex-col gap-4 bg-[#f6f7f9] pb-24 pt-4 text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200 lg:gap-5 lg:py-5">
+            <div className="workspace-page flex min-h-screen w-full flex-col gap-4 bg-light-bg pb-24 pt-4 text-slate-900 dark:bg-[#0c0f13] dark:text-slate-200 lg:gap-5 lg:py-5">
                 <Card className="overflow-hidden border-slate-200/80 bg-white p-0 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21] dark:shadow-none">
                     <div className="flex flex-col gap-4 p-4 sm:p-5">
                         <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
@@ -2831,7 +2831,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/60">Оплаты из экстранетов</p>
+                                        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-800/80 dark:text-amber-100/60">Оплаты из экстранетов</p>
                                         <p className="mt-1 text-lg font-semibold">{formatCurrency(pendingOnlineFiltersActive ? pendingOnlineFilteredTotal : pendingOnlineValue)}</p>
                                         <p className="mt-1 text-xs text-amber-700/70 dark:text-amber-50/60">
                                             {pendingOnlineFiltersActive ? `Найдено: ${pendingOnlineFilteredCount}` : `Всего ожидается: ${pendingOnlineFilteredCount}`}
@@ -2913,7 +2913,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             {stay.notes?.trim() ? <p className="mt-1 text-xs text-amber-700/75 dark:text-amber-50/55">{stay.notes.trim()}</p> : null}
                                                         </div>
                                                         <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
-                                                            <span className="text-sm font-semibold text-amber-100">{formatCurrency(stay.onlinePaid ?? 0)}</span>
+                                                            <span className="text-sm font-semibold text-amber-800 dark:text-amber-100">{formatCurrency(stay.onlinePaid ?? 0)}</span>
                                                             <Button
                                                                 type="button"
                                                                 variant="secondary"
@@ -3822,7 +3822,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                                 : 'success'
                                                                                 }
                                                                             />
-                                                                            {!room.isActive && <span className="text-[11px] text-rose-300">выкл</span>}
+                                                                            {!room.isActive && <span className="text-[11px] font-medium text-rose-600 dark:text-rose-300">выкл</span>}
                                                                             <span className="flex-1" />
                                                                             <button
                                                                                 type="button"
@@ -4003,7 +4003,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 type="button"
                                                 size="icon"
                                                 variant="ghost"
-                                                className="h-9 w-9 border border-white/15 text-white/80 hover:bg-white/[0.06]"
+                                                className="h-9 w-9 border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
                                                 onClick={() => handleSelectShiftForEdit(selectedShift)}
                                                 title="Редактировать смену"
                                                 aria-label="Редактировать смену"
@@ -4022,7 +4022,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
 
                     {editingShift && (
-                        <div className={`${formPanelClass} w-full border-amber-200/70 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/8`}>
+                        <div className={`${formPanelClass} w-full border-amber-200/70 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/[0.08]`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-amber-700/70 dark:text-amber-200/60">Редактирование</p>
@@ -4079,7 +4079,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         })}
                                     />
                                     {shiftEditForm.formState.errors.openingCash && (
-                                        <p className="text-xs text-rose-300">{shiftEditForm.formState.errors.openingCash.message}</p>
+                                        <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{shiftEditForm.formState.errors.openingCash.message}</p>
                                     )}
                                 </div>
                                 <div className="space-y-1">
@@ -4148,7 +4148,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                     )}
 
                     {isCreatingShift && (
-                        <div className={`${formPanelClass} w-full border-emerald-200/70 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/8`}>
+                        <div className={`${formPanelClass} w-full border-emerald-200/70 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/[0.08]`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-700/70 dark:text-emerald-300/60">Создание смены</p>
@@ -4172,7 +4172,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         ))}
                                     </Select>
                                     {createShiftForm.formState.errors.managerId && (
-                                        <p className="text-xs text-rose-300">{createShiftForm.formState.errors.managerId.message}</p>
+                                        <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{createShiftForm.formState.errors.managerId.message}</p>
                                     )}
                                 </div>
                                 <div className="space-y-1">
@@ -4196,7 +4196,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         {...createShiftForm.register('openedAt', { required: 'Укажите время открытия' })}
                                     />
                                     {createShiftForm.formState.errors.openedAt && (
-                                        <p className="text-xs text-rose-300">{createShiftForm.formState.errors.openedAt.message}</p>
+                                        <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{createShiftForm.formState.errors.openedAt.message}</p>
                                     )}
                                 </div>
                                 <div className="space-y-1">
@@ -4215,7 +4215,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         })}
                                     />
                                     {createShiftForm.formState.errors.openingCash && (
-                                        <p className="text-xs text-rose-300">{createShiftForm.formState.errors.openingCash.message}</p>
+                                        <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{createShiftForm.formState.errors.openingCash.message}</p>
                                     )}
                                 </div>
                                 <div className="space-y-1">
@@ -4671,7 +4671,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         <label className={modalLabelClass}>{`Сумма (${hotelCur || 'KZT'})`}</label>
                                         <Input type="number" step="0.01" min="0.01" {...ledgerEditForm.register('amount', { valueAsNumber: true })} />
                                         {ledgerEditForm.formState.errors.amount && (
-                                            <p className="text-xs text-rose-400">{ledgerEditForm.formState.errors.amount.message}</p>
+                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{ledgerEditForm.formState.errors.amount.message}</p>
                                         )}
                                     </div>
                                     <div className="space-y-1">
@@ -4923,7 +4923,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <form className="space-y-3" onSubmit={handleAddManager}>
                                                         <Input placeholder="Имя сменного менеджера" {...managerForm.register('displayName', { required: 'Укажите имя сменного менеджера' })} />
                                                         {managerForm.formState.errors.displayName && (
-                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{managerForm.formState.errors.displayName.message}</p>
                                                         )}
                                                         <div className="flex flex-col gap-2 sm:flex-row">
                                                             <Input
@@ -4943,7 +4943,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </Button>
                                                         </div>
                                                         {managerForm.formState.errors.loginName && (
-                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.loginName.message}</p>
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{managerForm.formState.errors.loginName.message}</p>
                                                         )}
                                                         <Input
                                                             placeholder="PIN (6 цифр)"
@@ -4959,7 +4959,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             })}
                                                         />
                                                         {managerForm.formState.errors.pinCode && (
-                                                            <p className="text-xs text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
                                                         )}
                                                         <Input
                                                             type="number"
@@ -5031,7 +5031,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             ))}
                                                         </Select>
                                                         {updateManagerForm.formState.errors.assignmentId && (
-                                                            <p className="text-xs text-rose-300">
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">
                                                                 {updateManagerForm.formState.errors.assignmentId.message}
                                                             </p>
                                                         )}
@@ -5054,7 +5054,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             })}
                                                         />
                                                         {updateManagerForm.formState.errors.loginName && (
-                                                            <p className="text-xs text-rose-300">
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">
                                                                 {updateManagerForm.formState.errors.loginName.message}
                                                             </p>
                                                         )}
@@ -5074,7 +5074,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             })}
                                                         />
                                                         {updateManagerForm.formState.errors.pinCode && (
-                                                            <p className="text-xs text-rose-300">
+                                                            <p className="text-xs font-medium text-rose-600 dark:text-rose-300">
                                                                 {updateManagerForm.formState.errors.pinCode.message}
                                                             </p>
                                                         )}
@@ -5240,7 +5240,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         <div key={tier.id} className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-3 py-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                             <span className="text-sm text-slate-900 dark:text-white">
                                                                 {formatCurrency(tier.threshold)} →{' '}
-                                                                <span className="text-emerald-300 font-medium">
+                                                                <span className="font-medium text-emerald-700 dark:text-emerald-300">
                                                                     {tier.bonusPct != null && tier.bonusPct > 0
                                                                         ? `${(tier.bonusPct / 100).toFixed(1)}%`
                                                                         : `+${formatCurrency(tier.bonus)}`
@@ -5344,7 +5344,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 {...roomForm.register('roomLabels', { required: true })}
                                             />
                                             {roomForm.formState.errors.roomLabels && (
-                                                <p className="text-xs text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
+                                                <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{roomForm.formState.errors.roomLabels.message}</p>
                                             )}
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 <Input placeholder="Этаж / корпус" {...roomForm.register('floor')} />
@@ -5454,7 +5454,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 : 'success'
                                                                 }
                                                             />
-                                                            {!room.isActive && <span className="text-[11px] text-rose-300">выкл</span>}
+                                                            {!room.isActive && <span className="text-[11px] font-medium text-rose-600 dark:text-rose-300">выкл</span>}
                                                             <span className="min-w-[1rem] flex-1" />
                                                             <button
                                                                 type="button"
@@ -5503,10 +5503,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                         onClick={() => setIsDirtyRoomsOpen(false)}
                     >
                         <Card
-                            className="flex max-h-[82dvh] w-full max-w-md flex-col overflow-hidden border-slate-700/55 bg-[#10141b] p-0 text-slate-100 shadow-2xl dark:bg-[#10141b]"
+                            className="theme-modal flex max-h-[82dvh] w-full max-w-md flex-col overflow-hidden border-slate-300 bg-white p-0 text-slate-900 shadow-2xl dark:border-slate-700/55 dark:bg-[#10141b] dark:text-slate-100"
                             onClick={(event) => event.stopPropagation()}
                         >
-                            <div className="flex items-start justify-between gap-3 border-b border-slate-700/55 px-4 py-3 sm:px-5">
+                            <div className="flex items-start justify-between gap-3 border-b border-slate-300 px-4 py-3 sm:px-5 dark:border-slate-700/55">
                                 <div className="min-w-0">
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{data.name}</p>
                                     <h3 className="mt-1 text-lg font-semibold">Номера на уборке</h3>
@@ -5524,12 +5524,12 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <div key={`dirty-room-${room.id}`} className="rounded-xl border border-rose-300/15 bg-rose-400/[0.07] px-3 py-3">
                                                 <div className="flex items-center justify-between gap-3">
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-semibold text-white">№ {room.label}</p>
+                                                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">№ {room.label}</p>
                                                         <p className="mt-0.5 text-xs text-slate-400">{room.floor?.trim() || 'Этаж не указан'}</p>
                                                     </div>
                                                     <span className="shrink-0 rounded-full bg-rose-400/15 px-2.5 py-1 text-[11px] font-semibold text-rose-200">Уборка</span>
                                                 </div>
-                                                {room.notes?.trim() ? <p className="mt-2 text-xs leading-relaxed text-slate-300">{room.notes.trim()}</p> : null}
+                                                {room.notes?.trim() ? <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{room.notes.trim()}</p> : null}
                                             </div>
                                         ))}
                                     </div>
@@ -5541,7 +5541,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 )}
                             </div>
 
-                            <div className="flex items-center justify-end gap-2 border-t border-slate-700/55 px-4 py-3">
+                            <div className="flex items-center justify-end gap-2 border-t border-slate-300 px-4 py-3 dark:border-slate-700/55">
                                 <Button type="button" variant="ghost" size="sm" onClick={() => setIsDirtyRoomsOpen(false)}>Закрыть</Button>
                                 <Button
                                     type="button"
@@ -5577,8 +5577,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
                     return (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
-                            <Card className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-slate-700/55 bg-[#10141b] p-0 text-slate-100 shadow-2xl dark:bg-[#10141b]">
-                                <div className="flex items-start justify-between gap-3 border-b border-slate-700/55 px-4 py-3 sm:px-5">
+                            <Card className="theme-modal flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-slate-300 bg-white p-0 text-slate-900 shadow-2xl dark:border-slate-700/55 dark:bg-[#10141b] dark:text-slate-100">
+                                <div className="flex items-start justify-between gap-3 border-b border-slate-300 px-4 py-3 sm:px-5 dark:border-slate-700/55">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
                                             {boardListPopup === 'overdue' ? 'На текущий момент' : `Шахматка · ${periodLabel}`}
@@ -5610,7 +5610,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         <button
                                                             key={`admin-free-${item.room.id}-${item.startIndex}-${item.endIndex}`}
                                                             type="button"
-                                                            className="w-full rounded-xl border border-slate-700/55 bg-slate-800/45 px-3 py-2.5 text-left transition hover:border-cyan-200/40 hover:bg-cyan-300/10"
+                                                            className="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2.5 text-left transition hover:border-cyan-400 hover:bg-cyan-50 dark:border-slate-700/55 dark:bg-slate-800/45 dark:hover:border-cyan-200/40 dark:hover:bg-cyan-300/10"
                                                             onClick={() => {
                                                                 setBoardListPopup(null);
                                                                 handleOpenBookingForm(item.room, item.startDate);
@@ -5636,7 +5636,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                 <button
                                                     key={`admin-board-list-${item.room.id}-${item.stay.id}`}
                                                     type="button"
-                                                    className="w-full rounded-xl border border-slate-700/55 bg-slate-800/45 px-3 py-2.5 text-left transition hover:border-slate-500 hover:bg-slate-800/70"
+                                                    className="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2.5 text-left transition hover:border-slate-400 hover:bg-slate-200/80 dark:border-slate-700/55 dark:bg-slate-800/45 dark:hover:border-slate-500 dark:hover:bg-slate-800/70"
                                                     onClick={() => {
                                                         setBoardListPopup(null);
                                                         handleSelectStayForEdit(item.room, item.stay);
@@ -5653,8 +5653,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         />
                                                     </div>
                                                     <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-                                                        <span>Заезд: <span className="text-slate-200">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>
-                                                        <span>Выезд: <span className="text-slate-200">{formatDateTime(item.stay.scheduledCheckOut, hotelTz)}</span></span>
+                                                        <span>Заезд: <span className="text-slate-700 dark:text-slate-200">{formatDateTime(item.stay.scheduledCheckIn, hotelTz)}</span></span>
+                                                        <span>Выезд: <span className="text-slate-700 dark:text-slate-200">{formatDateTime(item.stay.scheduledCheckOut, hotelTz)}</span></span>
                                                     </div>
                                                     {item.stay.tariffPending ? (
                                                         <p className="mt-1 rounded-lg border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 py-1 text-[11px] font-semibold text-fuchsia-100">Тариф уточняется</p>
@@ -5682,7 +5682,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                 <div>
                                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500 dark:text-white/35">Детализация расходов</p>
                                     <h3 className="text-base font-semibold text-slate-900 dark:text-white">Списания №{selectedShift?.number ?? '—'}</h3>
-                                    <p className="text-sm font-semibold text-rose-300">{formatCurrency(selectedShiftExpenseOut)}</p>
+                                    <p className="text-sm font-semibold text-rose-600 dark:text-rose-300">{formatCurrency(selectedShiftExpenseOut)}</p>
                                 </div>
                                 <Button type="button" variant="ghost" size="sm" className="border border-slate-200/80 dark:border-white/10" onClick={closeOutflowModal}>
                                     ×
@@ -5699,7 +5699,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <span>{formatDateTime(entry.recordedAt, hotelTz)}</span>
                                                     <span>{entry.managerName ?? 'Система'}</span>
                                                 </div>
-                                                <p className="mt-2 text-lg font-semibold text-rose-300">{formatLedgerAmount(entry)}</p>
+                                                <p className="mt-2 text-lg font-semibold text-rose-600 dark:text-rose-300">{formatLedgerAmount(entry)}</p>
                                                 <p className="text-xs text-slate-500 dark:text-white/50">{ledgerMethodLabels[entry.method]}</p>
                                                 <p className="mt-1 text-xs text-slate-400 dark:text-white/40">{note || categoryName || 'Расход'}</p>
                                             </div>

@@ -20,15 +20,15 @@ const config: Config = {
                 night: '#1a1a24',
                 ink: '#0f0f18',
                 mist: '#e2e8f0',
-                amber: '#f4a259',
+                'brand-amber': '#f4a259',
                 jade: '#0fa3b1',
                 surface: 'rgba(255,255,255,0.04)',
                 'surface-hover': 'rgba(255,255,255,0.07)',
                 border: 'rgba(255,255,255,0.08)',
                 // Light theme colors
-                'light-bg': '#f8f9fa',
+                'light-bg': '#e9eff6',
                 'light-surface': '#ffffff',
-                'light-border': '#e2e8f0',
+                'light-border': '#cbd5e1',
                 'light-text': '#0f172a'
             },
             borderRadius: {
@@ -36,7 +36,7 @@ const config: Config = {
                 '2xl': '1.25rem'
             },
             boxShadow: {
-                panel: '0 8px 32px var(--shadow)',
+                panel: '0 12px 32px -20px var(--shadow)',
                 glow: '0 0 24px rgba(244, 162, 89, 0.15)'
             },
             spacing: {

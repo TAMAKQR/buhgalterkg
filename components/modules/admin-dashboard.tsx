@@ -524,7 +524,7 @@ const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
 
 const formatDT = (value?: string | null, tz?: string) => fdt(value, tz, undefined, "");
 const guestVerificationMeta: Record<GuestVerificationStatus, { label: string; className: string }> = {
-    PENDING: { label: "Не проверен", className: "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.06] dark:text-white/62" },
+    PENDING: { label: "Не проверен", className: "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/[0.06] dark:bg-white/[0.06] dark:text-white/[0.62]" },
     VERIFIED: { label: "Проверен", className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/55 dark:bg-[#123428] dark:text-emerald-100" },
     NEEDS_REVIEW: { label: "Уточнить", className: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-300/50 dark:bg-[#3b2b12] dark:text-amber-100" },
 };
@@ -571,7 +571,7 @@ const expenseAmountTone = (entry: ExpenseEntry) =>
         ? "text-sky-600 dark:text-sky-300"
         : "text-rose-500 dark:text-rose-300";
 
-const selectClassName = "h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-light-text transition-[border-color,box-shadow,background-color] focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 disabled:opacity-40 dark:border-white/[0.08] dark:bg-white/[0.045] dark:text-white dark:focus:border-blue-400/50 dark:focus:ring-blue-400/10";
+const selectClassName = "h-9 w-full min-w-0 rounded-lg border border-[var(--border-strong)] bg-white px-3 text-[13px] text-slate-900 shadow-sm transition-[border-color,box-shadow,background-color] hover:border-slate-500 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100 disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.045] dark:text-white dark:hover:border-white/15 dark:focus:border-blue-400/50 dark:focus:ring-blue-400/10";
 
 const toDateInputValue = (value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -654,7 +654,7 @@ function CollapsibleSection({
                     <span className="mt-0.5 block truncate text-sm font-semibold text-slate-900 dark:text-white">{title}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
-                    {summary ? <span className="hidden text-xs text-slate-500 dark:text-white/38 sm:inline">{summary}</span> : null}
+                    {summary ? <span className="hidden text-xs text-slate-500 dark:text-white/[0.38] sm:inline">{summary}</span> : null}
                     <span className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/50">
                         <ChevronDown className={`h-4 w-4 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                     </span>
@@ -672,7 +672,7 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400" htmlFor={htmlFor}>
                     {label}
                 </label>
-                {hint ? <span className="text-[11px] text-slate-600 dark:text-white/28">{hint}</span> : null}
+                {hint ? <span className="text-[11px] text-slate-600 dark:text-white/[0.28]">{hint}</span> : null}
             </div>
             {children}
         </div>
@@ -682,7 +682,7 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
 function StatPill({ label, value }: { label: string; value: string }) {
     return (
         <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/[0.055] dark:bg-white/[0.03] sm:rounded-2xl lg:rounded-md">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 dark:text-white/28">{label}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 dark:text-white/[0.28]">{label}</p>
             <p className="mt-1 break-words text-sm font-semibold leading-snug text-slate-800 dark:text-white">{value}</p>
         </div>
     );
@@ -1034,7 +1034,7 @@ function ExpenseReasonSummary({ entries, defaultCurrency, isComplete = true, cla
                                     style={{ width: `${width}%` }}
                                 />
                             </div>
-                            <p className="text-[11px] text-slate-500 dark:text-white/38">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-white/[0.38]">{item.count} {item.count === 1 ? "операция" : item.count < 5 ? "операции" : "операций"}</p>
                         </div>
                     );
                 }) : (
@@ -1192,9 +1192,9 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                 {items.length ? items.map((item, index) => {
                     const currency = "currency" in item ? item.currency ?? defaultCurrency : defaultCurrency;
                     const scoreTone = item.score >= 75
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/[0.12] dark:text-emerald-200"
                         : item.score >= 45
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-400/12 dark:text-amber-100"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-400/[0.12] dark:text-amber-100"
                             : "bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-white/55";
                     const primaryMetric = kind === "hotels"
                         ? `на номер ${formatCurrency((item as HotelRankingItem).revenuePerRoom, currency ?? undefined)}`
@@ -1225,8 +1225,8 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                             {kind === "managers" ? (
                                                 <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
                                                     (item as ManagerRankingItem).isActive
-                                                        ? "bg-emerald-500/10 text-emerald-400"
-                                                        : "bg-white/[0.04] text-slate-400"
+                                                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                                        : "bg-slate-200 text-slate-700 dark:bg-white/[0.04] dark:text-slate-400"
                                                 }`}>
                                                     {(item as ManagerRankingItem).isActive ? "Работает" : "Не работает"}
                                                 </span>
@@ -1245,7 +1245,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                 <p className={`hidden truncate text-right text-sm font-semibold lg:block ${item.net < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"}`}>{formatCurrency(item.net, currency ?? undefined)}</p>
                                 <p className="hidden truncate text-right text-sm font-semibold text-slate-900 dark:text-white lg:block">{kind === "hotels" ? formatCurrency((item as HotelRankingItem).revenuePerRoom, currency ?? undefined) : formatCurrency((item as ManagerRankingItem).revenuePerShift, currency ?? undefined)}</p>
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-white/42 sm:grid-cols-4 lg:hidden">
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-white/[0.42] sm:grid-cols-4 lg:hidden">
                                 <span>
                                     <span className="block text-[10px] uppercase tracking-[0.12em]">Выручка</span>
                                     <strong className="text-slate-900 dark:text-white">{formatCurrency(item.revenue, currency ?? undefined)}</strong>
@@ -1263,7 +1263,7 @@ function EfficiencyRankingCard({ title, subtitle, kind, items, defaultCurrency, 
                                     <strong className="text-slate-900 dark:text-white">{activityMetric}</strong>
                                 </span>
                             </div>
-                            <div className="mt-2 hidden items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-white/38 lg:flex">
+                            <div className="mt-2 hidden items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-white/[0.38] lg:flex">
                                 <span>{activityMetric}</span>
                                 <span>средний чек {formatCurrency(item.averageStayRevenue, currency ?? undefined)} · расходы {formatCurrency(item.expenses, currency ?? undefined)}</span>
                             </div>
@@ -1307,9 +1307,9 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className, onSele
                         <div className="mt-3 space-y-2">
                             {group.managers.map((manager, index) => {
                                 const scoreTone = manager.score >= 75
-                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/12 dark:text-emerald-200"
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/[0.12] dark:text-emerald-200"
                                     : manager.score >= 45
-                                        ? "bg-amber-50 text-amber-700 dark:bg-amber-400/12 dark:text-amber-100"
+                                        ? "bg-amber-50 text-amber-700 dark:bg-amber-400/[0.12] dark:text-amber-100"
                                         : "bg-white text-slate-600 dark:bg-white/[0.06] dark:text-white/55";
 
                                 return (
@@ -1325,13 +1325,13 @@ function ManagersByHotelRankingCard({ groups, defaultCurrency, className, onSele
                                                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{manager.name}</p>
                                                 <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
                                                     manager.isActive
-                                                        ? "bg-emerald-500/10 text-emerald-400"
-                                                        : "bg-white/[0.04] text-slate-400"
+                                                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                                        : "bg-slate-200 text-slate-700 dark:bg-white/[0.04] dark:text-slate-400"
                                                 }`}>
                                                     {manager.isActive ? "Работает" : "Не работает"}
                                                 </span>
                                             </div>
-                                            <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/38">
+                                            <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-white/[0.38]">
                                                 {formatCurrency(manager.revenue, defaultCurrency)} · {manager.shifts} смен · {manager.stays} заездов
                                             </p>
                                         </div>
@@ -2534,7 +2534,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     ];
 
     return (
-        <div className="min-h-screen bg-[#f6f7f9] text-light-text dark:bg-[#0c0f13]">
+        <div className="min-h-screen bg-light-bg text-light-text dark:bg-[#0c0f13]">
             <div className={`lg:grid lg:min-h-screen ${isDesktopSidebarExpanded ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : 'lg:grid-cols-[4.75rem_minmax(0,1fr)]'}`}>
                 <aside className={`hidden border-r border-slate-200/80 bg-white py-5 dark:border-white/[0.07] dark:bg-[#111418] lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col ${isDesktopSidebarExpanded ? 'px-4' : 'px-2'}`}>
                     <div className={`flex items-center border-b border-slate-200 pb-5 dark:border-white/[0.06] ${isDesktopSidebarExpanded ? 'gap-3' : 'flex-col gap-2'}`}>
@@ -2543,7 +2543,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                         </div>
                         <div className={`min-w-0 flex-1 ${isDesktopSidebarExpanded ? '' : 'hidden'}`}>
                             <p className="text-sm font-semibold text-slate-950 dark:text-white">Hotel Ops</p>
-                            <p className="truncate text-xs text-slate-500 dark:text-white/42">{user.displayName}</p>
+                            <p className="truncate text-xs text-slate-500 dark:text-white/[0.42]">{user.displayName}</p>
                         </div>
                         <button type="button" onClick={() => setIsDesktopSidebarExpanded((value) => !value)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-white/[0.06] dark:hover:text-white" aria-label={isDesktopSidebarExpanded ? 'Свернуть боковую панель' : 'Раскрыть боковую панель'} title={isDesktopSidebarExpanded ? 'Свернуть меню' : 'Раскрыть меню'}>
                             {isDesktopSidebarExpanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
@@ -2569,9 +2569,9 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                                     <span className={`min-w-0 flex-1 ${isDesktopSidebarExpanded ? '' : 'hidden'}`}>
                                         <span className="block truncate text-sm font-medium">{tab.label}</span>
-                                        <span className={`block truncate text-[11px] ${active ? "text-blue-500/70 dark:text-blue-300/60" : "text-slate-400 dark:text-slate-600"}`}>{tab.description}</span>
+                                        <span className={`block truncate text-[11px] ${active ? "text-blue-700 dark:text-blue-300/60" : "text-slate-500 dark:text-slate-600"}`}>{tab.description}</span>
                                     </span>
-                                    {tab.hint && isDesktopSidebarExpanded ? <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/14 text-white dark:bg-slate-900/8 dark:text-slate-500" : "bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-white/38"}`}>{tab.hint}</span> : null}
+                                    {tab.hint && isDesktopSidebarExpanded ? <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${active ? "bg-blue-100 text-blue-800 dark:bg-slate-900/[0.08] dark:text-slate-500" : "bg-slate-200 text-slate-700 dark:bg-white/[0.06] dark:text-white/[0.38]"}`}>{tab.hint}</span> : null}
                                 </button>
                             );
                         })}
@@ -2602,7 +2602,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </div>
                         </div>
                     </header>
-                    <div className="sticky top-0 z-10 bg-[#f4f6f8]/94 px-4 py-2 backdrop-blur-md dark:bg-[#0f1218]/94 sm:px-5 lg:hidden">
+                    <div className="sticky top-0 z-10 bg-light-bg/95 px-4 py-2 backdrop-blur-md dark:bg-[#0f1218]/[0.94] sm:px-5 lg:hidden">
                         <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.045]">
                             <div className="flex gap-1 text-sm font-medium text-slate-700 dark:text-white/50">
                                 {adminTabs.map((tab) => {
@@ -2640,7 +2640,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             {activeTab === "overview" ? <div className="flex min-w-0 items-center gap-2">
                                 <div className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-right dark:border-white/[0.06] dark:bg-white/[0.035] xl:block">
                                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">Период</p>
-                                    <p className="text-xs font-medium text-slate-700 dark:text-white/62">{desktopPeriodLabel}</p>
+                                    <p className="text-xs font-medium text-slate-700 dark:text-white/[0.62]">{desktopPeriodLabel}</p>
                                 </div>
                                 {overview ? (
                                     <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={handleExportCSV}>
@@ -2658,7 +2658,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     <div key={item.label} className="min-w-0 rounded-lg border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm dark:border-white/[0.07] dark:bg-[#171b21] dark:shadow-none">
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="truncate text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-white/30">{item.label}</p>
-                                            <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/32" aria-hidden="true" />
+                                            <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/[0.32]" aria-hidden="true" />
                                         </div>
                                         <p className={`mt-1.5 truncate text-base font-semibold ${item.tone}`}>{item.value}</p>
                                     </div>
@@ -3054,7 +3054,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                 <>
                                     <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_46px_-38px_rgba(15,23,42,0.45)] dark:border-white/[0.06] dark:bg-white/[0.03] lg:block">
                                         <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-white/[0.06]">
-                                            <thead className="bg-slate-50/90 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-white/[0.03] dark:text-white/32">
+                                            <thead className="bg-slate-50/90 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-white/[0.03] dark:text-white/[0.32]">
                                                 <tr>
                                                     <th className="px-4 py-3 text-left font-medium">Гость</th>
                                                     <th className="px-4 py-3 text-left font-medium">Объект</th>
@@ -3104,7 +3104,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                                         <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/35">{formatDT(guest.lastStay.scheduledCheckIn, guest.lastStay.timezone ?? guestTz)}</p>
                                                                     </>
                                                                 ) : (
-                                                                    <span className="text-slate-400 dark:text-white/28">—</span>
+                                                                    <span className="text-slate-400 dark:text-white/[0.28]">—</span>
                                                                 )}
                                                             </td>
                                                             <td className="max-w-[230px] px-4 py-3 text-slate-600 dark:text-white/55">
@@ -3117,7 +3117,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                                         </p>
                                                                     </>
                                                                 ) : (
-                                                                    <span className="text-slate-400 dark:text-white/28">—</span>
+                                                                    <span className="text-slate-400 dark:text-white/[0.28]">—</span>
                                                                 )}
                                                             </td>
                                                             <td className="px-4 py-3">
@@ -3186,7 +3186,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                     <div className="min-w-0 lg:self-center">
                                         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-white/30">Конфигурация</p>
                                         <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Управление объектами</h2>
-                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/42">Выберите филиал и настройте только нужные ему возможности.</p>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-white/[0.42]">Выберите филиал и настройте только нужные ему возможности.</p>
                                     </div>
                                     <Field label="Текущий объект" htmlFor="manage-hotel-select">
                                         <Select
@@ -3216,7 +3216,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         <button
                                             key={section.id}
                                             type="button"
-                                            className={`flex min-w-0 flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors lg:flex-row lg:gap-3 lg:px-3 lg:text-left ${active ? "bg-blue-50 text-blue-700 dark:bg-blue-500/12 dark:text-blue-300" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-white/40 dark:hover:bg-white/[0.04] dark:hover:text-white/75"}`}
+                                            className={`flex min-w-0 flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors lg:flex-row lg:gap-3 lg:px-3 lg:text-left ${active ? "bg-blue-50 text-blue-700 dark:bg-blue-500/[0.12] dark:text-blue-300" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-white/40 dark:hover:bg-white/[0.04] dark:hover:text-white/75"}`}
                                             onClick={() => setManageSection(section.id)}
                                             aria-current={active ? "page" : undefined}
                                         >
@@ -3676,7 +3676,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/12"
+                                                        className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/[0.12]"
                                                         disabled={deletingObserverId === obs.id}
                                                         onClick={() => handleDeleteObserver(obs.id)}
                                                         title="Удалить доступ управляющего"

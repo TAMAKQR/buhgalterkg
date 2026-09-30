@@ -41,7 +41,7 @@ export const BookingBoardTimeRuler = ({ hourStep }: { hourStep: number | null })
 export const BookingBoardTimeGuides = () => (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         {[1, 2, 3, 4, 5].map((step) => (
-            <span key={step} className="absolute inset-y-0 w-px bg-slate-300/35 dark:bg-white/[0.035]" style={{ left: `${(step / 6) * 100}%` }} />
+            <span key={step} className="absolute inset-y-0 w-px bg-slate-300/60 dark:bg-white/[0.035]" style={{ left: `${(step / 6) * 100}%` }} />
         ))}
     </div>
 );

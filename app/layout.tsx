@@ -31,10 +31,28 @@ export const viewport: Viewport = {
     initialScale: 1
 };
 
+const themeInitializer = `
+    (() => {
+        try {
+            const storedTheme = localStorage.getItem('theme');
+            const theme = storedTheme === 'light' ? 'light' : 'dark';
+            document.documentElement.classList.toggle('dark', theme === 'dark');
+            document.documentElement.style.colorScheme = theme;
+            document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0f172a' : '#e9eff6');
+        } catch (_) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+        }
+    })();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="ru" className="min-h-full bg-[#f4f6f8] dark dark:bg-[#0c0f13]" suppressHydrationWarning>
-            <body className="min-h-screen bg-[#f4f6f8] font-sans text-light-text antialiased dark:bg-[#0c0f13] dark:text-mist">
+        <html lang="ru" className="min-h-full bg-light-bg dark dark:bg-[#0c0f13]" suppressHydrationWarning>
+            <head>
+                <script dangerouslySetInnerHTML={{ __html: themeInitializer }} />
+            </head>
+            <body className="min-h-screen bg-light-bg font-sans text-light-text antialiased dark:bg-[#0c0f13] dark:text-mist">
                 <ServiceWorkerMaintenance />
                 <ThemeProvider>
                     <ToastProvider>

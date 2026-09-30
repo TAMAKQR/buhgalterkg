@@ -9,8 +9,8 @@ import { ObserverLogin } from '@/components/modules/observer-login';
 import { useManualSession } from '@/hooks/useManualSession';
 
 const RoleScreenLoading = () => (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f8] dark:bg-[#0c0f13]" role="status" aria-label="Загрузка интерфейса">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+    <div className="flex min-h-screen items-center justify-center bg-light-bg dark:bg-[#0c0f13]" role="status" aria-label="Загрузка интерфейса">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-700 dark:border-white/20 dark:border-t-white/70" />
     </div>
 );
 
@@ -56,11 +56,7 @@ export const EntryRouter = () => {
     }, [role, user, handleLogout]);
 
     if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f4f6f8] dark:bg-[#0c0f13]">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
-            </div>
-        );
+        return <RoleScreenLoading />;
     }
 
     if (!view) {

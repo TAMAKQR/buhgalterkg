@@ -3,29 +3,35 @@
 @tailwind utilities;
 
 :root {
-    --bg-primary: #f7f8fa;
-    --bg-secondary: #f4f6f8;
+    color-scheme: light;
+    --bg-primary: #f8fafc;
+    --bg-secondary: #e9eff6;
     --bg-surface: #ffffff;
-    --bg-hover: #eef1f4;
-    --text-primary: #17202a;
-    --text-secondary: #344054;
-    --text-tertiary: #667085;
-    --border-color: #e4e7ec;
-    --shadow: rgba(16, 24, 40, 0.08);
-    --accent: #2563eb;
+    --bg-subtle: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-tertiary: #526176;
+    --border-color: #cbd5e1;
+    --border-strong: #8492a6;
+    --shadow: rgba(15, 23, 42, 0.12);
+    --accent: #1d4ed8;
     --workspace-gutter: clamp(0.75rem, 1vw, 1.25rem);
     --workspace-gap: 1rem;
 }
 
 .dark {
+    color-scheme: dark;
     --bg-primary: #111418;
     --bg-secondary: #0c0f13;
     --bg-surface: #171b21;
+    --bg-subtle: #20252d;
     --bg-hover: #20252d;
     --text-primary: #f1f3f5;
     --text-secondary: #c9ced6;
     --text-tertiary: #8f98a6;
     --border-color: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
     --shadow: rgba(0, 0, 0, 0.24);
     --accent: #60a5fa;
 }
@@ -40,13 +46,140 @@ body {
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
     background-color: var(--bg-secondary);
-    background-image: none;
+    background-image:
+        radial-gradient(circle at 12% 0%, rgba(37, 99, 235, 0.07), transparent 30rem),
+        linear-gradient(180deg, #f4f7fb 0%, var(--bg-secondary) 32rem);
+    background-attachment: fixed;
     color: var(--text-primary);
     transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .dark body {
     background-image: none;
+}
+
+/* Light theme contrast pass. These overrides keep existing utility-heavy
+   screens coherent without changing their dark-theme counterparts. */
+:where(html:not(.dark)) .text-slate-400 { color: #64748b; }
+:where(html:not(.dark)) .text-slate-500 { color: #526176; }
+:where(html:not(.dark)) .text-slate-600 { color: #334155; }
+:where(html:not(.dark)) .border-slate-200 { border-color: #cbd5e1; }
+:where(html:not(.dark)) .border-slate-200\/90 { border-color: rgba(203, 213, 225, 0.95); }
+:where(html:not(.dark)) .border-slate-200\/80 { border-color: rgba(203, 213, 225, 0.9); }
+:where(html:not(.dark)) .border-slate-200\/70 { border-color: rgba(203, 213, 225, 0.82); }
+:where(html:not(.dark)) .border-slate-200\/60 { border-color: rgba(203, 213, 225, 0.74); }
+:where(html:not(.dark)) .bg-slate-50 { background-color: #f1f5f9; }
+:where(html:not(.dark)) .bg-slate-50\/90 { background-color: rgba(241, 245, 249, 0.96); }
+:where(html:not(.dark)) .bg-slate-50\/80 { background-color: rgba(241, 245, 249, 0.9); }
+:where(html:not(.dark)) .bg-slate-50\/70 { background-color: rgba(241, 245, 249, 0.82); }
+:where(html:not(.dark)) .bg-slate-50\/60 { background-color: rgba(241, 245, 249, 0.74); }
+:where(html:not(.dark)) .bg-slate-100 { background-color: #e2e8f0; }
+
+/* Several manager dialogs were originally designed only for a dark surface.
+   Keep their existing dark palette, while translating the reused translucent
+   utilities into readable light-theme surfaces and text. */
+:where(html:not(.dark)) .theme-modal :where(.text-white\/35, .text-white\/40, .text-white\/45, .text-white\/50) {
+    color: #64748b;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-white\/55, .text-white\/60, .text-white\/65, .text-white\/70, .text-white\/75, .text-white\/80) {
+    color: #334155;
+}
+
+:where(html:not(.dark)) .theme-modal :where(input, select, textarea).text-white,
+:where(html:not(.dark)) .theme-modal span.text-white {
+    color: #0f172a;
+}
+
+:where(html:not(.dark)) .theme-modal .hover\:text-white:hover {
+    color: #0f172a;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-white\/\[0\.08\], .border-white\/10) {
+    border-color: #cbd5e1;
+}
+
+:where(html:not(.dark)) .theme-modal .hover\:border-white\/20:hover,
+:where(html:not(.dark)) .theme-modal .hover\:border-white\/25:hover,
+:where(html:not(.dark)) .theme-modal .hover\:border-white\/30:hover {
+    border-color: #94a3b8;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.bg-white\/\[0\.035\], .bg-white\/\[0\.04\], .bg-black\/\[0\.12\]) {
+    background-color: #f1f5f9;
+}
+
+:where(html:not(.dark)) .theme-modal .hover\:bg-white\/\[0\.06\]:hover,
+:where(html:not(.dark)) .theme-modal .hover\:bg-white\/\[0\.07\]:hover {
+    background-color: #e2e8f0;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-rose-100, .text-rose-200, .text-rose-200\/55, .text-rose-300) {
+    color: #be123c;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-amber-50, .text-amber-100, .text-amber-100\/55, .text-amber-100\/65, .text-amber-100\/75, .text-amber-200) {
+    color: #92400e;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-emerald-50, .text-emerald-100, .text-emerald-100\/55, .text-emerald-200, .text-emerald-200\/80) {
+    color: #047857;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-cyan-100, .text-cyan-100\/55, .text-cyan-100\/65, .text-cyan-100\/75, .text-cyan-100\/80) {
+    color: #0e7490;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.text-fuchsia-100, .text-fuchsia-100\/55) {
+    color: #a21caf;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.bg-rose-400\/10, .bg-rose-400\/\[0\.07\], .bg-rose-500\/10) {
+    background-color: #ffe4e6;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.bg-amber-400\/10, .bg-amber-400\/\[0\.12\], .bg-amber-400\/20, .bg-amber-400\/\[0\.07\]) {
+    background-color: #fef3c7;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.bg-emerald-300\/15, .bg-emerald-400\/10, .bg-emerald-400\/\[0\.07\], .bg-emerald-400\/\[0\.12\], .bg-emerald-500\/\[0\.12\]) {
+    background-color: #d1fae5;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.bg-cyan-300\/\[0\.06\], .bg-cyan-400\/10) {
+    background-color: #cffafe;
+}
+
+:where(html:not(.dark)) .theme-modal .hover\:bg-cyan-300\/10:hover {
+    background-color: #cffafe;
+}
+
+:where(html:not(.dark)) .theme-modal .bg-fuchsia-400\/10 {
+    background-color: #fae8ff;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-rose-300\/15, .border-rose-400\/20) {
+    border-color: #f43f5e;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-amber-300\/15, .border-amber-300\/20, .border-amber-400\/20) {
+    border-color: #d97706;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-emerald-300\/15, .border-emerald-300\/20) {
+    border-color: #059669;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-cyan-300\/15, .border-cyan-300\/20, .border-cyan-400\/20) {
+    border-color: #0891b2;
+}
+
+:where(html:not(.dark)) .theme-modal :where(.border-fuchsia-300\/20, .border-fuchsia-300\/25, .border-fuchsia-400\/20) {
+    border-color: #c026d3;
+}
+
+:where(html:not(.dark)) .theme-modal .hover\:border-cyan-200\/40:hover {
+    border-color: #0891b2;
 }
 
 ::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
@@ -137,13 +270,13 @@ button, a, input, textarea, select { touch-action: manipulation; }
 
 /* Remove input autofill bg */
 input:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 30px var(--bg-secondary) inset !important;
+    -webkit-box-shadow: 0 0 0 30px var(--bg-surface) inset !important;
     -webkit-text-fill-color: var(--text-primary) !important;
 }
 
 /* Select options */
 option {
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     color: var(--text-primary);
 }
 

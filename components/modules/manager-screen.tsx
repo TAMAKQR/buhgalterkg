@@ -490,7 +490,7 @@ const formatBoardWeekday = (value: Date, timezone?: string) =>
 const formatBoardTime = (value: Date | string, timezone?: string) =>
     new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone }).format(new Date(value));
 
-const tariffPendingBoardClass = 'border-violet-300/70 bg-violet-500/24 text-violet-50 ring-1 ring-violet-200/25 shadow-violet-950/20';
+const tariffPendingBoardClass = 'border-violet-300 bg-violet-100 text-violet-900 ring-1 ring-violet-300/70 shadow-violet-950/10 dark:border-violet-300/70 dark:bg-violet-500/[0.24] dark:text-violet-50 dark:ring-violet-200/25 dark:shadow-violet-950/20';
 
 const boardStatusClass = (status: string, isOverdue = false, tariffPending = false) => {
     if (tariffPending) {
@@ -3092,7 +3092,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
     const isStayDataModalMode = checkInModal?.mode === 'checkin' || checkInModal?.mode === 'book' || checkInModal?.mode === 'edit';
     const showPaymentInputsInModal = Boolean(checkInModal && checkInModal.mode !== 'transfer' && checkInModal.mode !== 'edit');
-    const modalDateTimeInputClass = 'max-w-full px-2 text-[13px] text-white sm:px-3.5 sm:text-sm';
+    const modalDateTimeInputClass = 'max-w-full px-2 text-[13px] text-slate-900 dark:text-white sm:px-3.5 sm:text-sm';
     const showModalExtranetFields = Boolean(isStayDataModalMode && data?.hotel.usesExtranets && (data.hotel.extranetNames?.length ?? 0) > 0);
     const showModalBookingNumberField = Boolean(showModalExtranetFields && checkInModal?.bookingSource.trim());
     const showModalTariffField = Boolean(isStayDataModalMode && checkInModal?.mode !== 'checkin');
@@ -3211,7 +3211,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     }
 
     return (
-        <div className="min-h-screen bg-[#f4f6f8] text-slate-800 dark:bg-[#0c0f13] dark:text-slate-200">
+        <div className="min-h-screen bg-light-bg text-slate-900 dark:bg-[#0c0f13] dark:text-slate-200">
             <div className={`lg:grid lg:min-h-screen ${isDesktopSidebarExpanded ? 'lg:grid-cols-[16rem_minmax(0,1fr)]' : 'lg:grid-cols-[4.75rem_minmax(0,1fr)]'}`}>
                 <aside className={`hidden border-r border-slate-200/80 bg-white py-5 text-slate-600 dark:border-white/[0.07] dark:bg-[#111418] dark:text-slate-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden ${isDesktopSidebarExpanded ? 'px-4' : 'px-2'}`}>
                     <div className="border-b border-slate-200/80 pb-4 dark:border-slate-700/45">
@@ -3243,7 +3243,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     title={!isDesktopSidebarExpanded ? tab.label : undefined}
                                     aria-label={tab.label}
                                     className={`group flex w-full items-center rounded-lg py-2.5 text-left transition-colors ${isDesktopSidebarExpanded ? 'gap-3 px-3' : 'justify-center px-2'} ${active
-                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
+                                        ? 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-400/15'
                                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-slate-200'
                                         }`}
                                 >
@@ -3301,7 +3301,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     </div>
                 </aside>
 
-                <main className="workspace-page min-w-0 bg-[#f4f6f8] pb-16 pt-3 dark:bg-[#0c0f13] lg:py-5">
+                <main className="workspace-page min-w-0 bg-light-bg pb-16 pt-3 dark:bg-[#0c0f13] lg:py-5">
                     <div className="w-full min-w-0">
                     <header className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.42)] dark:border-slate-700/55 dark:bg-slate-800/35 lg:hidden">
                         <div className="flex items-start justify-between gap-3">
@@ -3364,7 +3364,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         </div>
                     </header>
 
-                    <div className="sticky top-0 z-40 -mx-3 mb-3 bg-[#f4f6f8]/94 px-3 py-2 backdrop-blur-md dark:bg-[#0c0f13]/94 sm:-mx-5 sm:px-5 lg:hidden">
+                    <div className="sticky top-0 z-40 -mx-3 mb-3 bg-light-bg/95 px-3 py-2 backdrop-blur-md dark:bg-[#0c0f13]/[0.94] sm:-mx-5 sm:px-5 lg:hidden">
                         <div className="rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700/55 dark:bg-slate-800/35">
                             <div className="flex gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
                                 {panelTabs.map((tab) => (
@@ -3373,7 +3373,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         type="button"
                                         onClick={() => setActivePanel(tab.id)}
                                         className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md px-1 py-1.5 transition-colors ${activePanel === tab.id
-                                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
+                                             ? 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-400/15'
                                             : 'hover:text-slate-800 dark:hover:text-slate-200'
                                             }`}
                                     >
@@ -3540,8 +3540,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     ) : null}
                                 </div>
                                 {roomViewMode === 'board' ? (
-                                    <div className="rounded-xl border border-slate-200/80 bg-[#f4f6f8] p-3 text-slate-800 dark:border-white/[0.07] dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
-                                        <div className="sticky top-0 z-40 -mx-1 bg-[#f4f6f8]/95 px-1 backdrop-blur-md dark:bg-[#0c0f13]/95">
+                                    <div className="rounded-xl border border-slate-300/80 bg-light-bg p-3 text-slate-900 dark:border-white/[0.07] dark:bg-[#0c0f13] dark:text-slate-200 sm:p-4">
+                                        <div className="sticky top-0 z-40 -mx-1 bg-light-bg/95 px-1 backdrop-blur-md dark:bg-[#0c0f13]/95">
                                         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-slate-200/80 py-2 dark:border-white/[0.07]">
                                             <div className="flex flex-wrap gap-1.5">
                                                 <button
@@ -3553,7 +3553,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-amber/15 dark:bg-amber/15 dark:text-amber dark:hover:bg-amber/20"
+                                                    className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-center text-[11px] font-medium leading-tight text-amber-700 transition break-words [overflow-wrap:anywhere] hover:bg-amber-100 dark:border-brand-amber/15 dark:bg-brand-amber/15 dark:text-brand-amber dark:hover:bg-brand-amber/20"
                                                     onClick={() => setBoardListPopup('checkedIn')}
                                                 >
                                                     Заселён <span className="font-semibold">{boardCheckedInItems.length}</span>
@@ -4423,7 +4423,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                     </div>
                     {isProfileOpen && (
                         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-2 sm:p-4">
-                            <div className="relative w-full max-w-3xl rounded-xl sm:rounded-2xl bg-ink p-3 sm:p-5 text-white shadow-2xl">
+                            <div className="theme-modal relative w-full max-w-3xl rounded-xl border border-slate-300 bg-white p-3 text-slate-900 shadow-2xl sm:rounded-2xl sm:p-5 dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                 <button
                                     type="button"
                                     onClick={handleCloseProfile}
@@ -4433,7 +4433,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                     ×
                                 </button>
                                 <div className="pr-10">
-                                    <h2 className="text-base font-semibold text-white">{managerName}</h2>
+                                    <h2 className="text-base font-semibold text-slate-950 dark:text-white">{managerName}</h2>
                                     <p className="text-xs text-white/40">{primaryHotel.name}</p>
                                 </div>
                                 <div className="mt-4 space-y-4">
@@ -4451,7 +4451,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                                     <div>
                                                         <p className="text-xs uppercase tracking-widest text-white/40">Назначение</p>
-                                                        <p className="text-base font-semibold text-white">{primaryHotel.name}</p>
+                                                        <p className="text-base font-semibold text-slate-950 dark:text-white">{primaryHotel.name}</p>
                                                     </div>
                                                     {profileData.assignment?.createdAt && (
                                                         <p className="text-xs text-white/60">
@@ -4462,7 +4462,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <div className="mt-4 grid gap-3 text-sm text-white/80 sm:grid-cols-3">
                                                     <div className="rounded-xl bg-white/[0.04] p-3">
                                                         <p className="text-xs uppercase tracking-widest text-white/40">Ставка</p>
-                                                        <p className="text-base font-semibold text-white">
+                                                        <p className="text-base font-semibold text-slate-950 dark:text-white">
                                                             {profileData.assignment?.shiftPayAmount != null
                                                                 ? formatKgs(profileData.assignment.shiftPayAmount)
                                                                 : '—'}
@@ -4470,7 +4470,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                     <div className="rounded-xl bg-white/[0.04] p-3">
                                                         <p className="text-xs uppercase tracking-widest text-white/40">Процент</p>
-                                                        <p className="text-base font-semibold text-white">
+                                                        <p className="text-base font-semibold text-slate-950 dark:text-white">
                                                             {profileData.assignment?.revenueSharePct != null
                                                                 ? `${profileData.assignment.revenueSharePct}%`
                                                                 : '—'}
@@ -4478,7 +4478,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     </div>
                                                     <div className="rounded-xl bg-white/[0.04] p-3">
                                                         <p className="text-xs uppercase tracking-widest text-white/40">PIN</p>
-                                                        <p className="text-base font-semibold text-white">
+                                                        <p className="text-base font-semibold text-slate-950 dark:text-white">
                                                             {profileData.assignment?.hasPin ? 'Настроен' : 'Не задан'}
                                                         </p>
                                                     </div>
@@ -4511,7 +4511,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     <div className="space-y-1">
                                                         <label className="text-xs uppercase tracking-widest text-white/40">Статус</label>
                                                         <Select
-                                                            className="bg-ink text-white"
+                                                            className="bg-white text-slate-900 dark:bg-ink dark:text-white"
                                                             value={historyStatus}
                                                             onChange={(event) => setHistoryStatus(event.target.value as 'ALL' | 'OPEN' | 'CLOSED')}
                                                         >
@@ -4542,7 +4542,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 <div className="space-y-1">
                                                     <label className="text-xs uppercase tracking-widest text-white/40">Выберите смену</label>
                                                     <Select
-                                                        className="bg-ink text-white"
+                                                        className="bg-white text-slate-900 dark:bg-ink dark:text-white"
                                                         value={selectedShiftId}
                                                         onChange={(event) => setSelectedShiftId(event.target.value)}
                                                         disabled={!filteredProfileShifts.length}
@@ -4631,7 +4631,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {groupCheckIn && (
                         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
-                            <div className="mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-xl bg-ink p-3 text-white shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5">
+                            <div className="theme-modal mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-xl border border-slate-300 bg-white p-3 text-slate-900 shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5 dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                 <div className="mb-3 flex items-center justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">Группа</p>
@@ -4831,7 +4831,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                 return (
                                                     <label
                                                         key={`group-room-${room.id}`}
-                                                        className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/75 hover:bg-white/[0.07]'}`}
+                                                        className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/[0.12] text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/75 hover:bg-white/[0.07]'}`}
                                                     >
                                                         <input
                                                             type="checkbox"
@@ -4859,7 +4859,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                     return (
                                                         <label
                                                             key={`group-meal-${option.value}`}
-                                                            className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
+                                                            className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/[0.12] text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
                                                         >
                                                             <input
                                                                 type="checkbox"
@@ -4937,7 +4937,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         >
                             <Card className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain p-4 text-light-text shadow-2xl dark:text-white sm:p-5">
                                 <div className="flex items-start gap-3">
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/[0.12] text-emerald-600 dark:text-emerald-300">
                                         <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
                                     </span>
                                     <div className="min-w-0">
@@ -5012,7 +5012,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {guestQrModal && (
                         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
-                            <div className="mx-auto w-full max-w-lg rounded-xl bg-ink p-3 text-white shadow-2xl sm:rounded-2xl sm:p-5">
+                            <div className="theme-modal mx-auto w-full max-w-lg rounded-xl border border-slate-300 bg-white p-3 text-slate-900 shadow-2xl sm:rounded-2xl sm:p-5 dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                 <div className="mb-3 flex items-center justify-between gap-3">
                                     <div>
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Сканирование гостя</p>
@@ -5162,7 +5162,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             )}
 
                                             {guestQrModal.result.recentStays.length ? (
-                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/12 p-2">
+                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/[0.12] p-2">
                                                     <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/35">Последние визиты</p>
                                                     <div className="space-y-1 text-xs text-white/55">
                                                         {guestQrModal.result.recentStays.slice(0, 3).map((stay) => (
@@ -5175,7 +5175,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             ) : null}
 
                                             {guestQrModal.result.auditLogs.length ? (
-                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/12 p-2">
+                                                <div className="mt-3 rounded-lg border border-white/10 bg-black/[0.12] p-2">
                                                     <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/35">История профиля</p>
                                                     <div className="space-y-1.5 text-xs text-white/55">
                                                         {guestQrModal.result.auditLogs.slice(0, 5).map((entry) => (
@@ -5224,7 +5224,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {checkInModal && (
                         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-2 py-3 sm:px-4 sm:py-6">
-                            <div className="mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-xl bg-ink p-3 text-white shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5">
+                            <div className="theme-modal mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-xl border border-slate-300 bg-white p-3 text-slate-900 shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl sm:p-5 dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="text-base font-semibold">
                                         {checkInModal.mode === 'book'
@@ -5395,7 +5395,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                                             return (
                                                                 <label
                                                                     key={`modal-meal-${option.value}`}
-                                                                    className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
+                                                                    className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${checked ? 'border-emerald-400/40 bg-emerald-400/[0.12] text-emerald-100' : 'border-white/[0.08] bg-white/[0.04] text-white/70 hover:bg-white/[0.07]'}`}
                                                                 >
                                                                     <input
                                                                         type="checkbox"
@@ -5621,7 +5621,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                         >
                             <Card className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain p-4 text-light-text shadow-2xl dark:text-white sm:p-5">
                                 <div className="flex items-start gap-3">
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/[0.12] text-emerald-600 dark:text-emerald-300">
                                         <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
                                     </span>
                                     <div className="min-w-0">
@@ -5731,7 +5731,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                         return (
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
-                                <Card className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-white/[0.08] bg-ink p-0 text-white shadow-2xl dark:bg-ink">
+                                <Card className="theme-modal flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden border-slate-300 bg-white p-0 text-slate-900 shadow-2xl dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                     <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-5">
                                         <div className="min-w-0">
                                             <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">
@@ -5832,7 +5832,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {boardDayAction && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-3 py-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-xs space-y-4 border-white/[0.08] bg-ink p-4 text-white shadow-2xl dark:bg-ink">
+                            <Card className="theme-modal w-full max-w-xs space-y-4 border-slate-300 bg-white p-4 text-slate-900 shadow-2xl dark:border-white/[0.08] dark:bg-ink dark:text-white">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Сегодня</p>
@@ -5877,7 +5877,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {bookingDetails && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-sm space-y-4 border-white/[0.08] bg-ink p-4 text-white shadow-2xl dark:bg-ink sm:p-5">
+                            <Card className="theme-modal w-full max-w-sm space-y-4 border-slate-300 bg-white p-4 text-slate-900 shadow-2xl dark:border-white/[0.08] dark:bg-ink dark:text-white sm:p-5">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Бронь</p>
@@ -6011,7 +6011,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {bookingDetails && isCancelBookingOpen && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-3 py-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-md space-y-4 border-white/[0.08] bg-ink p-4 text-white shadow-2xl dark:bg-ink sm:p-5">
+                            <Card className="theme-modal w-full max-w-md space-y-4 border-slate-300 bg-white p-4 text-slate-900 shadow-2xl dark:border-white/[0.08] dark:bg-ink dark:text-white sm:p-5">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.2em] text-rose-200/55">Отмена брони</p>
@@ -6039,7 +6039,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                         <div className="grid gap-2 sm:grid-cols-2">
                                             <button
                                                 type="button"
-                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'REFUND' ? 'border-emerald-300/60 bg-emerald-400/12 text-emerald-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
+                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'REFUND' ? 'border-emerald-300/60 bg-emerald-400/[0.12] text-emerald-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
                                                 onClick={() => setCancellationPaymentAction('REFUND')}
                                             >
                                                 <span className="block text-sm font-semibold">Вернуть гостю</span>
@@ -6047,7 +6047,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                             </button>
                                             <button
                                                 type="button"
-                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'RETAIN' ? 'border-amber-300/60 bg-amber-400/12 text-amber-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
+                                                className={`rounded-xl border p-3 text-left transition ${cancellationPaymentAction === 'RETAIN' ? 'border-amber-300/60 bg-amber-400/[0.12] text-amber-50' : 'border-white/10 bg-white/[0.035] text-white/70 hover:border-white/25'}`}
                                                 onClick={() => setCancellationPaymentAction('RETAIN')}
                                             >
                                                 <span className="block text-sm font-semibold">Удержать</span>
@@ -6084,7 +6084,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
 
                     {paymentAdjust && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3 py-4 backdrop-blur-sm">
-                            <Card className="w-full max-w-sm space-y-4 border-white/[0.08] bg-ink p-4 text-white shadow-2xl dark:bg-ink sm:p-5">
+                            <Card className="theme-modal w-full max-w-sm space-y-4 border-slate-300 bg-white p-4 text-slate-900 shadow-2xl dark:border-white/[0.08] dark:bg-ink dark:text-white sm:p-5">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Исправить оплату</p>
