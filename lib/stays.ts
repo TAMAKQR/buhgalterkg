@@ -1,12 +1,7 @@
 import { PaymentMethod } from '@prisma/client';
+import { normalizeBookingSourceKey } from '@/lib/booking-sources';
 
-const normalizeComparable = (value: string) => {
-    const normalized = value.trim().toLocaleLowerCase('ru-RU');
-    if (['booking', 'booking.com', 'bgc'].includes(normalized)) return 'booking';
-    if (['ostrovok', 'островок', 'otk'].includes(normalized)) return 'ostrovok';
-    if (['trip.com', 'trip', 'ctp'].includes(normalized)) return 'trip.com';
-    return normalized;
-};
+const normalizeComparable = normalizeBookingSourceKey;
 
 export const sanitizeExtranetNames = (values: Array<string | null | undefined>) => {
     const unique = new Set<string>();

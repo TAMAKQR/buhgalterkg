@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/select';
 import { BOOKING_BOARD_SCALES, BookingBoardTimeGuides, BookingBoardTimeRuler, normalizeBookingBoardScale, type BookingBoardScale } from '@/components/ui/booking-board-time-grid';
+import { BookingSourceIcon } from '@/components/ui/booking-source-icon';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useApi } from '@/hooks/useApi';
 import { formatDateKey, formatDateTime, formatMoney, getTimeOfDayFraction, parseDateOnly } from '@/lib/timezone';
@@ -3756,7 +3757,10 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                                 {item.stay.status === 'CHECKED_IN' ? (
                                                                                     <span className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/20 transition-[width]" style={{ width: `${item.progressPct}%` }} />
                                                                                 ) : null}
-                                                                                <span className="relative block truncate font-semibold">{item.guestLabel}</span>
+                                                                                <span className="relative flex min-w-0 items-center gap-1 font-semibold">
+                                                                                    <BookingSourceIcon source={item.stay.bookingSource} />
+                                                                                    <span className="min-w-0 truncate">{item.guestLabel}</span>
+                                                                                </span>
                                                                                 <span className="relative mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium opacity-90">
                                                                                     <span className="truncate">Заезд {formatBoardTime(item.stay.scheduledCheckIn, hotelTz)}</span>
                                                                                     <span className="shrink-0">Выезд {formatBoardTime(item.stay.scheduledCheckOut, hotelTz)}</span>
