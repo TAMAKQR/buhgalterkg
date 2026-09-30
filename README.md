@@ -4,7 +4,8 @@
 
 ## Features
 
-- Авторизация по логину/паролю (админ) и PIN-коду (менеджер).
+- Авторизация по логину/паролю (админ и управляющий отеля) и PIN-коду (сменный менеджер).
+- Отдельный read-only доступ управляющего только к назначенному отелю без видимости других объектов сети.
 - Telegram-бот для уведомлений (необязательно, только уведомления и служебные команды).
 - Role-aware entry router that sends admins to a desktop dashboard and managers to a mobile-first interface.
 - Admin tooling to create hotels ("точки"), inspect occupancy, and observe current shift cash state.

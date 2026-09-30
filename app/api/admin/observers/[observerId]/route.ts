@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             },
         });
         if (!observer) {
-            return new NextResponse('Наблюдатель не найден', { status: 404 });
+            return new NextResponse('Доступ управляющего не найден', { status: 404 });
         }
 
         const data: Record<string, unknown> = {};
@@ -91,7 +91,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             },
         });
         if (!observer) {
-            return new NextResponse('Наблюдатель не найден', { status: 404 });
+            return new NextResponse('Доступ управляющего не найден', { status: 404 });
         }
 
         await prisma.$transaction(async (tx) => {

@@ -210,7 +210,7 @@ export function ObserverScreen({ user, onLogout }: ObserverScreenProps) {
             <header className="workspace-page sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.06] bg-[#0c0f13]/90 py-3 backdrop-blur">
                 <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{data.hotel.name}</h1>
-                    <p className="text-[11px] text-white/40 truncate">{user.displayName} · наблюдатель</p>
+                    <p className="text-[11px] text-white/40 truncate">{user.displayName} · управляющий отеля</p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={onLogout}>
                     Выход

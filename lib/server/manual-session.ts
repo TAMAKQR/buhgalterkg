@@ -127,6 +127,10 @@ const refreshManualSessionUser = async (snapshot: SessionUser): Promise<SessionU
                     role: snapshot.role,
                     ...(scopedHotelIds.length > 0 ? { hotelId: { in: scopedHotelIds } } : {})
                 },
+                orderBy: snapshot.role === 'OBSERVER'
+                    ? [{ createdAt: 'asc' as const }, { id: 'asc' as const }]
+                    : undefined,
+                take: snapshot.role === 'OBSERVER' ? 1 : undefined,
                 select: {
                     hotel: {
                         select: { id: true, name: true, address: true }

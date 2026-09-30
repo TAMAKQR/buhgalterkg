@@ -73,10 +73,10 @@ export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLogin
             description="Войдите, чтобы продолжить работу"
             icon={<Building2 className="h-5 w-5" aria-hidden="true" />}
             footer={(
-                <div className="flex items-center justify-center gap-1 text-xs">
+                <div className="flex flex-wrap items-center justify-center gap-1 text-xs">
                     <button type="button" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/[0.05] dark:hover:text-slate-200" onClick={onAdminMode}><ShieldCheck className="h-3.5 w-3.5" />Администратор</button>
                     <span className="text-slate-300 dark:text-slate-700">·</span>
-                    <button type="button" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/[0.05] dark:hover:text-slate-200" onClick={onObserverMode}><Eye className="h-3.5 w-3.5" />Наблюдатель</button>
+                    <button type="button" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/[0.05] dark:hover:text-slate-200" onClick={onObserverMode}><Eye className="h-3.5 w-3.5" />Управляющий отеля</button>
                 </div>
             )}
         >

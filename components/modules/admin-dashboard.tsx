@@ -1986,7 +1986,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
             }
             setNewObserver({ displayName: '', loginName: '', password: '', hotelId: '' });
             mutateObservers();
-            notify('Наблюдатель создан', 'success');
+            notify('Доступ управляющего создан', 'success');
         } catch (error) {
             notify(error instanceof Error ? error.message : 'Не удалось создать', 'error');
         } finally {
@@ -2002,7 +2002,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                 cache: 'no-store',
             });
             mutateObservers();
-            notify('Наблюдатель удалён', 'success');
+            notify('Доступ управляющего удалён', 'success');
         } catch {
             notify('Не удалось удалить', 'error');
         } finally {
@@ -2371,7 +2371,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
         { id: "listing", label: "Листинг", panelTitle: "Гостевой листинг", description: "Описание, удобства, фотографии и карта", icon: Globe2 },
         { id: "integrations", label: "Интеграции", panelTitle: "Экстранеты", description: "Каналы продаж и внешние площадки бронирования", icon: Link2 },
         { id: "finance", label: "Финансы", panelTitle: "Постоянные расходы", description: "Месячный финансовый ориентир для сводки", icon: CircleDollarSign },
-        { id: "access", label: "Доступы", panelTitle: "Наблюдатели", description: "Доступ сотрудников только к просмотру", icon: Users },
+        { id: "access", label: "Доступы", panelTitle: "Управляющие отелей", description: "Отдельный доступ только к назначенному объекту", icon: Users },
     ];
     const activeManageSection = manageSections.find((section) => section.id === manageSection) ?? manageSections[0];
 
@@ -3647,9 +3647,13 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                             </SectionCard>
                             ) : null}
 
-                            {/* Observer management */}
+                            {/* Hotel manager read-only access (legacy OBSERVER role) */}
                             {manageSection === "access" ? (
-                            <SectionCard title="Наблюдатели" subtitle="Доступ только к просмотру">
+                            <SectionCard title="Управляющие отелей" subtitle="Каждый управляющий видит только назначенный объект">
+
+                                <div className="mb-5 rounded-xl border border-blue-200/80 bg-blue-50/70 px-4 py-3 text-xs leading-relaxed text-blue-800 dark:border-blue-400/20 dark:bg-blue-400/[0.07] dark:text-blue-200">
+                                    Управляющий получает отдельные логин и пароль. Ему доступны сводка, заселения, журнал и смены выбранного отеля только для просмотра. Другие объекты и общие настройки сети не показываются.
+                                </div>
 
                                 {/* Existing observers list */}
                                 {observers && observers.length > 0 && (
@@ -3675,8 +3679,8 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                                         className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/12"
                                                         disabled={deletingObserverId === obs.id}
                                                         onClick={() => handleDeleteObserver(obs.id)}
-                                                        title="Удалить наблюдателя"
-                                                        aria-label="Удалить наблюдателя"
+                                                        title="Удалить доступ управляющего"
+                                                        aria-label="Удалить доступ управляющего"
                                                     >
                                                         {deletingObserverId === obs.id ? '…' : <Trash2 className="h-4 w-4" />}
                                                     </button>
@@ -3722,7 +3726,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
 
                                 {/* Create observer form */}
                                 <form className="space-y-3" onSubmit={handleCreateObserver}>
-                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Новый доступ</p>
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-600 dark:text-white/30">Новый управляющий</p>
                                     <div className="grid grid-cols-1 gap-3 xs:grid-cols-2">
                                         <Field label="Имя">
                                             <Input
@@ -3765,7 +3769,7 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
                                         </Field>
                                     </div>
                                     <Button type="submit" className="w-full sm:w-auto" disabled={creatingObserver}>
-                                        {creatingObserver ? 'Создаём…' : 'Создать наблюдателя'}
+                                        {creatingObserver ? 'Создаём…' : 'Создать доступ управляющего'}
                                     </Button>
                                 </form>
                             </SectionCard>

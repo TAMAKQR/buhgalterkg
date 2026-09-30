@@ -52,8 +52,8 @@ export function ObserverLogin({ onBack }: ObserverLoginProps) {
 
     return (
         <AuthShell
-            title="Вход наблюдателя"
-            description="Просмотр сводок без редактирования"
+            title="Вход управляющего"
+            description="Доступ только к назначенному отелю"
             icon={<Eye className="h-5 w-5" aria-hidden="true" />}
             onBack={onBack}
         >

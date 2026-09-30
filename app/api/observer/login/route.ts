@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { UserRole } from '@prisma/client';
 import type { SessionUser } from '@/lib/types';
 import { createManualSession, manualSessionAvailable } from '@/lib/server/manual-session';
+import { getCountryFromRequest } from '@/lib/server/request-country';
 import {
     hashPassword,
     passwordHashNeedsUpgrade,
@@ -82,12 +83,19 @@ export async function POST(request: NextRequest) {
             return tooManyAttemptsResponse(accountRateStatus.retryAfterSeconds);
         }
 
+        const country = getCountryFromRequest(request);
+
         const user = await prisma.user.findUnique({
             where: { loginName: login },
             include: {
                 assignments: {
-                    where: { isActive: true },
+                    where: {
+                        isActive: true,
+                        role: UserRole.OBSERVER,
+                    },
                     include: { hotel: true },
+                    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                    take: 1,
                 },
             },
         });
@@ -108,8 +116,9 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        if (user.assignments.length === 0) {
-            return new NextResponse('Нет активных назначений', { status: 403 });
+        const assignment = user.assignments[0];
+        if (!assignment || assignment.hotel.country !== country) {
+            return new NextResponse('Нет активного назначения для выбранной страны', { status: 403 });
         }
 
         const sessionUser: SessionUser = {
@@ -118,11 +127,11 @@ export async function POST(request: NextRequest) {
             displayName: user.displayName,
             avatarUrl: user.avatarUrl,
             role: user.role,
-            hotels: user.assignments.map((a) => ({
-                id: a.hotel.id,
-                name: a.hotel.name,
-                address: a.hotel.address,
-            })),
+            hotels: [{
+                id: assignment.hotel.id,
+                name: assignment.hotel.name,
+                address: assignment.hotel.address,
+            }],
         };
 
         const { token, user: sessionData } = createManualSession(sessionUser);

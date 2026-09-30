@@ -28,39 +28,41 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const hotelId = searchParams.get('hotelId');
 
-        const where: Record<string, unknown> = {
-            role: UserRole.OBSERVER,
-            assignments: {
-                some: {
-                    isActive: true,
-                    hotel: { country },
+        const observers = await prisma.user.findMany({
+            where: {
+                role: UserRole.OBSERVER,
+                assignments: {
+                    some: {
+                        isActive: true,
+                        role: UserRole.OBSERVER,
+                    },
                 },
             },
-        };
-
-        if (hotelId) {
-            where.assignments = {
-                some: { hotelId, isActive: true, hotel: { country } },
-            };
-        }
-
-        const observers = await prisma.user.findMany({
-            where,
             include: {
                 assignments: {
-                    where: { isActive: true },
-                    include: { hotel: { select: { id: true, name: true } } },
+                    where: {
+                        isActive: true,
+                        role: UserRole.OBSERVER,
+                    },
+                    include: { hotel: { select: { id: true, name: true, country: true } } },
+                    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
                 },
             },
             orderBy: { displayName: 'asc' },
         });
 
+        const scopedObservers = observers.filter((observer) => {
+            const primaryAssignment = observer.assignments[0];
+            return primaryAssignment?.hotel.country === country
+                && (!hotelId || primaryAssignment.hotel.id === hotelId);
+        });
+
         return NextResponse.json(
-            observers.map((obs) => ({
+            scopedObservers.map((obs) => ({
                 id: obs.id,
                 displayName: obs.displayName,
                 loginName: obs.loginName,
-                hotels: obs.assignments.map((a) => ({
+                hotels: obs.assignments.slice(0, 1).map((a) => ({
                     id: a.hotel.id,
                     name: a.hotel.name,
                     assignmentId: a.id,

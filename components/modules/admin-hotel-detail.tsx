@@ -4838,7 +4838,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     </div>
                                 </Card>
                                 <Card className="border-slate-200 bg-white shadow-[0_10px_28px_-24px_rgba(15,23,42,0.34)] dark:border-white/[0.055] dark:bg-white/[0.03] dark:shadow-none">
-                                    <CardHeader title="Менеджеры" />
+                                    <CardHeader title="Сменные менеджеры" />
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             {data.managers.length ? (
@@ -4868,7 +4868,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </p>
                                                         </div>
                                                         <div className="flex flex-wrap items-center justify-end gap-2">
-                                                            <Badge label="Менеджер" />
+                                                            <Badge label="Сменный менеджер" />
                                                             {manager.canEditBookings ? <Badge label="Брони" tone="success" /> : null}
                                                             {manager.canEditStayPayments ? <Badge label="Оплаты" tone="success" /> : null}
                                                             {manager.canCancelBookings ? <Badge label="Отмена" tone="warning" /> : null}
@@ -4905,7 +4905,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                         <div className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div>
-                                                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Добавление менеджера</p>
+                                                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Добавление сменного менеджера</p>
                                                     <p className="text-xs text-slate-500 dark:text-white/60">Имя, логин и PIN</p>
                                                 </div>
                                                 <Button
@@ -4921,7 +4921,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             {isAddManagerExpanded ? (
                                                 <>
                                                     <form className="space-y-3" onSubmit={handleAddManager}>
-                                                        <Input placeholder="Имя менеджера" {...managerForm.register('displayName', { required: 'Укажите имя менеджера' })} />
+                                                        <Input placeholder="Имя сменного менеджера" {...managerForm.register('displayName', { required: 'Укажите имя сменного менеджера' })} />
                                                         {managerForm.formState.errors.displayName && (
                                                             <p className="text-xs text-rose-300">{managerForm.formState.errors.displayName.message}</p>
                                                         )}
@@ -4991,7 +4991,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                             </label>
                                                         </div>
                                                         <Button type="submit" className="w-full">
-                                                            Добавить менеджера
+                                                            Добавить сменного менеджера
                                                         </Button>
 
                                                     </form>
@@ -5002,7 +5002,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                             <div className="rounded-2xl border border-slate-200/80 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                                                 <div className="mb-3 flex items-center justify-between gap-3">
                                                     <div>
-                                                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Редактирование менеджера</p>
+                                                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Редактирование сменного менеджера</p>
 
                                                     </div>
                                                     <Button
