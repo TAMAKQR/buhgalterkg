@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { Prisma, ShiftStatus } from '@prisma/client';
+import { Prisma, ShiftStatus, UserRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { assertAdmin } from '@/lib/permissions';
@@ -95,7 +95,9 @@ export async function POST(request: NextRequest) {
             where: {
                 hotelId: payload.hotelId,
                 userId: payload.managerId,
-                isActive: true
+                isActive: true,
+                role: UserRole.MANAGER,
+                user: { role: UserRole.MANAGER }
             }
         });
 

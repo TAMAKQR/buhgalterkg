@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
 
         const body = await readJsonBody(request, 8 * 1024);
         const { login, password } = loginSchema.parse(body);
-        const accountRateLimitPolicy = createAccountRateLimitPolicy(login.trim().toLowerCase());
+        const normalizedLogin = login.trim().toLowerCase();
+        const accountRateLimitPolicy = createAccountRateLimitPolicy(normalizedLogin);
         const accountRateStatus = await consumeRequestRateLimits([accountRateLimitPolicy]);
         if (!accountRateStatus.allowed) {
             return tooManyAttemptsResponse(accountRateStatus.retryAfterSeconds);
@@ -85,8 +86,13 @@ export async function POST(request: NextRequest) {
 
         const country = getCountryFromRequest(request);
 
-        const user = await prisma.user.findUnique({
-            where: { loginName: login },
+        const matchingUsers = await prisma.user.findMany({
+            where: {
+                loginName: {
+                    equals: normalizedLogin,
+                    mode: 'insensitive',
+                },
+            },
             include: {
                 assignments: {
                     where: {
@@ -98,7 +104,10 @@ export async function POST(request: NextRequest) {
                     take: 1,
                 },
             },
+            orderBy: { id: 'asc' },
+            take: 2,
         });
+        const user = matchingUsers.length === 1 ? matchingUsers[0] : null;
 
         if (!user || user.role !== UserRole.OBSERVER || !user.loginHash) {
             verifyDummyPassword(password);

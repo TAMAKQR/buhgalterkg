@@ -1997,14 +1997,18 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
     const handleDeleteObserver = async (observerId: string) => {
         setDeletingObserverId(observerId);
         try {
-            await fetch(withCountry(`/api/admin/observers/${observerId}`), {
+            const response = await fetch(withCountry(`/api/admin/observers/${observerId}`), {
                 method: 'DELETE',
                 cache: 'no-store',
             });
-            mutateObservers();
+            if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || 'Не удалось удалить');
+            }
+            await mutateObservers();
             notify('Доступ управляющего удалён', 'success');
-        } catch {
-            notify('Не удалось удалить', 'error');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : 'Не удалось удалить', 'error');
         } finally {
             setDeletingObserverId(null);
         }

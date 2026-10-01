@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus } from "@prisma/client";
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, StayStatus, UserRole } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { getCountryConfig } from "@/lib/country";
@@ -689,6 +689,8 @@ export async function GET(request: NextRequest) {
                 where: {
                     userId: { in: rankingManagerIds },
                     isActive: true,
+                    role: UserRole.MANAGER,
+                    user: { role: UserRole.MANAGER },
                     hotel: { country },
                 },
                 select: { userId: true, hotelId: true },

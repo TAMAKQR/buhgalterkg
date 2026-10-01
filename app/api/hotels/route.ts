@@ -8,7 +8,7 @@ import { getCountryFromRequest } from '@/lib/server/request-country';
 import { parseDateOnly, parseInputValue } from '@/lib/timezone';
 import { assertAdmin } from '@/lib/permissions';
 import { handleApiError } from '@/lib/server/errors';
-import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus } from '@prisma/client';
+import { LedgerEntryType, PaymentMethod, Prisma, RoomStatus, ShiftStatus, UserRole } from '@prisma/client';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { hasConfiguredPin } from '@/lib/pin';
 import { httpUrlSchema } from '@/lib/http-url';
@@ -189,6 +189,8 @@ export async function GET(request: NextRequest) {
                     where: {
                         hotelId: { in: directoryHotelIds },
                         isActive: true,
+                        role: UserRole.MANAGER,
+                        user: { role: UserRole.MANAGER },
                     },
                     orderBy: [{ hotelId: 'asc' }, { createdAt: 'asc' }],
                     take: DIRECTORY_ASSIGNMENT_LIMIT + 1,
@@ -272,7 +274,11 @@ export async function GET(request: NextRequest) {
                     },
                 },
                 assignments: {
-                    where: { isActive: true },
+                    where: {
+                        isActive: true,
+                        role: UserRole.MANAGER,
+                        user: { role: UserRole.MANAGER },
+                    },
                     orderBy: { createdAt: 'asc' },
                     take: FULL_MANAGERS_PER_HOTEL_LIMIT,
                     select: {

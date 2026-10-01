@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus, StayStatus } from '@prisma/client';
+import { LedgerEntryType, Prisma, RoomStatus, ShiftStatus, StayStatus, UserRole } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
@@ -199,7 +199,11 @@ const hotelDetailSelect = {
         }
     },
     assignments: {
-        where: { isActive: true },
+        where: {
+            isActive: true,
+            role: UserRole.MANAGER,
+            user: { role: UserRole.MANAGER },
+        },
         select: {
             id: true,
             userId: true,

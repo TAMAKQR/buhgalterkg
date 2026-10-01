@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { Prisma, ShiftStatus } from '@prisma/client';
+import { Prisma, ShiftStatus, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSessionUser } from '@/lib/server/session';
 import { assertHotelOperatorAccess, assertOperationalRole } from '@/lib/permissions';
@@ -35,7 +35,9 @@ export async function POST(request: NextRequest) {
             const assignments = await prisma.hotelAssignment.findMany({
                 where: {
                     hotelId: payload.hotelId,
-                    isActive: true
+                    isActive: true,
+                    role: UserRole.MANAGER,
+                    user: { role: UserRole.MANAGER }
                 },
                 include: { user: true }
             });

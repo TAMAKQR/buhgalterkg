@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/db';
+import { Prisma, UserRole } from '@prisma/client';
 import { assertAdmin } from '@/lib/permissions';
 import { getSessionUser } from '@/lib/server/session';
-import { handleApiError } from '@/lib/server/errors';
+import { handleApiError, SessionError } from '@/lib/server/errors';
 import { hashPassword } from '@/lib/password';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 
@@ -27,10 +28,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const observer = await prisma.user.findFirst({
             where: {
                 id: observerId,
-                role: 'OBSERVER',
+                role: UserRole.OBSERVER,
                 assignments: {
                     some: {
                         isActive: true,
+                        role: UserRole.OBSERVER,
                         hotel: { country },
                     },
                 },
@@ -63,7 +65,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 }
 
-// DELETE /api/admin/observers/[observerId] — delete observer
+// DELETE /api/admin/observers/[observerId] — deactivate observer access
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ observerId: string }> }) {
     try {
         const { observerId } = await params;
@@ -71,34 +73,40 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         assertAdmin(session);
         const country = getCountryFromRequest(request);
 
-        const observer = await prisma.user.findFirst({
-            where: {
-                id: observerId,
-                role: 'OBSERVER',
-                assignments: {
-                    some: {
-                        isActive: true,
-                        hotel: { country },
-                    },
-                },
-            },
-            select: {
-                id: true,
-                assignments: {
-                    where: { isActive: true, hotel: { country } },
-                    select: { id: true },
-                },
-            },
-        });
-        if (!observer) {
-            return new NextResponse('Доступ управляющего не найден', { status: 404 });
-        }
-
         await prisma.$transaction(async (tx) => {
-            await tx.hotelAssignment.deleteMany({
+            const lockedUsers = await tx.$queryRaw<Array<{ id: string; role: UserRole }>>(Prisma.sql`
+                SELECT "id", "role"
+                FROM "User"
+                WHERE "id" = ${observerId}
+                FOR UPDATE
+            `);
+            const observer = lockedUsers[0];
+            if (!observer || observer.role !== UserRole.OBSERVER) {
+                throw new SessionError('Доступ управляющего не найден', 404);
+            }
+
+            const scopedActiveAssignments = await tx.hotelAssignment.count({
                 where: {
                     userId: observerId,
+                    role: UserRole.OBSERVER,
+                    isActive: true,
                     hotel: { country },
+                },
+            });
+            if (scopedActiveAssignments === 0) {
+                throw new SessionError('Доступ управляющего не найден', 404);
+            }
+
+            await tx.hotelAssignment.updateMany({
+                where: {
+                    userId: observerId,
+                    role: UserRole.OBSERVER,
+                    hotel: { country },
+                },
+                data: {
+                    isActive: false,
+                    pinCode: null,
+                    pinHash: null,
                 },
             });
 
@@ -107,8 +115,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             });
 
             if (activeAssignmentsCount === 0) {
-                await tx.hotelAssignment.deleteMany({ where: { userId: observerId } });
-                await tx.user.delete({ where: { id: observerId } });
+                await tx.user.update({
+                    where: { id: observerId },
+                    data: { loginName: null, loginHash: null },
+                });
             }
         });
 

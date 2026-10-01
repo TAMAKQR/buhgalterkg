@@ -2443,21 +2443,27 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
         const shiftPayAmount = toOptionalMinorValue(values.shiftPayAmount);
         const revenueSharePct = normalizePercentage(values.revenueSharePct);
 
-        await request('/api/hotel-assignments', {
-            body: {
-                hotelId,
-                displayName: values.displayName.trim(),
-                loginName: values.loginName.trim().toLowerCase(),
-                pinCode: values.pinCode,
-                shiftPayAmount: shiftPayAmount ?? undefined,
-                revenueSharePct: revenueSharePct ?? undefined,
-                canEditBookings: values.canEditBookings,
-                canEditStayPayments: values.canEditStayPayments,
-                canCancelBookings: values.canCancelBookings
-            }
-        });
-        managerForm.reset({ displayName: '', loginName: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
-        mutate();
+        try {
+            await request('/api/hotel-assignments', {
+                body: {
+                    hotelId,
+                    displayName: values.displayName.trim(),
+                    loginName: values.loginName.trim().toLowerCase(),
+                    pinCode: values.pinCode,
+                    shiftPayAmount: shiftPayAmount ?? undefined,
+                    revenueSharePct: revenueSharePct ?? undefined,
+                    canEditBookings: values.canEditBookings,
+                    canEditStayPayments: values.canEditStayPayments,
+                    canCancelBookings: values.canCancelBookings
+                }
+            });
+            managerForm.reset({ displayName: '', loginName: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
+            await mutate();
+            toast('Менеджер добавлен', 'success');
+        } catch (addError) {
+            console.error(addError);
+            toast(addError instanceof Error ? addError.message : 'Не удалось добавить менеджера', 'error');
+        }
     });
 
     const handleUpdateManager = updateManagerForm.handleSubmit(async (values) => {
@@ -2515,7 +2521,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
             toast('Менеджер обновлён', 'success');
         } catch (updateError) {
             console.error(updateError);
-            toast('Не удалось обновить менеджера', 'error');
+            toast(updateError instanceof Error ? updateError.message : 'Не удалось обновить менеджера', 'error');
         }
     });
 

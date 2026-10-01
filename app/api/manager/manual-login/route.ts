@@ -93,19 +93,28 @@ export async function POST(request: NextRequest) {
             return tooManyAttemptsResponse(accountRateStatus.retryAfterSeconds);
         }
 
-        const managerRecord = await prisma.user.findUnique({
-            where: { loginName: normalizedLogin },
+        const matchingManagers = await prisma.user.findMany({
+            where: {
+                loginName: {
+                    equals: normalizedLogin,
+                    mode: 'insensitive',
+                },
+            },
             include: {
                 assignments: {
                     where: {
                         isActive: true,
+                        role: UserRole.MANAGER,
                         hotel: { country },
                     },
                     include: { hotel: true },
                     orderBy: { createdAt: "asc" },
                 },
             },
+            orderBy: { id: 'asc' },
+            take: 2,
         });
+        const managerRecord = matchingManagers.length === 1 ? matchingManagers[0] : null;
 
         if (!managerRecord || managerRecord.role !== UserRole.MANAGER) {
             verifyDummyPin(pinCode);
