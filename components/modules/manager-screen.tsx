@@ -33,7 +33,7 @@ import {
     type ManagerOfflineScope,
     type OfflineOperation
 } from '@/lib/offline';
-import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, History, LogIn, LogOut, PanelLeftClose, PanelLeftOpen, Pencil, QrCode, Search, Sparkles, Users, WalletCards } from 'lucide-react';
+import { ArrowRightLeft, Banknote, BedDouble, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Eye, EyeOff, History, LogIn, LogOut, PanelLeftClose, PanelLeftOpen, Pencil, QrCode, Search, Sparkles, Users, WalletCards } from 'lucide-react';
 import jsQR from 'jsqr';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 
@@ -612,6 +612,8 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
     const expenseForm = useForm<ExpenseForm>({ defaultValues: { method: 'CASH', entryType: 'CASH_OUT', categoryId: '', employeeId: '', currency: localCashCurrency } });
     const openShiftForm = useForm<ShiftOpenForm>({ defaultValues: { openingCash: undefined, openingCashUsd: undefined, pinCode: '', note: '' } });
     const handoverForm = useForm<ShiftHandoverForm>({ defaultValues: { pinCode: '', note: '' } });
+    const [showOpenShiftPin, setShowOpenShiftPin] = useState(false);
+    const [showHandoverPin, setShowHandoverPin] = useState(false);
     const [checkInModal, setCheckInModal] = useState<CheckInModalState | null>(null);
     const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
     const [checkInError, setCheckInError] = useState<string | null>(null);
@@ -1641,6 +1643,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 note: '',
                 pinCode: ''
             });
+            setShowHandoverPin(false);
         }
     }, [data?.shift, handoverForm]);
 
@@ -1697,6 +1700,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             }
         });
         openShiftForm.reset({ openingCash: undefined, openingCashUsd: undefined, pinCode: '', note: '' });
+        setShowOpenShiftPin(false);
         void refreshManagerState();
     });
 
@@ -1712,6 +1716,7 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
             note: '',
             pinCode: ''
         });
+        setShowHandoverPin(false);
 
         if (onLogout) {
             await onLogout();
@@ -3148,18 +3153,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                 <Card>
                     <CardHeader title="Принять смену" />
                     <form className="space-y-3" onSubmit={handleOpenShift}>
-                        <Input
-                            type="password"
-                            placeholder="PIN (6 цифр)"
-                            maxLength={6}
-                            inputMode="numeric"
-                            {...openShiftForm.register('pinCode', {
-                                required: 'Введите PIN менеджера',
-                                minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
-                            })}
-                        />
+                        <div className="relative">
+                            <Input
+                                className="pr-11 font-mono"
+                                type={showOpenShiftPin ? 'text' : 'password'}
+                                placeholder="PIN (6 цифр)"
+                                maxLength={6}
+                                inputMode="numeric"
+                                {...openShiftForm.register('pinCode', {
+                                    required: 'Введите PIN менеджера',
+                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                    pattern: { value: /^\d{6}$/, message: 'Допустимы только цифры' }
+                                })}
+                            />
+                            <button
+                                type="button"
+                                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                onClick={() => setShowOpenShiftPin((visible) => !visible)}
+                                aria-label={showOpenShiftPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                aria-pressed={showOpenShiftPin}
+                                title={showOpenShiftPin ? 'Скрыть PIN' : 'Показать PIN'}
+                            >
+                                {showOpenShiftPin ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                            </button>
+                        </div>
                         {openShiftForm.formState.errors.pinCode && (
                             <p className="text-xs text-rose-300">{openShiftForm.formState.errors.pinCode.message}</p>
                         )}
@@ -4125,18 +4143,31 @@ export const ManagerScreen = ({ user, onLogout }: { user: SessionUser; onLogout?
                                 {data?.shift ? (
                                     <form className="space-y-3 border-t border-slate-200 pt-4 dark:border-white/[0.06]" onSubmit={handleCloseShift}>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <Input
-                                                type="password"
-                                                placeholder="PIN"
-                                                maxLength={6}
-                                                inputMode="numeric"
-                                                {...handoverForm.register('pinCode', {
-                                                    required: 'Введите PIN',
-                                                    minLength: { value: 6, message: '6 цифр' },
-                                                    maxLength: { value: 6, message: '6 цифр' },
-                                                    pattern: { value: /^\d{6}$/, message: 'Только цифры' }
-                                                })}
-                                            />
+                                            <div className="relative">
+                                                <Input
+                                                    className="pr-11 font-mono"
+                                                    type={showHandoverPin ? 'text' : 'password'}
+                                                    placeholder="PIN"
+                                                    maxLength={6}
+                                                    inputMode="numeric"
+                                                    {...handoverForm.register('pinCode', {
+                                                        required: 'Введите PIN',
+                                                        minLength: { value: 6, message: '6 цифр' },
+                                                        maxLength: { value: 6, message: '6 цифр' },
+                                                        pattern: { value: /^\d{6}$/, message: 'Только цифры' }
+                                                    })}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                                    onClick={() => setShowHandoverPin((visible) => !visible)}
+                                                    aria-label={showHandoverPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                    aria-pressed={showHandoverPin}
+                                                    title={showHandoverPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                >
+                                                    {showHandoverPin ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                                                </button>
+                                            </div>
                                             <TextArea rows={1} placeholder="Комментарий" {...handoverForm.register('note')} />
                                         </div>
                                         {handoverForm.formState.errors.pinCode && (

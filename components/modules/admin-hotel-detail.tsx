@@ -21,7 +21,7 @@ import { useHotelNow, useHotelToday } from '@/hooks/useHotelToday';
 import { isCollectionLedgerEntry } from '@/lib/ledger';
 import { AiAnalysisModal, type AiShiftAnalysisResponse } from '@/components/modules/ai-analysis-modal';
 import { RoomEconomicsPanel } from '@/components/modules/room-economics-panel';
-import { Archive, Pencil, Trash2 } from 'lucide-react';
+import { Archive, Eye, EyeOff, Pencil, Trash2 } from 'lucide-react';
 
 type ShiftStatusValue = 'OPEN' | 'CLOSED';
 type RoomStatusValue = 'AVAILABLE' | 'OCCUPIED' | 'DIRTY' | 'HOLD';
@@ -833,6 +833,8 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const [isManagementPanelOpen, setIsManagementPanelOpen] = useState(false);
     const [isAddManagerExpanded, setIsAddManagerExpanded] = useState(false);
     const [isUpdateManagerExpanded, setIsUpdateManagerExpanded] = useState(false);
+    const [showCreateManagerPin, setShowCreateManagerPin] = useState(false);
+    const [showUpdateManagerPin, setShowUpdateManagerPin] = useState(false);
     const [isMassAddRoomsExpanded, setIsMassAddRoomsExpanded] = useState(false);
     const [isBonusTiersExpanded, setIsBonusTiersExpanded] = useState(false);
     const [isExpenseCategoriesExpanded, setIsExpenseCategoriesExpanded] = useState(false);
@@ -2458,6 +2460,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 }
             });
             managerForm.reset({ displayName: '', loginName: '', pinCode: '', shiftPayAmount: undefined, revenueSharePct: undefined, canEditBookings: false, canEditStayPayments: false, canCancelBookings: false });
+            setShowCreateManagerPin(false);
             await mutate();
             toast('Менеджер добавлен', 'success');
         } catch (addError) {
@@ -2517,6 +2520,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                 canEditStayPayments: values.canEditStayPayments,
                 canCancelBookings: values.canCancelBookings
             });
+            setShowUpdateManagerPin(false);
             mutate();
             toast('Менеджер обновлён', 'success');
         } catch (updateError) {
@@ -2528,6 +2532,7 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
     const handleSelectManagerForEdit = (assignmentId: string) => {
         setIsManagementPanelOpen(true);
         setIsUpdateManagerExpanded(true);
+        setShowUpdateManagerPin(false);
         const target = data?.managers.find((manager) => manager.assignmentId === assignmentId) ?? null;
         updateManagerForm.reset({
             assignmentId,
@@ -4741,7 +4746,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
 
                 {isManagementPanelOpen && (
                     <div className="fixed inset-0 z-50">
-                        <div className="absolute inset-0 bg-black/70" onClick={() => setIsManagementPanelOpen(false)} />
+                        <div className="absolute inset-0 bg-black/70" onClick={() => {
+                            managerForm.resetField('pinCode');
+                            updateManagerForm.resetField('pinCode');
+                            setShowCreateManagerPin(false);
+                            setShowUpdateManagerPin(false);
+                            setIsManagementPanelOpen(false);
+                        }} />
                         <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-white/95 p-3 shadow-2xl backdrop-blur sm:p-5 md:max-w-xl md:border-l md:border-slate-200/80 dark:md:border-white/[0.08] dark:bg-[#090d16]/95">
                             <div className="mb-4 flex items-center justify-between gap-3">
                                 <div>
@@ -4753,7 +4764,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                     size="sm"
                                     variant="ghost"
                                     className="border border-slate-200/80 dark:border-white/20"
-                                    onClick={() => setIsManagementPanelOpen(false)}
+                                    onClick={() => {
+                                        managerForm.resetField('pinCode');
+                                        updateManagerForm.resetField('pinCode');
+                                        setShowCreateManagerPin(false);
+                                        setShowUpdateManagerPin(false);
+                                        setIsManagementPanelOpen(false);
+                                    }}
                                 >
                                     Закрыть
                                 </Button>
@@ -4923,7 +4940,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     size="sm"
                                                     variant="ghost"
                                                     className="border border-slate-200/80 dark:border-white/15"
-                                                    onClick={() => setIsAddManagerExpanded((prev) => !prev)}
+                                                    onClick={() => {
+                                                        if (isAddManagerExpanded) {
+                                                            managerForm.resetField('pinCode');
+                                                            setShowCreateManagerPin(false);
+                                                        }
+                                                        setIsAddManagerExpanded((prev) => !prev);
+                                                    }}
                                                 >
                                                     {isAddManagerExpanded ? 'Свернуть' : 'Открыть'}
                                                 </Button>
@@ -4955,19 +4978,32 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         {managerForm.formState.errors.loginName && (
                                                             <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{managerForm.formState.errors.loginName.message}</p>
                                                         )}
-                                                        <Input
-                                                            placeholder="PIN (6 цифр)"
-                                                            type="password"
-                                                            maxLength={6}
-                                                            inputMode="numeric"
-                                                            autoComplete="new-password"
-                                                            {...managerForm.register('pinCode', {
-                                                                required: 'Укажите PIN',
-                                                                minLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                                                maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
-                                                                pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
-                                                            })}
-                                                        />
+                                                        <div className="relative">
+                                                            <Input
+                                                                className="pr-11 font-mono"
+                                                                placeholder="PIN (6 цифр)"
+                                                                type={showCreateManagerPin ? 'text' : 'password'}
+                                                                maxLength={6}
+                                                                inputMode="numeric"
+                                                                autoComplete="new-password"
+                                                                {...managerForm.register('pinCode', {
+                                                                    required: 'Укажите PIN',
+                                                                    minLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                                                    maxLength: { value: 6, message: 'Код состоит из 6 цифр' },
+                                                                    pattern: { value: /^\d{6}$/, message: 'Используйте только цифры' }
+                                                                })}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                                                onClick={() => setShowCreateManagerPin((visible) => !visible)}
+                                                                aria-label={showCreateManagerPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                                aria-pressed={showCreateManagerPin}
+                                                                title={showCreateManagerPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                            >
+                                                                {showCreateManagerPin ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                                                            </button>
+                                                        </div>
                                                         {managerForm.formState.errors.pinCode && (
                                                             <p className="text-xs font-medium text-rose-600 dark:text-rose-300">{managerForm.formState.errors.pinCode.message}</p>
                                                         )}
@@ -5020,7 +5056,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                         size="sm"
                                                         variant="ghost"
                                                         className="border border-slate-200/80 dark:border-white/15"
-                                                        onClick={() => setIsUpdateManagerExpanded((prev) => !prev)}
+                                                        onClick={() => {
+                                                            if (isUpdateManagerExpanded) {
+                                                                updateManagerForm.resetField('pinCode');
+                                                                setShowUpdateManagerPin(false);
+                                                            }
+                                                            setIsUpdateManagerExpanded((prev) => !prev);
+                                                        }}
                                                     >
                                                         {isUpdateManagerExpanded ? 'Свернуть' : 'Открыть'}
                                                     </Button>
@@ -5029,7 +5071,13 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                     <form className="space-y-3" onSubmit={handleUpdateManager}>
                                                         <Select
                                                             defaultValue=""
-                                                            {...updateManagerForm.register('assignmentId', { required: 'Выберите менеджера' })}
+                                                            {...updateManagerForm.register('assignmentId', {
+                                                                required: 'Выберите менеджера',
+                                                                onChange: () => {
+                                                                    updateManagerForm.resetField('pinCode');
+                                                                    setShowUpdateManagerPin(false);
+                                                                }
+                                                            })}
                                                         >
                                                             <option value="" >
                                                                 Выберите менеджера для обновления
@@ -5068,21 +5116,37 @@ export const AdminHotelDetail = ({ hotelId }: AdminHotelDetailProps) => {
                                                                 {updateManagerForm.formState.errors.loginName.message}
                                                             </p>
                                                         )}
-                                                        <Input
-                                                            placeholder={selectedManager?.hasPin ? 'Новый PIN (пусто — без изменений)' : 'Новый PIN (6 цифр)'}
-                                                            type="password"
-                                                            maxLength={6}
-                                                            inputMode="numeric"
-                                                            autoComplete="new-password"
-                                                            {...updateManagerForm.register('pinCode', {
-                                                                validate: (value) => {
-                                                                    if (!value.trim()) {
-                                                                        return true;
+                                                        <div className="relative">
+                                                            <Input
+                                                                className="pr-11 font-mono"
+                                                                placeholder={selectedManager?.hasPin ? 'Новый PIN (пусто — без изменений)' : 'Новый PIN (6 цифр)'}
+                                                                type={showUpdateManagerPin ? 'text' : 'password'}
+                                                                maxLength={6}
+                                                                inputMode="numeric"
+                                                                autoComplete="new-password"
+                                                                {...updateManagerForm.register('pinCode', {
+                                                                    validate: (value) => {
+                                                                        if (!value.trim()) {
+                                                                            return true;
+                                                                        }
+                                                                        return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
                                                                     }
-                                                                    return /^\d{6}$/.test(value) || 'PIN состоит из 6 цифр';
-                                                                }
-                                                            })}
-                                                        />
+                                                                })}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                                                onClick={() => setShowUpdateManagerPin((visible) => !visible)}
+                                                                aria-label={showUpdateManagerPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                                aria-pressed={showUpdateManagerPin}
+                                                                title={showUpdateManagerPin ? 'Скрыть PIN' : 'Показать PIN'}
+                                                            >
+                                                                {showUpdateManagerPin ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 dark:text-white/50">
+                                                            Сохранённый PIN посмотреть нельзя — здесь можно установить новый.
+                                                        </p>
                                                         {updateManagerForm.formState.errors.pinCode && (
                                                             <p className="text-xs font-medium text-rose-600 dark:text-rose-300">
                                                                 {updateManagerForm.formState.errors.pinCode.message}

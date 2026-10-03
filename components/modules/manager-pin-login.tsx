@@ -1,12 +1,12 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { AuthShell } from '@/components/ui/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCountryContext } from '@/hooks/useCountryContext';
 import { useManualSession } from '@/hooks/useManualSession';
-import { ArrowRight, Building2, Eye, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Building2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 interface ManualLoginResponse {
     success: boolean;
@@ -22,16 +22,58 @@ interface ManagerPinLoginProps {
     onObserverMode?: () => void;
 }
 
+const formatRetryTime = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
+    }
+
+    return [minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
+};
+
+const readRetryAfterSeconds = (value: string | null) => {
+    const normalized = value?.trim();
+    if (!normalized || !/^\d+$/.test(normalized)) return null;
+
+    const seconds = Number(normalized);
+    return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : null;
+};
+
 export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLoginProps) {
     const { mutate } = useManualSession();
     const { withCountry } = useCountryContext();
     const [login, setLogin] = useState('');
     const [pinCode, setPinCode] = useState('');
+    const [showPin, setShowPin] = useState(false);
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string>();
+    const [retryUntil, setRetryUntil] = useState<number | null>(null);
+    const [retrySeconds, setRetrySeconds] = useState(0);
+
+    useEffect(() => {
+        if (retryUntil === null) return;
+
+        const updateCountdown = () => {
+            const remaining = Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000));
+            setRetrySeconds(remaining);
+            if (remaining === 0) {
+                setRetryUntil(null);
+                setError(undefined);
+            }
+        };
+
+        updateCountdown();
+        const intervalId = window.setInterval(updateCountdown, 1000);
+        return () => window.clearInterval(intervalId);
+    }, [retryUntil]);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        if (retrySeconds > 0) return;
+
         setError(undefined);
 
         const normalizedLogin = login.trim().toLowerCase();
@@ -52,6 +94,13 @@ export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLogin
 
             if (!response.ok) {
                 const message = await response.text();
+                if (response.status === 429) {
+                    const retryAfterSeconds = readRetryAfterSeconds(response.headers.get('Retry-After'));
+                    if (retryAfterSeconds !== null) {
+                        setRetrySeconds(retryAfterSeconds);
+                        setRetryUntil(Date.now() + retryAfterSeconds * 1000);
+                    }
+                }
                 throw new Error(message || 'Неверный логин или PIN');
             }
 
@@ -85,14 +134,37 @@ export function ManagerPinLogin({ onAdminMode, onObserverMode }: ManagerPinLogin
                     <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Логин</span>
                     <Input type="text" placeholder="Введите логин" autoComplete="username" autoCapitalize="none" spellCheck={false} value={login} onChange={(event) => setLogin(event.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())} disabled={pending} />
                 </label>
-                <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">PIN-код</span>
-                    <Input className="font-mono text-base tracking-[0.35em]" type="password" placeholder="••••••" maxLength={6} inputMode="numeric" pattern="[0-9]*" autoComplete="one-time-code" value={pinCode} onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))} disabled={pending} />
-                </label>
-                {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</p>}
-                <Button type="submit" className="w-full gap-2" disabled={pending || pinCode.length !== 6 || !login.trim()}>
-                    {pending ? 'Проверяем…' : 'Продолжить'}
-                    {!pending && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+                <div className="space-y-1.5">
+                    <label htmlFor="manager-pin-code" className="block text-xs font-medium text-slate-600 dark:text-slate-400">PIN-код</label>
+                    <div className="relative">
+                        <Input id="manager-pin-code" className="pr-11 font-mono text-base tracking-[0.35em]" type={showPin ? 'text' : 'password'} placeholder="••••••" maxLength={6} inputMode="numeric" pattern="[0-9]*" autoComplete="one-time-code" value={pinCode} onChange={(event) => setPinCode(event.target.value.replace(/[^\d]/g, ''))} disabled={pending} />
+                        <button
+                            type="button"
+                            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                            onClick={() => setShowPin((visible) => !visible)}
+                            aria-label={showPin ? 'Скрыть PIN' : 'Показать PIN'}
+                            aria-pressed={showPin}
+                            title={showPin ? 'Скрыть PIN' : 'Показать PIN'}
+                            disabled={pending}
+                        >
+                            {showPin ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                        </button>
+                    </div>
+                </div>
+                {error && (
+                    <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                        {retrySeconds > 0
+                            ? <>Превышено число попыток. Повторите через <span aria-live="off" className="font-mono font-semibold">{formatRetryTime(retrySeconds)}</span></>
+                            : error}
+                    </p>
+                )}
+                <Button type="submit" className="w-full gap-2" disabled={pending || retrySeconds > 0 || pinCode.length !== 6 || !login.trim()}>
+                    {pending
+                        ? 'Проверяем…'
+                        : retrySeconds > 0
+                            ? `Повторить через ${formatRetryTime(retrySeconds)}`
+                            : 'Продолжить'}
+                    {!pending && retrySeconds === 0 && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
                 </Button>
             </form>
         </AuthShell>

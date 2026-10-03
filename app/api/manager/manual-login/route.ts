@@ -25,21 +25,23 @@ const ACCOUNT_ATTEMPT_LIMIT = Math.max(
     readRateLimitInteger(process.env.MANAGER_PIN_ACCOUNT_ATTEMPTS, IP_ATTEMPT_LIMIT * 4)
 );
 const WINDOW_MINUTES = readRateLimitInteger(
-    process.env.MANAGER_PIN_WINDOW_MINUTES ?? process.env.ADMIN_LOGIN_WINDOW_MINUTES,
-    15,
+    process.env.MANAGER_PIN_WINDOW_MINUTES,
+    1,
     { max: 24 * 60 }
 );
 const WINDOW_SECONDS = WINDOW_MINUTES * 60;
+// v2 starts fresh buckets after shortening the previous shared 15-minute window.
+const RATE_LIMIT_SCOPE_VERSION = 'v2';
 
 const createIpRateLimitPolicy = (clientIp: string): RequestRateLimitPolicy => ({
-    scope: 'login:manager:ip',
+    scope: `login:manager:ip:${RATE_LIMIT_SCOPE_VERSION}`,
     identifier: clientIp,
     limit: IP_ATTEMPT_LIMIT,
     windowSeconds: WINDOW_SECONDS,
 });
 
 const createAccountRateLimitPolicy = (login: string): RequestRateLimitPolicy => ({
-    scope: 'login:manager:account',
+    scope: `login:manager:account:${RATE_LIMIT_SCOPE_VERSION}`,
     identifier: login,
     limit: ACCOUNT_ATTEMPT_LIMIT,
     windowSeconds: WINDOW_SECONDS,
