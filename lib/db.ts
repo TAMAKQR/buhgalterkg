@@ -10,6 +10,7 @@ export const prisma =
             : ['error', 'warn']
     });
 
-if (process.env.NODE_ENV !== 'production') {
-    globalForPrisma.prisma = prisma;
-}
+// Next.js can evaluate server modules from more than one route bundle. Keeping
+// the client on globalThis makes every route in this Node process share one
+// connection pool instead of allocating a new Prisma engine per bundle.
+globalForPrisma.prisma = prisma;

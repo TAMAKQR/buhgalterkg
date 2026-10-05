@@ -9,7 +9,7 @@ import { calculateBonusFromTiers } from '@/lib/bonus';
 import { getCountryFromRequest } from '@/lib/server/request-country';
 import { calculateManagerPayout } from '@/lib/manager-payout';
 import { sanitizeExtranetNames } from '@/lib/stays';
-import { isCollectionLedgerEntry, isStayIncomeNote } from '@/lib/ledger';
+import { isStayIncomeNote } from '@/lib/ledger';
 import { hasConfiguredPin } from '@/lib/pin';
 import { httpUrlSchema } from '@/lib/http-url';
 
@@ -587,7 +587,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
             return new NextResponse(`Board range must not exceed ${MAX_BOARD_RANGE_DAYS} days`, { status: 400 });
         }
 
-        const [operationalRoomStays, ledgerGroups, collectionEntries, shiftLedgerGroups, bonusTiers, stayIncomeEntriesByShift, pendingOnlineGroups, postpaidCandidateStays, prepaidBookingAggregate, prepaidBookingPreview] = await prisma.$transaction([
+        const [operationalRoomStays, ledgerGroups, collectionTotal, shiftLedgerGroups, bonusTiers, stayIncomeEntriesByShift, pendingOnlineGroups, postpaidCandidateStays, prepaidBookingAggregate, prepaidBookingPreview] = await prisma.$transaction([
             prisma.roomStay.findMany({
                 where: {
                     hotelId,
@@ -609,19 +609,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
                 where: { hotelId },
                 _sum: { amount: true }
             }),
-            prisma.cashEntry.findMany({
+            prisma.cashEntry.aggregate({
                 where: {
                     hotelId,
                     entryType: LedgerEntryType.CASH_OUT,
                     OR: collectionCandidateFilters
                 },
-                select: {
-                    amount: true,
-                    method: true,
-                    note: true,
-                    entryType: true,
-                    expenseCategory: { select: { name: true } },
-                },
+                _sum: { amount: true },
             }),
             prisma.cashEntry.groupBy({
                 by: ['shiftId', 'entryType'],
@@ -724,10 +718,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         for (const group of ledgerGroups) {
             ledgerTotals[group.entryType] = group._sum?.amount ?? 0;
         }
-        const collectionsTotal = collectionEntries.reduce(
-            (total, entry) => total + (isCollectionLedgerEntry(entry) ? entry.amount : 0),
-            0
-        );
+        const collectionsTotal = collectionTotal._sum.amount ?? 0;
         ledgerTotals[LedgerEntryType.CASH_OUT] -= collectionsTotal;
 
         const shiftLedgerTotals = new Map<

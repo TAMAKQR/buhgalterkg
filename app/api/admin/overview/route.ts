@@ -12,6 +12,9 @@ import { isCollectionLedgerEntry } from "@/lib/ledger";
 
 export const dynamic = "force-dynamic";
 
+const DEFAULT_OVERVIEW_RANGE_DAYS = 31;
+const MAX_OVERVIEW_RANGE_DAYS = 370;
+
 const getTodayParts = (timeZone: string) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
         timeZone,
@@ -207,10 +210,20 @@ export async function GET(request: NextRequest) {
         const managerIds = parseIds("managerId");
         const shiftIds = parseIds("shiftId");
 
-        const startDate = parseInputValue(searchParams.get("startAt"), countryConfig.timezone)
+        const requestedStartDate = parseInputValue(searchParams.get("startAt"), countryConfig.timezone)
             ?? parseDateOnly(searchParams.get("startDate"), false, countryConfig.timezone);
-        const endDate = parseInputValue(searchParams.get("endAt"), countryConfig.timezone)
+        const requestedEndDate = parseInputValue(searchParams.get("endAt"), countryConfig.timezone)
             ?? parseDateOnly(searchParams.get("endDate"), true, countryConfig.timezone);
+        const endDate = requestedEndDate ?? new Date();
+        const startDate = requestedStartDate
+            ?? new Date(endDate.getTime() - (DEFAULT_OVERVIEW_RANGE_DAYS - 1) * 86_400_000);
+
+        if (endDate < startDate) {
+            return new NextResponse("Дата окончания должна быть не раньше даты начала", { status: 400 });
+        }
+        if (endDate.getTime() - startDate.getTime() > MAX_OVERVIEW_RANGE_DAYS * 86_400_000) {
+            return new NextResponse(`Период не может превышать ${MAX_OVERVIEW_RANGE_DAYS} дней`, { status: 400 });
+        }
 
         const hotelFilter: Prisma.HotelWhereInput = {
             country,
@@ -246,12 +259,7 @@ export async function GET(request: NextRequest) {
         if (shiftIds.length) {
             ledgerWhere.shiftId = { in: shiftIds };
         }
-        if (startDate || endDate) {
-            ledgerWhere.recordedAt = {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-            };
-        }
+        ledgerWhere.recordedAt = { gte: startDate, lte: endDate };
 
         const expenseWhere: Prisma.CashEntryWhereInput = {
             ...ledgerWhere,

@@ -153,6 +153,7 @@ export async function syncExelyReservations(
     if (!hotel.exelyConnection) throw new Error('Exely не настроен для этого объекта');
     if (!hotel.exelyConnection.isEnabled) throw new Error('Подключение Exely отключено для этого объекта');
 
+    const syncHotel = hotel;
     const credentials: ExelyCredentials = {
         propertyId: hotel.exelyConnection.propertyId,
         clientId: hotel.exelyConnection.clientId,
@@ -162,7 +163,8 @@ export async function syncExelyReservations(
     const apiUrl = exelyApiUrl();
     const token = await getToken(credentials);
     const headers = { authorization: `Bearer ${token}` };
-    const summaries: ExelySummary[] = [];
+    const result: ExelySyncResult = { propertyId, summaries: 0, detailsLoaded: 0, created: 0, updated: 0, cancelled: 0, unassigned: 0, skippedPast: 0, failed: [] };
+    const now = new Date();
     let continueToken = options.useContinueToken
         ? hotel.exelyConnection.reservationContinueToken ?? undefined
         : undefined;
@@ -178,7 +180,9 @@ export async function syncExelyReservations(
         const response = await fetchWithTimeout(url, { headers });
         if (!response.ok) throw new Error(`Exely Read Reservation: HTTP ${response.status}`);
         const page = await response.json() as { bookingSummaries?: ExelySummary[]; hasMoreData?: boolean; continueToken?: string };
-        summaries.push(...(page.bookingSummaries ?? []));
+        const summaries = page.bookingSummaries ?? [];
+        result.summaries += summaries.length;
+        await processSummaries(summaries, Boolean(page.hasMoreData));
         const responseContinueToken = page.continueToken?.trim() || undefined;
         if (responseContinueToken) latestContinueToken = responseContinueToken;
         if (!page.hasMoreData) break;
@@ -186,27 +190,34 @@ export async function syncExelyReservations(
         continueToken = responseContinueToken;
     }
 
-    const result: ExelySyncResult = { propertyId, summaries: summaries.length, detailsLoaded: 0, created: 0, updated: 0, cancelled: 0, unassigned: 0, skippedPast: 0, failed: [] };
-    const bookings: ExelyBooking[] = [];
-    for (let offset = 0; offset < summaries.length; offset += 5) {
-        await Promise.all(summaries.slice(offset, offset + 5).map(async (summary) => {
-            try {
-                const url = new URL(`/api/read-reservation/v1/properties/${propertyId}/bookings/${summary.number}`, apiUrl);
-                const response = await fetchWithTimeout(url, { headers });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const payload = await response.json() as { booking?: ExelyBooking };
-                if (payload.booking) { bookings.push(payload.booking); result.detailsLoaded += 1; }
-            } catch (error) {
-                result.failed.push({ number: summary.number, error: error instanceof Error ? error.message : 'Unknown error' });
+    async function processSummaries(summaries: ExelySummary[], hasMoreData: boolean) {
+        for (let offset = 0; offset < summaries.length; offset += 5) {
+            const bookings = await Promise.all(summaries.slice(offset, offset + 5).map(async (summary) => {
+                try {
+                    const url = new URL(`/api/read-reservation/v1/properties/${propertyId}/bookings/${summary.number}`, apiUrl);
+                    const response = await fetchWithTimeout(url, { headers });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const payload = await response.json() as { booking?: ExelyBooking };
+                    return payload.booking ?? null;
+                } catch (error) {
+                    result.failed.push({ number: summary.number, error: error instanceof Error ? error.message : 'Unknown error' });
+                    return null;
+                }
+            }));
+            for (const booking of bookings) {
+                if (!booking) continue;
+                result.detailsLoaded += 1;
+                await processBooking(booking);
             }
-        }));
-        // Exely allows 200 reservation-detail requests per minute. Five requests
-        // every 1.6 seconds keeps an initial import below that limit.
-        if (offset + 5 < summaries.length) await delay(1_600);
+
+            // Exely allows 200 reservation-detail requests per minute. Five requests
+            // every 1.6 seconds keeps an initial import below that limit.
+            if (offset + 5 < summaries.length || hasMoreData) await delay(1_600);
+        }
     }
 
-    const now = new Date();
-    for (const booking of bookings) {
+    async function processBooking(booking: ExelyBooking) {
+        const hotel = syncHotel;
         const bookingRooms = booking.roomStays ?? [];
         for (let position = 0; position < bookingRooms.length; position += 1) {
             const externalRoom = bookingRooms[position];
